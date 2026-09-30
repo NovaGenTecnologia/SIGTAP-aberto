@@ -9,3 +9,12 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+sa-core = { path = "../core" }
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+
+[dev-dependencies]
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }

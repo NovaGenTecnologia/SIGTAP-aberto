@@ -13,6 +13,10 @@ path = "src/main.rs"
 
 [dependencies]
 sa-core = { path = "../core" }
+sa-sources = { path = "../sources" }
+sa-packs = { path = "../packs" }
+sa-download = { path = "../download" }
+sha2 = "0.11"
 
 [lints]
 workspace = true

@@ -1,9 +1,14 @@
 //! Núcleo do SIGTAP Aberto.
 //!
-//! Fronteira: competência (AAAAMM) e sua sequência, intervalos de vigência
-//! (`vig_ini`/`vig_fim`), manifestos (de leiaute, de chaves, de módulos) como dados.
-//! Não lê arquivo nem acessa rede: isso é de `sa-sources` e `sa-download`.
-//! Conteúdo a partir da Fase 1.
+//! Fronteira: competência (AAAAMM) e sua sequência, identificadores SQL seguros e, nas fases
+//! seguintes, manifestos. Não lê arquivo nem acessa rede: isso é de `sa-sources` e
+//! `sa-download`.
+
+pub mod competencia;
+pub mod ident;
+
+pub use competencia::{Competencia, CompetenciaInvalida};
+pub use ident::{Ident, IdentInvalido, safe_ident};
 
 /// Versão do programa, igual à do workspace.
 pub const VERSAO: &str = env!("CARGO_PKG_VERSION");

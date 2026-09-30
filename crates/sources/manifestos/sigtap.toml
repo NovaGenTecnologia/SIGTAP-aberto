@@ -1,0 +1,10 @@
+# Manifesto do módulo SIGTAP (dados, não código).
+#
+# [colunas_normalizadas]: nomes de coluna que aparecem no *_layout.txt oficial com texto que
+# não é um identificador (ex.: expressão SQL). Cada entrada diz o nome a usar no banco e onde
+# o caso foi visto. Nome não listado aqui e inválido interrompe a carga com mensagem.
+
+[colunas_normalizadas."REPLACE(DS_REGRA_CONDICIONADA,CHR(10),NULL)"]
+nome = "DS_REGRA_CONDICIONADA"
+visto_em = "tb_regra_condicionada_layout.txt, competências 201412 a 201503"
+observacao = "O DATASUS exportou a expressão usada para tirar quebras de linha em vez do nome da coluna. Nas demais competências a coluna chama DS_REGRA_CONDICIONADA, com o mesmo tamanho (4000) e as mesmas posições (155-4154)."

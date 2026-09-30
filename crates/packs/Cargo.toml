@@ -9,3 +9,12 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+sa-core = { path = "../core" }
+sa-sources = { path = "../sources" }
+rusqlite = { version = "0.40", features = ["bundled"] }
+sha2 = "0.11"
+
+[dev-dependencies]
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }

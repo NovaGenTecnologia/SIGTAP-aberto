@@ -1,0 +1,53 @@
+# Chaves naturais das tabelas do SIGTAP (dados, não código).
+#
+# Uso: comparar competências ("o que mudou") e mostrar histórico de uma mesma entidade.
+# A reconstrução exata NÃO depende destas chaves (usa o conteúdo inteiro da linha).
+#
+# Origem: busca da menor combinação de colunas CO_/NU_/TP_ única em TODAS as competências em
+# que a tabela existe, nos 225 ZIPs de 200801 a 202609 (estudo de 30/09/2026). Conferido de
+# novo pelo teste `chaves_naturais_unicas` sobre o banco carregado.
+#
+# chave = []  → sem chave natural: há linhas inteiras repetidas (use o conteúdo + quantidade).
+
+[chaves]
+rl_excecao_compatibilidade = ["co_procedimento_restricao"]
+rl_procedimento_cid = ["co_procedimento", "co_cid"]
+rl_procedimento_comp_rede = ["co_procedimento"]
+rl_procedimento_compativel = ["co_procedimento_principal", "co_registro_principal", "co_procedimento_compativel", "co_registro_compativel", "tp_compatibilidade"]
+rl_procedimento_detalhe = ["co_procedimento", "co_detalhe"]
+rl_procedimento_habilitacao = ["co_procedimento", "co_habilitacao", "nu_grupo_habilitacao"]
+rl_procedimento_incremento = ["co_procedimento", "co_habilitacao"]
+rl_procedimento_leito = ["co_procedimento", "co_tipo_leito"]
+rl_procedimento_modalidade = ["co_procedimento", "co_modalidade"]
+rl_procedimento_ocupacao = ["co_procedimento", "co_ocupacao"]
+rl_procedimento_origem = ["co_procedimento", "co_procedimento_origem"]
+rl_procedimento_registro = ["co_procedimento", "co_registro"]
+rl_procedimento_regra_cond = ["co_procedimento", "co_regra_condicionada"]
+rl_procedimento_renases = []  # linhas inteiras repetidas em 93 competências (201404 a 202303)
+rl_procedimento_servico = ["co_procedimento", "co_servico", "co_classificacao"]
+rl_procedimento_sia_sih = ["co_procedimento", "co_procedimento_sia_sih"]
+rl_procedimento_tuss = ["co_procedimento"]
+tb_cid = ["co_cid", "tp_agravo"]  # CO_CID sozinho se repete em algumas competências
+tb_componente_rede = ["co_componente_rede"]
+tb_descricao = ["co_procedimento"]
+tb_descricao_detalhe = ["co_detalhe"]
+tb_detalhe = ["co_detalhe"]
+tb_financiamento = ["co_financiamento"]
+tb_forma_organizacao = ["co_grupo", "co_sub_grupo", "co_forma_organizacao"]
+tb_grupo = ["co_grupo"]
+tb_grupo_habilitacao = ["nu_grupo_habilitacao"]
+tb_habilitacao = ["co_habilitacao"]
+tb_modalidade = ["co_modalidade"]
+tb_ocupacao = ["co_ocupacao"]
+tb_procedimento = ["co_procedimento"]
+tb_rede_atencao = ["co_rede_atencao"]
+tb_registro = ["co_registro"]
+tb_regra_condicionada = ["co_regra_condicionada"]
+tb_renases = ["co_renases"]
+tb_rubrica = ["co_rubrica"]
+tb_servico = ["co_servico"]
+tb_servico_classificacao = ["co_servico", "co_classificacao"]
+tb_sia_sih = ["co_procedimento_sia_sih", "tp_procedimento"]  # mesmo código em A (SIA) e H (SIH)
+tb_sub_grupo = ["co_grupo", "co_sub_grupo"]
+tb_tipo_leito = ["co_tipo_leito"]
+tb_tuss = ["co_tuss"]
