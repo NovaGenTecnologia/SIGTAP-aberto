@@ -1,0 +1,56 @@
+# Compilação
+/target/
+**/*.rs.bk
+
+# Dados oficiais e bancos: nunca no repositório (o programa baixa da fonte oficial)
+*.zip
+*.7z
+*.gz
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.dbc
+*.dbf
+*.DBC
+*.DBF
+*.pdf
+*.xls
+*.xlsx
+dados_dev/
+dados/
+zips/
+
+# Arquivos do hospital (dados de paciente): nunca no repositório
+modelos/
+*.JAN
+*.FEV
+*.MAR
+*.ABR
+*.MAI
+*.JUN
+*.JUL
+*.AGO
+*.SET
+*.OUT
+*.NOV
+*.DEZ
+*AIH*.txt
+*AIH*.Zip
+
+# Execução portátil
+dados_webview/
+*.lock
+!Cargo.lock
+*.log
+
+# Editores e sistema
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
+crates/app/gen/
+saida/

@@ -1,0 +1,333 @@
+# Catálogo das fontes oficiais do SIGTAP Aberto.
+# Uma entrada por fonte. É dado, não código: as fases seguintes leem este arquivo.
+# Campos:
+#   origem          URL ou caminho oficial (sem espelhos)
+#   padrao          padrão do nome do arquivo; {UF} sigla, {AAMM}/{AAAAMM} competência
+#   formato         zip-txt-largura-fixa | dbc | dbf | json-api | xlsx | pdf | xsd
+#   escopos         brasil | uf | regiao-saude | municipio | cnes
+#   periodicidade   mensal | diaria | eventual
+#   leiaute         de onde vem o leiaute (sempre oficial)
+#   campos_pessoais o que é pessoal e como é tratado
+#   licenca         situação conhecida (docs/fontes/licenca-dos-dados.md)
+#   fase            fase do plano em que entra
+#   obrigatorio     entra na primeira execução?
+#   estudo          ficha de estudo em docs/fontes/
+
+[sigtap]
+nome = "Tabela Unificada de Procedimentos (SIGTAP)"
+origem = "ftp://ftp2.datasus.gov.br/pub/sistemas/tup/downloads/"
+padrao = "TabelaUnificada_{AAAAMM}_v{AAMMDDhhmm}.zip (até 200904 sem _v)"
+formato = "zip-txt-largura-fixa"
+escopos = ["brasil"]
+periodicidade = "mensal"
+leiaute = "<tabela>_layout.txt dentro do próprio ZIP"
+campos_pessoais = "nenhum"
+licenca = "não declarada no FTP"
+fase = 1
+obrigatorio = true
+estudo = "docs/fontes/sigtap-acessorios.md"
+tamanho = "~2,2 MB por competência; 225 competências, 441 MB (200801–202609)"
+
+[sigtap_notas_tecnicas]
+nome = "Notas técnicas mensais do SIGTAP"
+origem = "ftp://ftp2.datasus.gov.br/pub/sistemas/tup/downloads/notastecnicas/"
+padrao = "nota_tecnica_cgsi_sigtap_{AAAA}_{MM}.pdf"
+formato = "pdf"
+escopos = ["brasil"]
+periodicidade = "mensal"
+leiaute = "não se aplica (texto)"
+campos_pessoais = "nenhum"
+licenca = "não declarada no FTP"
+fase = 2
+obrigatorio = false
+estudo = "docs/fontes/sigtap-acessorios.md"
+
+[sigtap_mapeamento_tuss]
+nome = "Mapeamento TUSS x SIGTAP (DATASUS, 2017)"
+origem = "ftp://ftp2.datasus.gov.br/pub/sistemas/tup/downloads/Mapeamento_TUSS_SIGTAP.zip"
+formato = "zip"
+escopos = ["brasil"]
+periodicidade = "eventual"
+leiaute = "a estudar"
+campos_pessoais = "nenhum"
+licenca = "não declarada no FTP"
+fase = 6
+obrigatorio = false
+
+[territorio_ibge]
+nome = "Localidades do IBGE (UF, municípios)"
+origem = "https://servicodados.ibge.gov.br/api/v1/localidades/"
+formato = "json-api"
+escopos = ["brasil"]
+periodicidade = "eventual"
+leiaute = "resposta da API"
+campos_pessoais = "nenhum"
+licenca = "a verificar"
+fase = 2
+obrigatorio = true
+
+[territorio_demas]
+nome = "Regiões e macrorregiões de saúde por município, população (API DEMAS)"
+origem = "https://apidadosabertos.saude.gov.br/macrorregiao-e-regiao-de-saude/municipio"
+formato = "json-api"
+escopos = ["brasil"]
+periodicidade = "eventual"
+leiaute = "resposta da API"
+campos_pessoais = "nenhum"
+licenca = "a verificar"
+fase = 2
+obrigatorio = true
+
+# CNES: um arquivo por tipo, UF e mês; município é filtro na carga (CODUFMUN).
+[cnes_st]
+nome = "CNES — estabelecimentos (ST)"
+origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/CNES/200508_/Dados/ST/"
+padrao = "ST{UF}{AAMM}.dbc"
+formato = "dbc"
+escopos = ["uf", "regiao-saude", "municipio"]
+periodicidade = "mensal"
+leiaute = "cabeçalho do DBF + Caderno de leiaute do CNES"
+campos_pessoais = "CPF_CNPJ de pessoa física: descartado na carga"
+licenca = "dados.gov.br: Creative Commons Attribution (conjunto CNES)"
+fase = 3
+obrigatorio = false
+tamanho = "MS 2608: 331 KB; Brasil histórico: 3,36 GB"
+
+[cnes_hb]
+nome = "CNES — habilitações (HB)"
+origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/CNES/200508_/Dados/HB/"
+padrao = "HB{UF}{AAMM}.dbc"
+formato = "dbc"
+escopos = ["uf", "regiao-saude", "municipio"]
+periodicidade = "mensal"
+leiaute = "cabeçalho do DBF + Caderno de leiaute do CNES"
+campos_pessoais = "nenhum"
+licenca = "dados.gov.br: Creative Commons Attribution (conjunto CNES)"
+fase = 3
+obrigatorio = false
+tamanho = "MS 2608: 16 KB"
+
+[cnes_sr]
+nome = "CNES — serviços especializados (SR)"
+origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/CNES/200508_/Dados/SR/"
+padrao = "SR{UF}{AAMM}.dbc"
+formato = "dbc"
+escopos = ["uf", "regiao-saude", "municipio"]
+periodicidade = "mensal"
+leiaute = "cabeçalho do DBF + Caderno de leiaute do CNES"
+campos_pessoais = "nenhum"
+licenca = "dados.gov.br: Creative Commons Attribution (conjunto CNES)"
+fase = 3
+obrigatorio = false
+tamanho = "MS 2608: 160 KB"
+
+[cnes_lt]
+nome = "CNES — leitos (LT)"
+origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/CNES/200508_/Dados/LT/"
+padrao = "LT{UF}{AAMM}.dbc"
+formato = "dbc"
+escopos = ["uf", "regiao-saude", "municipio"]
+periodicidade = "mensal"
+leiaute = "cabeçalho do DBF + Caderno de leiaute do CNES"
+campos_pessoais = "nenhum"
+licenca = "dados.gov.br: Creative Commons Attribution (conjunto CNES)"
+fase = 3
+obrigatorio = false
+tamanho = "MS 2608: 12 KB"
+
+[cnes_eq]
+nome = "CNES — equipamentos (EQ)"
+origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/CNES/200508_/Dados/EQ/"
+padrao = "EQ{UF}{AAMM}.dbc"
+formato = "dbc"
+escopos = ["uf", "regiao-saude", "municipio"]
+periodicidade = "mensal"
+leiaute = "cabeçalho do DBF + Caderno de leiaute do CNES"
+campos_pessoais = "nenhum"
+licenca = "dados.gov.br: Creative Commons Attribution (conjunto CNES)"
+fase = 3
+obrigatorio = false
+tamanho = "MS 2608: 142 KB"
+
+[cnes_pf]
+nome = "CNES — profissionais (PF)"
+origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/CNES/200508_/Dados/PF/"
+padrao = "PF{UF}{AAMM}.dbc"
+formato = "dbc"
+escopos = ["cnes"]
+periodicidade = "mensal"
+leiaute = "cabeçalho do DBF + Caderno de leiaute do CNES"
+campos_pessoais = "nome, CPF, CNS do profissional: só filtrado ao(s) CNES do usuário; CPF descartado"
+licenca = "dados.gov.br: Creative Commons Attribution (conjunto CNES)"
+fase = 3
+obrigatorio = false
+tamanho = "MS 2608: 5,1 MB; Brasil histórico: 46,3 GB (nunca em escopo nacional)"
+
+[cnes_tab]
+nome = "Tabelas auxiliares do CNES"
+origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/CNES/200508_/Auxiliar/TAB_CNES.zip"
+formato = "zip"
+escopos = ["brasil"]
+periodicidade = "eventual"
+leiaute = "a estudar (arquivos CNV/DBF)"
+campos_pessoais = "nenhum"
+licenca = "não declarada no FTP"
+fase = 3
+obrigatorio = false
+tamanho = "127,5 MB"
+
+[sia_pa]
+nome = "SIA — produção ambulatorial (PA)"
+origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/SIASUS/200801_/Dados/"
+padrao = "PA{UF}{AAMM}[a-z].dbc"
+formato = "dbc"
+escopos = ["uf", "municipio"]
+periodicidade = "mensal"
+leiaute = "cabeçalho do DBF + Manual SIA"
+campos_pessoais = "CNS do profissional, idade, sexo e município do paciente: agregado na carga, linha descartada"
+licenca = "não declarada no FTP"
+fase = 4
+obrigatorio = false
+tamanho = "MS 2607: 40,3 MB; SIA inteiro: 431 GB"
+
+[sia_tab]
+nome = "Tabelas auxiliares do SIA"
+origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/SIASUS/200801_/Auxiliar/TAB_SIA.zip"
+formato = "zip"
+escopos = ["brasil"]
+periodicidade = "eventual"
+leiaute = "a estudar"
+campos_pessoais = "nenhum"
+licenca = "não declarada no FTP"
+fase = 4
+obrigatorio = false
+tamanho = "73,4 MB"
+
+[sih_rd]
+nome = "SIH — AIH reduzida aprovada (RD)"
+origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/SIHSUS/200801_/Dados/"
+padrao = "RD{UF}{AAMM}.dbc"
+formato = "dbc"
+escopos = ["uf", "municipio"]
+periodicidade = "mensal"
+leiaute = "cabeçalho do DBF + dicionário da AIH"
+campos_pessoais = "nascimento, CEP, número da AIH, CPF: agregado na carga, linha descartada"
+licenca = "não declarada no FTP"
+fase = 4
+obrigatorio = false
+tamanho = "MS 2607: 1,3 MB"
+
+[sih_sp]
+nome = "SIH — serviços profissionais da AIH (SP)"
+origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/SIHSUS/200801_/Dados/"
+padrao = "SP{UF}{AAMM}.dbc"
+formato = "dbc"
+escopos = ["uf", "municipio"]
+periodicidade = "mensal"
+leiaute = "cabeçalho do DBF + dicionário da AIH"
+campos_pessoais = "a estudar; agregado na carga"
+licenca = "não declarada no FTP"
+fase = 4
+obrigatorio = false
+tamanho = "MS 2607: 4,1 MB"
+
+[sih_er]
+nome = "SIH — AIH rejeitadas (ER)"
+origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/SIHSUS/200801_/Dados/"
+padrao = "ER{UF}{AAMM}.dbc"
+formato = "dbc"
+escopos = ["uf", "cnes"]
+periodicidade = "mensal"
+leiaute = "cabeçalho do DBF"
+campos_pessoais = "número da AIH: descartado; agregado por CNES, motivo e competência"
+licenca = "não declarada no FTP"
+fase = 4
+obrigatorio = false
+tamanho = "MS 2607: 20 KB"
+
+[sih_tab]
+nome = "Tabelas auxiliares do SIH (inclui MOTERRO, 641 motivos de rejeição)"
+origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/SIHSUS/200801_/Auxiliar/TAB_SIH.zip"
+formato = "zip"
+escopos = ["brasil"]
+periodicidade = "eventual"
+leiaute = "cabeçalho do DBF"
+campos_pessoais = "nenhum"
+licenca = "não declarada no FTP"
+fase = 4
+obrigatorio = false
+tamanho = "6,0 MB"
+
+[api_demas_producao]
+nome = "API DEMAS — produção SIA e SIH agregada por CNES e procedimento"
+origem = "https://apidadosabertos.saude.gov.br/ (sia-procedimentos-ambulatoriais, sih-procedimentos-hospitalares)"
+formato = "json-api"
+escopos = ["uf", "municipio", "cnes"]
+periodicidade = "mensal"
+leiaute = "resposta da API"
+campos_pessoais = "nenhum (já agregada)"
+licenca = "a verificar"
+fase = 4
+obrigatorio = false
+
+[leiautes_faturamento]
+nome = "Leiautes de exportação BPA, APAC, RAAS; SISAIH01"
+origem = "http://sia.datasus.gov.br e http://www2.datasus.gov.br/SIHD/"
+formato = "pdf"
+escopos = ["brasil"]
+periodicidade = "eventual"
+leiaute = "é o próprio leiaute; vira manifesto de dados"
+campos_pessoais = "descrevem arquivos com dados de paciente; os arquivos do hospital nunca saem da máquina"
+licenca = "documento público"
+fase = 5
+obrigatorio = false
+
+[ans_tuss]
+nome = "TUSS — Terminologia Unificada da Saúde Suplementar (ANS)"
+origem = "Página do Padrão TISS da ANS; Sistema de Gestão de Terminologias"
+formato = "xlsx"
+escopos = ["brasil"]
+periodicidade = "eventual"
+leiaute = "planilhas da ANS"
+campos_pessoais = "nenhum"
+licenca = "a ler antes de baixar (pré-requisito da Fase 6)"
+fase = 6
+obrigatorio = false
+tamanho = "pacote 202609: 408 MB; baixar só as tabelas 18, 20, 22"
+
+[ans_tiss]
+nome = "Padrão TISS — componentes de comunicação (XSD) e organizacional"
+origem = "Página do Padrão TISS da ANS"
+formato = "xsd"
+escopos = ["brasil"]
+periodicidade = "eventual"
+leiaute = "XSD 04.03.00"
+campos_pessoais = "descrevem XML com dados de paciente; o XML do hospital nunca sai da máquina"
+licenca = "a verificar"
+fase = 6
+obrigatorio = false
+
+[ans_compatibilizacao]
+nome = "Compatibilização TUSS x SIGTAP (ANS, 2017)"
+origem = "Página de tabelas relacionadas da ANS"
+formato = "xlsx"
+escopos = ["brasil"]
+periodicidade = "eventual"
+leiaute = "planilha MAPEAMENTO TUSS x SIGTAP 2017 04"
+campos_pessoais = "nenhum"
+licenca = "a verificar"
+fase = 6
+obrigatorio = false
+tamanho = "1,1 MB"
+
+[bps]
+nome = "Banco de Preços em Saúde (API DEMAS economia-da-saude/bps)"
+origem = "https://apidadosabertos.saude.gov.br/economia-da-saude/bps"
+formato = "json-api"
+escopos = ["brasil"]
+periodicidade = "eventual"
+leiaute = "resposta da API (exige CATMAT ou CNPJ)"
+campos_pessoais = "nenhum"
+licenca = "a verificar"
+fase = 7
+obrigatorio = false

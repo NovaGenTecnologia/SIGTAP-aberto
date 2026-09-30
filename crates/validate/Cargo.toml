@@ -1,0 +1,11 @@
+[package]
+name = "sa-validate"
+description = "Conferência pré-envio: leiautes como dados e regras em tabela"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,11 @@
+[package]
+name = "sa-query"
+description = "Consultas compartilhadas por interface, linha de comando e biblioteca, com saída JSON"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

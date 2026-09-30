@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "padrao",
+  "description": "Permissões da janela principal (mínimas na Fase 0)",
+  "windows": ["principal"],
+  "permissions": ["core:default"]
+}

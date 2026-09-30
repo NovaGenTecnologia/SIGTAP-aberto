@@ -1,0 +1,11 @@
+[package]
+name = "sa-core"
+description = "Núcleo do SIGTAP Aberto: competências, vigência e manifestos"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
