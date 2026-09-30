@@ -30,6 +30,15 @@ Comandos:
   baixar [--ultima | --competencia AAAAMM | --todas]
                                   baixa do FTP oficial para a pasta de ZIPs, com cortesia
   importar --origem PASTA         copia ZIPs válidos de uma pasta (rede sem FTP)
+  ficha <código> [--competencia AAAAMM]
+                                  ficha completa do procedimento, em JSON
+  buscar <texto> [--competencia AAAAMM]
+                                  busca por código, nome, CID, CBO, habilitação..., em JSON
+  arvore [nó] [--competencia AAAAMM]
+                                  grupos, ou filhos do nó (2, 4 ou 6 dígitos), em JSON
+  historico <código>              linha do tempo do procedimento, em JSON
+  mudou [--de AAAAMM] [--competencia AAAAMM]
+                                  o que mudou da competência anterior (ou de --de), em JSON
   ajuda                           mostra esta ajuda
 
 Opções:
@@ -45,6 +54,7 @@ struct Opcoes {
     origem: Option<PathBuf>,
     ultima: bool,
     todas: bool,
+    de: Option<Competencia>,
     livres: Vec<PathBuf>,
 }
 
@@ -65,6 +75,7 @@ fn ler_opcoes(args: &[String]) -> Result<Opcoes, String> {
         origem: None,
         ultima: false,
         todas: false,
+        de: None,
         livres: Vec::new(),
     };
     let mut i = 0;
@@ -96,6 +107,10 @@ fn ler_opcoes(args: &[String]) -> Result<Opcoes, String> {
                     Competencia::de_texto(&valor(i, "--competencia")?)
                         .map_err(|e| e.to_string())?,
                 );
+                i += 1;
+            }
+            "--de" => {
+                o.de = Some(Competencia::de_texto(&valor(i, "--de")?).map_err(|e| e.to_string())?);
                 i += 1;
             }
             "--ultima" => o.ultima = true,
@@ -145,6 +160,82 @@ fn zips_em(caminhos: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
         );
     }
     Ok(v)
+}
+
+/// Consultas em JSON (mesmas funções usadas pela interface).
+fn cmd_consulta(cmd: &str, o: &Opcoes) -> Result<(), String> {
+    if !o.banco.exists() {
+        return Err(format!(
+            "banco não encontrado em {}. Carregue ZIPs com: sigtap-aberto-cli carregar <pasta>",
+            o.banco.display()
+        ));
+    }
+    let q = sa_query::Consulta::abrir(&o.banco).map_err(|e| e.to_string())?;
+    let comp = match o.competencia {
+        Some(c) => c,
+        None => q.mais_recente().map_err(|e| e.to_string())?,
+    };
+    let livre = o
+        .livres
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let exigir = |oque: &str| -> Result<(), String> {
+        if livre.is_empty() {
+            Err(format!("informe {oque}. Veja: sigtap-aberto-cli ajuda"))
+        } else {
+            Ok(())
+        }
+    };
+    let json = match cmd {
+        "ficha" => {
+            exigir("o código do procedimento")?;
+            match q.ficha(comp, &livre).map_err(|e| e.to_string())? {
+                Some(f) => serde_json::to_string_pretty(&f),
+                None => {
+                    return Err(format!(
+                        "o procedimento {livre} não existe na competência {comp}. Veja o histórico com: sigtap-aberto-cli historico {livre}"
+                    ));
+                }
+            }
+        }
+        "buscar" => {
+            exigir("o texto da busca")?;
+            serde_json::to_string_pretty(&q.buscar(comp, &livre).map_err(|e| e.to_string())?)
+        }
+        "arvore" => {
+            let pai = if livre.is_empty() { None } else { Some(livre.as_str()) };
+            serde_json::to_string_pretty(&q.arvore(comp, pai).map_err(|e| e.to_string())?)
+        }
+        "historico" => {
+            exigir("o código do procedimento")?;
+            serde_json::to_string_pretty(&q.historico(&livre).map_err(|e| e.to_string())?)
+        }
+        _ => {
+            let de = match o.de {
+                Some(d) => d,
+                None => {
+                    let cs = q.competencias().map_err(|e| e.to_string())?;
+                    let pos = cs
+                        .iter()
+                        .position(|c| c.competencia == comp.to_string())
+                        .ok_or_else(|| format!("competência {comp} não carregada"))?;
+                    if pos == 0 {
+                        return Err(format!("não há competência carregada antes de {comp}; use --de"));
+                    }
+                    Competencia::de_texto(&cs[pos - 1].competencia).map_err(|e| e.to_string())?
+                }
+            };
+            serde_json::to_string_pretty(
+                &q.o_que_mudou(de, comp, sa_query::mudancas::LIMITE_ITENS)
+                    .map_err(|e| e.to_string())?,
+            )
+        }
+    }
+    .map_err(|e| format!("falha ao gerar JSON ({e})"))?;
+    println!("{json}");
+    Ok(())
 }
 
 fn cmd_competencias(o: &Opcoes) -> Result<(), String> {
@@ -396,6 +487,7 @@ fn main() -> ExitCode {
         "listar-ftp" => cmd_listar_ftp(),
         "baixar" => cmd_baixar(&o),
         "importar" => cmd_importar(&o),
+        "ficha" | "buscar" | "arvore" | "historico" | "mudou" => cmd_consulta(cmd.as_str(), &o),
         "ajuda" | "--help" | "-h" => {
             print!("{AJUDA}");
             Ok(())

@@ -2644,7 +2644,9 @@ dependencies = [
  "sa-core",
  "sa-download",
  "sa-packs",
+ "sa-query",
  "sa-sources",
+ "serde_json",
  "sha2 0.11.0",
 ]
 
