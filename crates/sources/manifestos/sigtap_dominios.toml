@@ -1,0 +1,80 @@
+# Domínios das colunas codificadas do SIGTAP que NÃO têm tabela própria no ZIP (dados, não código).
+#
+# Origem: "DATASUS - Tabela de Procedimentos - Lay-out.xls", coluna "Preenchimento", que vem
+# dentro dos ZIPs TabelaUnificada. Conferido nos ZIPs de 200801, 201501 e 202609 (texto igual
+# nos três; o arquivo não muda desde 2015). Descrições copiadas como estão na fonte.
+#
+# Colunas com tabela própria (financiamento, registro, leito, modalidade, CID, CBO...) NÃO
+# entram aqui: o nome vem da própria tabela, na competência consultada.
+#
+# `sem_descricao`: códigos que aparecem nos dados e que a fonte oficial não descreve.
+# O programa mostra o código e a nota, nunca um nome inventado. Levantamento: valores distintos
+# nas 225 competências (200801 a 202609), estudo de 30/09/2026; o teste
+# `dominios_cobrem_o_banco` falha se aparecer código novo que não esteja em nenhuma das listas.
+
+origem = "Lay-out.xls (coluna Preenchimento), ZIPs TabelaUnificada de 200801, 201501 e 202609"
+
+[[dominio]]
+colunas = ["tb_procedimento.tp_complexidade"]
+valores = { "0" = "Não se aplica", "1" = "Atenção Básica Complexidade", "2" = "Média Complexidade", "3" = "Alta Complexidade" }
+
+[[dominio]]
+colunas = ["tb_procedimento.tp_sexo"]
+valores = { "M" = "Masculino", "F" = "Feminino", "I" = "Indiferente/Ambos", "N" = "Não se aplica" }
+sem_descricao = { "A" = "Código fora do leiaute; aparece só em 0702050369 (MICRO GUIA), competência 200801" }
+
+[[dominio]]
+colunas = ["tb_cid.tp_sexo"]
+valores = { "M" = "Masculino", "F" = "Feminino", "I" = "Indiferente/Ambos" }
+
+[[dominio]]
+colunas = ["tb_cid.tp_agravo"]
+valores = { "0" = "Sem Agravo", "1" = "Agravo de notificação", "2" = "Agravo de bloqueio" }
+
+[[dominio]]
+colunas = ["tb_cid.tp_estadio"]
+valores = { "S" = "Sim", "N" = "Não" }
+
+[[dominio]]
+colunas = ["rl_procedimento_cid.st_principal"]
+valores = { "S" = "Sim", "N" = "Não" }
+
+[[dominio]]
+colunas = ["rl_procedimento_compativel.tp_compatibilidade", "rl_excecao_compatibilidade.tp_compatibilidade"]
+valores = { "1" = "Compatível", "2" = "Incompatível / Excludente", "3" = "Concomitante" }
+sem_descricao = { "4" = "Código fora do leiaute; usado desde 201502, só entre registros 03 e 03 (AIH)", "5" = "Código fora do leiaute; usado desde 201509, entre registros 03-04, 04-04 e 06-07" }
+
+[[dominio]]
+colunas = ["tb_sia_sih.tp_procedimento", "rl_procedimento_sia_sih.tp_procedimento"]
+valores = { "A" = "Ambulatorial", "H" = "Hospitalar" }
+
+# Valor que significa "não se aplica" em colunas numéricas.
+[[sentinela]]
+colunas = ["tb_procedimento.qt_maxima_execucao", "tb_procedimento.qt_dias_permanencia", "tb_procedimento.qt_pontos", "tb_procedimento.vl_idade_minima", "tb_procedimento.vl_idade_maxima"]
+valor = 9999
+significado = "Não se aplica"
+
+# QT_TEMPO_PERMANENCIA não está no Lay-out.xls (surgiu em 201209); 9999 aparece nos dados com o
+# mesmo sentido das colunas acima, mas isso é inferência nossa: marcado como tal.
+[[sentinela]]
+colunas = ["tb_procedimento.qt_tempo_permanencia"]
+valor = 9999
+significado = "Não se aplica"
+inferido = true
+
+# Unidades de colunas numéricas.
+[[unidade]]
+colunas = ["tb_procedimento.vl_sh", "tb_procedimento.vl_sa", "tb_procedimento.vl_sp"]
+unidade = "centavos"
+fonte = "Numero (8,2): duas casas decimais implícitas"
+
+[[unidade]]
+colunas = ["rl_procedimento_incremento.vl_percentual_sh", "rl_procedimento_incremento.vl_percentual_sa", "rl_procedimento_incremento.vl_percentual_sp"]
+unidade = "centesimos_de_percentual"
+fonte = "Número (5,2): duas casas decimais implícitas"
+
+# O leiaute diz "De 0000 a 1331 meses", mas os dados usam até 1571 desde 201308.
+[[unidade]]
+colunas = ["tb_procedimento.vl_idade_minima", "tb_procedimento.vl_idade_maxima"]
+unidade = "meses"
+fonte = "Idade em meses"

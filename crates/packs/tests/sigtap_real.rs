@@ -286,3 +286,48 @@ fn chaves_naturais_unicas() {
         "PROVA chaves naturais: {conferidas} pares (tabela, competência) sem repetição; {sem_chave} tabela(s) sem chave natural"
     );
 }
+
+/// E01 (Fase 2): todo código presente no banco completo, nas colunas com domínio no manifesto,
+/// tem descrição oficial ou está listado como "sem descrição na fonte".
+#[test]
+fn dominios_cobrem_o_banco() {
+    let Ok(caminho) = std::env::var("SA_SIGTAP_BANCO_PRONTO") else {
+        eprintln!("SA_SIGTAP_BANCO_PRONTO não definida: conferência de domínios não executada");
+        return;
+    };
+    let b = BancoSigtap::abrir(Path::new(&caminho)).unwrap();
+    let con = b.conexao();
+    let d = sa_sources::sigtap::dominios::Dominios::carregar();
+    let (mut oficiais, mut sem) = (0, Vec::new());
+    for tc in d
+        .colunas_com_dominio()
+        .map(String::from)
+        .collect::<Vec<_>>()
+    {
+        let (tabela, coluna) = tc.split_once('.').unwrap();
+        let t = sa_core::safe_ident(tabela).unwrap();
+        let c = sa_core::safe_ident(coluna).unwrap();
+        let sql = format!("SELECT DISTINCT {c} FROM {t} WHERE {c} IS NOT NULL");
+        let mut st = con.prepare(&sql).unwrap();
+        let valores: Vec<String> = st
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        for v in valores {
+            match d.descrever(tabela, coluna, &v).unwrap() {
+                sa_sources::sigtap::dominios::Descricao::Oficial(_) => oficiais += 1,
+                sa_sources::sigtap::dominios::Descricao::SemDescricao(_) => {
+                    sem.push(format!("{tc}={v}"))
+                }
+                sa_sources::sigtap::dominios::Descricao::Desconhecido => {
+                    panic!("{tc}: código '{v}' sem descrição e fora da lista sem_descricao")
+                }
+            }
+        }
+    }
+    eprintln!(
+        "PROVA domínios: {oficiais} códigos com descrição oficial; sem descrição na fonte: {}",
+        sem.join(", ")
+    );
+}

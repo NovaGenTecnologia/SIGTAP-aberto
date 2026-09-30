@@ -5,6 +5,7 @@
 //! leiaute seguida de CRLF; 17 arquivos têm LF dentro do texto. Por isso os registros são
 //! lidos por tamanho, nunca separando por linha.
 
+pub mod dominios;
 pub mod leiaute;
 
 use serde::Deserialize;
