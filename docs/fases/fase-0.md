@@ -69,4 +69,58 @@ Qualquer leitura de dado para ingestão; interface além de uma janela vazia com
 
 ## 2. Fechamento
 
-(preenchido ao final da fase)
+Fechamento: 30/09/2026, 16h. Logs do Windows lidos em `scripts/windows/*.log` (execução pelo
+cliente, 15h43–15h52). **Fase 0 fechada: 16 de 16 itens cumpridos**, com as ressalvas da seção 2.3.
+
+### 2.1 Validação item a item
+
+| Id | Resultado | Evidência |
+|----|-----------|-----------|
+| E01 | Cumprido | `git log`: 3 commits no `main`; histórico montado no Windows pelo pacote (`sincronizar_git.log`: bundle verificado, `0a2be7c`) |
+| E02 | Cumprido | `LICENSE` com SHA-256 `0d96a4ff…abcb0`, igual ao arquivo baixado de gnu.org em 30/09/2026 |
+| E03 | Cumprido | `README.md`: o que é, aviso não oficial, dados não redistribuídos, licença, requisitos, compilar e testar |
+| E04 | Cumprido | `CONTRIBUTING.md` com proposta de CLA marcada "pendente de revisão jurídica" |
+| E05 | Cumprido | 5 testes unitários da guarda + teste do repositório passam no Linux e no Windows; o teste **falhou** de propósito com uma remessa BPA sintética não rastreada e voltou a passar após removê-la |
+| E06 | Cumprido | Linux: `cargo build`, `clippy -D warnings`, `fmt --check`, `cargo test` (7 passaram, 0 falharam). Windows (`testar.log`): 7 passaram, 0 falharam |
+| E07 | Cumprido | Windows (`testar_portatil.log`): `.exe` copiado para pasta vazia, processo ativo por 15 s (34 MB), `dados_webview\EBWebView\` criado **ao lado do executável**; `%LOCALAPPDATA%\br.sigtap-aberto.app` e `%APPDATA%\br.sigtap-aberto.app` não existem antes nem depois; nenhum arquivo novo com "sigtap" em `%LOCALAPPDATA%`, `%APPDATA%` ou `%TEMP%`. Linux: janela renderizada com o aviso (captura de tela) |
+| E08 | Cumprido | `rust-toolchain.toml` 1.98.1; o Windows instalou sozinho o toolchain fixado (`diagnostico.log`) |
+| E09 | Cumprido | `cargo deny check licenses`: "licenses ok". Encontradas: MIT, Apache-2.0 (e com LLVM-exception), BSD-3-Clause, ISC, Zlib, Unicode-3.0, MPL-2.0 (cssparser, via Tauri), CC0-1.0, MIT-0, 0BSD/Unlicense/LGPL só como alternativas em licenças duplas com MIT |
+| E10 | Cumprido | `catalogo/fontes.toml`: 24 fontes, todas com os 10 campos obrigatórios (conferido por script) |
+| E11 | Cumprido | 5 scripts rodados no Windows, cada um com log; `compilar.log` com `CODIGO_SAIDA=0` |
+| E12 | Cumprido com ressalva | `ci.yml` válido (YAML conferido); não executado, porque não há repositório remoto |
+| E13 | Cumprido | `docs/fontes/sigtap-acessorios.md` |
+| E14 | Cumprido | `docs/fontes/ftp-datasus.md` (listagens de 22 diretórios pelo shell do dispositivo) |
+| E15 | Cumprido | `docs/fontes/licenca-dos-dados.md` (dados.gov.br e dadosabertos.saude.gov.br pelo navegador embutido) |
+| E16 | Cumprido | Este fechamento; `DIARIO_DO_PROJETO.md`; plano por fases e documento-mestre atualizados |
+
+### 2.2 Ambiente confirmado no Windows (`diagnostico.log`)
+
+Windows 10.0.26200; Rust/Cargo 1.98.1 MSVC; Git 2.53.0; **Ferramentas de Build do Visual
+Studio 2026 (18.4)**; **WebView2 Runtime 154.0.4258.37**. Compilação release: 2 min 38 s;
+`sigtap-aberto.exe` 8,8 MB, SHA-256 `960f0412…d044`; `sigtap-aberto-cli.exe` 130 KB.
+
+### 2.3 Ressalvas e achados do fechamento
+
+- **Não verificado no Windows:** a aparência da janela (o processo abriu e o WebView2
+  inicializou, mas ninguém olhou a tela). No Linux a janela foi vista renderizada.
+- **CI não executado** (sem remoto). Fica para quando houver repositório no GitHub.
+- **Canal de cópia para o Windows:** não grava `.git` nem `.github`, e **recodifica PNG**
+  (mesmos pixels, bytes diferentes). Solução: histórico por pacote git e
+  `sincronizar_git.bat` restaurando `.github`, `*.png` e `*.ico` a partir do commit.
+- **Fim de linha dos `.bat`:** o `.gitattributes` entrou depois do primeiro commit; dois
+  scripts apareciam como modificados no Windows. Corrigido com `git add --renormalize`.
+- **Shell do dispositivo:** instável (erro de E/S no disco da sessão, pasta desmontada). Serve
+  para o FTP (rede funciona), não para trabalhar na pasta.
+- **Linux:** o WebKitGTK grava cache de shaders da GPU em `~/.cache/mesa_shader_cache`, fora da
+  pasta. Não afeta o Windows (alvo); registrado para quando houver versão Linux.
+
+### 2.4 O que muda no plano por causa desta fase
+
+- Tamanhos que estavam "a medir": `TAB_CNES.zip` 127,5 MB, `TAB_SIA.zip` 73,4 MB,
+  `EQMS2608.dbc` 142 KB, `SPMS2607.dbc` 4,1 MB. SIA e SIH vão até 2607; CNES até 2608.
+- Novas fontes para estudo: 225 notas técnicas mensais do SIGTAP (Fases 1 a 3) e
+  `Mapeamento_TUSS_SIGTAP.zip` do próprio DATASUS (Fase 6).
+- Republicação e retroativo da Fase 1 serão provados com arquivos sintéticos (não há
+  competência republicada no FTP hoje).
+- Licença: o documento-mestre diz CC BY-ND 3.0; o dados.gov.br mostra Creative Commons
+  Attribution para o CNES. Corrigido no documento-mestre com a fonte.

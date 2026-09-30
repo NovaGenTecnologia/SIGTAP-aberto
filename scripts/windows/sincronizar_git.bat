@@ -13,7 +13,9 @@ git bundle verify "_sincronizacao\repo.bundle" >> "%LOG%" 2>&1
 if errorlevel 1 (echo Pacote invalido: peca um novo ao ambiente de desenvolvimento. >> "%LOG%" & exit /b 1)
 git fetch --force "_sincronizacao\repo.bundle" main:refs/remotes/nuvem/main >> "%LOG%" 2>&1
 git reset --mixed nuvem/main >> "%LOG%" 2>&1
-git checkout -- .github >> "%LOG%" 2>&1
+rem O canal de copia nao grava .github e recodifica imagens PNG (mesmos pixels, bytes diferentes):
+rem restaura esses arquivos exatamente como estao no commit.
+git checkout -- .github "*.png" "*.ico" >> "%LOG%" 2>&1
 git log --oneline -3 >> "%LOG%" 2>&1
 echo --- git status (vazio = igual ao commit) >> "%LOG%"
 git status --short >> "%LOG%" 2>&1
