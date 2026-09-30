@@ -1,0 +1,148 @@
+# Referências entre tabelas do SIGTAP: de onde vem o nome de cada código (dados, não código).
+#
+# Uso: a ficha do procedimento e as telas de apoio trocam códigos por nomes, sempre na MESMA
+# competência consultada. `de` lista as colunas (ou grupos de colunas) que apontam para a
+# `chave` da `tabela`; `nomes` são as colunas de texto mostradas.
+#
+# Origem: nomes das colunas nos *_layout.txt dos 225 ZIPs (200801 a 202609) e descrições do
+# Lay-out.xls. O teste `referencias_cobrem_o_banco` falha se alguma coluna CO_/NU_ de qualquer
+# tabela ficar sem referência (e não for chave da própria tabela), e mede quantos códigos não
+# encontram nome na mesma competência.
+
+[[referencia]]
+tabela = "tb_procedimento"
+chave = ["co_procedimento"]
+nomes = ["no_procedimento"]
+de = [["co_procedimento"], ["co_procedimento_principal"], ["co_procedimento_compativel"], ["co_procedimento_restricao"], ["co_procedimento_origem"]]
+
+[[referencia]]
+tabela = "tb_registro"
+chave = ["co_registro"]
+nomes = ["no_registro"]
+de = [["co_registro"], ["co_registro_principal"], ["co_registro_compativel"]]
+
+[[referencia]]
+tabela = "tb_cid"
+chave = ["co_cid"]
+nomes = ["no_cid"]
+de = [["co_cid"]]
+
+[[referencia]]
+tabela = "tb_ocupacao"
+chave = ["co_ocupacao"]
+nomes = ["no_ocupacao"]
+de = [["co_ocupacao"]]
+
+[[referencia]]
+tabela = "tb_habilitacao"
+chave = ["co_habilitacao"]
+nomes = ["no_habilitacao"]
+de = [["co_habilitacao"]]
+
+[[referencia]]
+tabela = "tb_grupo_habilitacao"
+chave = ["nu_grupo_habilitacao"]
+nomes = ["no_grupo_habilitacao", "ds_grupo_habilitacao"]
+de = [["nu_grupo_habilitacao"]]
+
+[[referencia]]
+tabela = "tb_servico"
+chave = ["co_servico"]
+nomes = ["no_servico"]
+de = [["co_servico"]]
+
+[[referencia]]
+tabela = "tb_servico_classificacao"
+chave = ["co_servico", "co_classificacao"]
+nomes = ["no_classificacao"]
+de = [["co_servico", "co_classificacao"]]
+
+[[referencia]]
+tabela = "tb_detalhe"
+chave = ["co_detalhe"]
+nomes = ["no_detalhe"]
+de = [["co_detalhe"]]
+
+[[referencia]]
+tabela = "tb_descricao_detalhe"
+chave = ["co_detalhe"]
+nomes = ["ds_detalhe"]
+de = [["co_detalhe"]]
+
+[[referencia]]
+tabela = "tb_modalidade"
+chave = ["co_modalidade"]
+nomes = ["no_modalidade"]
+de = [["co_modalidade"]]
+
+[[referencia]]
+tabela = "tb_tipo_leito"
+chave = ["co_tipo_leito"]
+nomes = ["no_tipo_leito"]
+de = [["co_tipo_leito"]]
+
+[[referencia]]
+tabela = "tb_regra_condicionada"
+chave = ["co_regra_condicionada"]
+nomes = ["no_regra_condicionada", "ds_regra_condicionada"]
+de = [["co_regra_condicionada"]]
+
+[[referencia]]
+tabela = "tb_renases"
+chave = ["co_renases"]
+nomes = ["no_renases"]
+de = [["co_renases"]]
+
+[[referencia]]
+tabela = "tb_tuss"
+chave = ["co_tuss"]
+nomes = ["no_tuss"]
+de = [["co_tuss"]]
+
+[[referencia]]
+tabela = "tb_componente_rede"
+chave = ["co_componente_rede"]
+nomes = ["no_componente_rede"]
+de = [["co_componente_rede"]]
+
+[[referencia]]
+tabela = "tb_rede_atencao"
+chave = ["co_rede_atencao"]
+nomes = ["no_rede_atencao"]
+de = [["co_rede_atencao"]]
+
+[[referencia]]
+tabela = "tb_financiamento"
+chave = ["co_financiamento"]
+nomes = ["no_financiamento"]
+de = [["co_financiamento"]]
+
+[[referencia]]
+tabela = "tb_rubrica"
+chave = ["co_rubrica"]
+nomes = ["no_rubrica"]
+de = [["co_rubrica"]]
+
+[[referencia]]
+tabela = "tb_sia_sih"
+chave = ["co_procedimento_sia_sih", "tp_procedimento"]
+nomes = ["no_procedimento_sia_sih"]
+de = [["co_procedimento_sia_sih", "tp_procedimento"]]
+
+[[referencia]]
+tabela = "tb_grupo"
+chave = ["co_grupo"]
+nomes = ["no_grupo"]
+de = [["co_grupo"]]
+
+[[referencia]]
+tabela = "tb_sub_grupo"
+chave = ["co_grupo", "co_sub_grupo"]
+nomes = ["no_sub_grupo"]
+de = [["co_grupo", "co_sub_grupo"]]
+
+[[referencia]]
+tabela = "tb_forma_organizacao"
+chave = ["co_grupo", "co_sub_grupo", "co_forma_organizacao"]
+nomes = ["no_forma_organizacao"]
+de = [["co_grupo", "co_sub_grupo", "co_forma_organizacao"]]
