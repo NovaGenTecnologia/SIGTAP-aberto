@@ -13,3 +13,6 @@ workspace = true
 [dependencies]
 sa-core = { path = "../core" }
 sa-sources = { path = "../sources" }
+
+[dev-dependencies]
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }

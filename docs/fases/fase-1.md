@@ -79,4 +79,54 @@ Interface gráfica; território; consulta para o usuário (Fase 2).
 
 ## 2. Fechamento
 
-(preenchido ao final da fase)
+Fechamento: 30/09/2026, 19h. Evidências: `crates/packs/tests/sigtap_real.rs` e
+`crates/sources/tests/zips_reais.rs` no Linux (ambiente de nuvem) e no Windows do cliente
+(`scripts/windows/provar_fase1.log`, execução das 16h44 às 17h33). **Fase 1 fechada: 16 de 16
+itens cumpridos**, com as ressalvas da seção 2.3.
+
+### 2.1 Validação item a item
+
+| Id | Resultado | Evidência |
+|----|-----------|-----------|
+| E01 | Cumprido | 4 testes de `Competencia` (ida e volta, virada de ano, 225 meses de 200801 a 202609, inválidos com mensagem) |
+| E02 | Cumprido | Linux e Windows: 225 ZIPs, **8.442 arquivos, 64.310.859 registros** lidos sem erro |
+| E03 | Cumprido | Teste com a linha `REPLACE(DS_REGRA_CONDICIONADA,CHR(10),NULL)`; 7 leiautes defeituosos sintéticos recusados |
+| E04 | Cumprido | Zip-bomba (razão e tamanho), 4 caminhos perigosos e arquivo que não é ZIP recusados, com mensagem |
+| E05 | Cumprido | `safe_ident` recusa 8 nomes maliciosos; manifesto `sigtap.toml` normaliza o nome real |
+| E06 | Cumprido | Esquema (`sa_competencia`, `sa_tabela`, `sa_leiaute`, `sa_ordem`, tabela de conteúdo + `__vig` por tabela); proveniência com arquivo, versão e SHA-256 (teste) |
+| E07 | Cumprido | Carga completa: Linux 450 s, Windows 699 s (ambas rodando em paralelo com outros dois testes); banco de **99,7 MB** nos dois |
+| E08 | Cumprido | **8.442 arquivos de tabela (5,2 GB) e 8.442 leiautes idênticos byte a byte**, no Linux e no Windows (SHA-256 de cada arquivo) |
+| E09 | Cumprido | Toda carga em ordem é incremental (competência nova anexada); o banco resultante tem o mesmo resumo lógico que o montado fora de ordem (E10) |
+| E10 | Cumprido | Retroativo (201705 e 200801 carregadas por último), remover e recarregar e republicação derivada de ZIP real: resumo lógico `c87c809f…` idêntico ao da carga em ordem, **igual no Linux e no Windows**; 7 testes sintéticos (4 ordens de carga, republicação, remoção) |
+| E11 | Cumprido | `manifestos/sigtap_chaves.toml`; **8.307 pares (tabela, competência)** sem chave repetida; `rl_procedimento_renases` sem chave (linhas inteiras repetidas em 93 competências) |
+| E12 | Cumprido | 5 testes contra servidor FTP falso (uma conexão para a lista, queda no meio com retomada por REST no byte certo, arquivo inválido descartado, cancelamento com parcial guardado, importação por pasta). Windows: listagem real do FTP (225 competências) e download real de `TabelaUnificada_202609_v2609171117.zip` (2.155.846 bytes), verificado, com o mesmo SHA-256 do arquivo já existente |
+| E13 | Cumprido | CLI no Windows: `listar-ftp`, `baixar --ultima`, `carregar` (2,9 s), `conferir` (41 arquivos idênticos), `competencias`. No Linux também `reconstruir` e o erro orientado de competência não carregada |
+| E14 | Cumprido | `docs/fontes/sigtap.md` gerado dos 225 leiautes |
+| E15 | Cumprido | 19.010, 100.754, 32.181/32.183 e 11.522 do documento-mestre = intervalos com histórico; vigentes em 202609: 12.407, 82.103, 14.246 e 5.766. Documento-mestre corrigido |
+| E16 | Cumprido | Este fechamento; diário; plano e documento-mestre |
+
+Total de testes do workspace: 52 (unitários e sintéticos), mais 5 provas com dados reais.
+
+### 2.2 Achados da fase
+
+- 1.342 dos 8.442 arquivos não estão em ordem de bytes: a ordem física é guardada (`sa_ordem`)
+  para a reconstrução ser idêntica.
+- Registros com CRLF e LF dentro do texto em `tb_regra_condicionada`: separar por linha erra
+  9 registros; a leitura por largura acerta todos.
+- `rl_procedimento_tuss` vazia em **todas** as competências desde 201404.
+- Chaves: `tb_sia_sih` repete código entre ambulatorial (A) e hospitalar (H); `tb_cid` repete
+  `CO_CID` em algumas competências (chave com `TP_AGRAVO`).
+- Republicações reais: 201404 (em 2020), 201808 (em 2021), 202507–202602 (em 2025–2026).
+
+### 2.3 Ressalvas
+
+- **Tempo de carga medido com concorrência** (três testes em paralelo); não há medida isolada.
+  O primeiro uso só carrega a competência vigente (2,9 s no Windows); o histórico completo é
+  opcional.
+- **No Windows, o passo 1 do `provar_fase1.bat` rodou também as provas com dados reais em modo
+  de depuração** (34 min), porque a variável de ambiente foi definida cedo demais. Os resultados
+  são válidos; o script foi corrigido para ligar as provas só a partir do passo 2.
+- **Acentos na saída da CLI** aparecem trocados no prompt clássico do Windows (página de código
+  850). Os scripts passam a usar `chcp 65001`; a interface gráfica (Fase 2) não é afetada.
+- `remover` e `reconstruir` pela CLI não foram executados no Windows (a lógica foi provada no
+  Windows pelos testes de retroativo e reconstrução).

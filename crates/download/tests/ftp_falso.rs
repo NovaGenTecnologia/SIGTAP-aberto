@@ -311,3 +311,40 @@ fn cancelamento_para_e_guarda_o_parcial() {
     assert!(parcial > 0 && parcial < 2_000_000);
     assert!(!d.join("x.zip").exists());
 }
+
+#[test]
+fn importacao_manual_copia_validos_e_recusa_o_resto() {
+    use std::io::Write as _;
+    let origem = dir_temp("importar-origem");
+    let destino = dir_temp("importar-destino");
+    // ZIP válido mínimo: uma tabela com leiaute e um registro.
+    let bom = origem.join("TabelaUnificada_202609_v2609171117.zip");
+    let mut w = zip::ZipWriter::new(std::fs::File::create(&bom).unwrap());
+    w.start_file("tb_a_layout.txt", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    w.write_all(b"Coluna,Tamanho,Inicio,Fim,Tipo\r\nCO,2,1,2,VARCHAR2\r\n")
+        .unwrap();
+    w.start_file("tb_a.txt", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    w.write_all(b"01\r\n").unwrap();
+    w.finish().unwrap();
+    std::fs::write(
+        origem.join("TabelaUnificada_202608_v2608141139.zip"),
+        b"corrompido",
+    )
+    .unwrap();
+    std::fs::write(origem.join("outro_arquivo.zip"), b"ignorado").unwrap();
+    let (ok, recusados) = sa_download::sigtap::importar_pasta(&origem, &destino).unwrap();
+    assert_eq!(
+        ok,
+        vec![destino.join("TabelaUnificada_202609_v2609171117.zip")]
+    );
+    assert_eq!(recusados.len(), 1);
+    assert_eq!(recusados[0].0, "TabelaUnificada_202608_v2608141139.zip");
+    assert!(
+        !destino
+            .join("TabelaUnificada_202608_v2608141139.zip")
+            .exists()
+    );
+    assert!(!destino.join("outro_arquivo.zip").exists());
+}

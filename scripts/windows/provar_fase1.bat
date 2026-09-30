@@ -2,11 +2,11 @@
 rem Provas da Fase 1 no Windows (demora 20 a 40 minutos). Resultado: provar_fase1.log.
 rem Usa os ZIPs de ..\historico_zips (fora do repositorio) e grava em saida\prova_fase1\.
 setlocal
+chcp 65001 >nul
 set "LOG=%~dp0provar_fase1.log"
 cd /d "%~dp0..\.."
 set "RAIZ=%CD%"
 call "%~dp0sincronizar_git.bat"
-set "SA_SIGTAP_ZIPS=%RAIZ%\..\historico_zips"
 set "PROVA=%RAIZ%\saida\prova_fase1"
 if exist "%PROVA%" rmdir /s /q "%PROVA%"
 mkdir "%PROVA%"
@@ -16,6 +16,8 @@ cargo --version >> "%LOG%" 2>&1
 echo --- 1. testes do workspace %time% >> "%LOG%"
 cargo test --workspace --locked >> "%LOG%" 2>&1
 echo CODIGO_TESTES=%errorlevel% >> "%LOG%"
+rem As provas com dados reais so ligam daqui em diante (no passo 1 ficam desligadas).
+set "SA_SIGTAP_ZIPS=%RAIZ%\..\historico_zips"
 echo --- 2. leitura dos ZIPs reais %time% >> "%LOG%"
 cargo test --release --locked -p sa-sources --test zips_reais -- --nocapture >> "%LOG%" 2>&1
 echo CODIGO_LEITURA=%errorlevel% >> "%LOG%"

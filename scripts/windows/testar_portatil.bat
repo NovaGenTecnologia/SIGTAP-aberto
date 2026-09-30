@@ -3,6 +3,7 @@ rem Prova de portabilidade: copia o .exe para uma pasta vazia, abre o programa p
 rem fecha e verifica se algo foi gravado fora da pasta. Resultado: testar_portatil.log.
 rem Rode compilar.bat antes.
 setlocal
+chcp 65001 >nul
 set "LOG=%~dp0testar_portatil.log"
 cd /d "%~dp0..\.."
 set "RAIZ=%CD%"

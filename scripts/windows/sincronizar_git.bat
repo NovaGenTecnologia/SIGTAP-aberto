@@ -4,6 +4,7 @@ rem ambiente de desenvolvimento (_sincronizacao\repo.bundle). Nao altera arquivo
 rem so posiciona o git no ultimo commit e restaura a pasta .github, que o canal de copia
 rem nao consegue gravar. Resultado: sincronizar_git.log nesta pasta.
 setlocal
+chcp 65001 >nul
 set "LOG=%~dp0sincronizar_git.log"
 cd /d "%~dp0..\.."
 echo === sincronizar_git.bat %date% %time% > "%LOG%"

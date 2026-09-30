@@ -2,6 +2,7 @@
 rem Compila o SIGTAP Aberto (release) e monta a pasta portatil em saida\SIGTAP-Aberto\.
 rem Resultado: compilar.log nesta pasta.
 setlocal
+chcp 65001 >nul
 set "LOG=%~dp0compilar.log"
 cd /d "%~dp0..\.."
 call "%~dp0sincronizar_git.bat"

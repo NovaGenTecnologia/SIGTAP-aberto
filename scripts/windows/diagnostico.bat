@@ -2,6 +2,7 @@
 rem Diagnostico do ambiente de compilacao do SIGTAP Aberto. So LE informacoes.
 rem Resultado: diagnostico.log nesta pasta.
 setlocal
+chcp 65001 >nul
 set "LOG=%~dp0diagnostico.log"
 echo === Diagnostico SIGTAP Aberto %date% %time% > "%LOG%"
 ver >> "%LOG%"

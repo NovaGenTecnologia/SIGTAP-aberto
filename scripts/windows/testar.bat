@@ -1,6 +1,7 @@
 @echo off
 rem Roda todos os testes do SIGTAP Aberto. Resultado: testar.log nesta pasta.
 setlocal
+chcp 65001 >nul
 set "LOG=%~dp0testar.log"
 cd /d "%~dp0..\.."
 call "%~dp0sincronizar_git.bat"
