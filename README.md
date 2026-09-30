@@ -40,6 +40,7 @@ A versão do Rust é fixada em `rust-toolchain.toml`; o `rustup` instala a certa
 Windows (dois cliques ou no terminal, a partir de `scripts\windows\`):
 
 ```bat
+sincronizar_git.bat :: monta o histórico git a partir de _sincronizacao\repo.bundle (chamado pelos outros)
 diagnostico.bat   :: confere Rust, Git, Build Tools e WebView2; grava diagnostico.log
 testar.bat        :: roda todos os testes; grava testar.log
 compilar.bat      :: gera saida\SIGTAP-Aberto\sigtap-aberto.exe; grava compilar.log

@@ -54,3 +54,4 @@ desktop.ini
 .DS_Store
 crates/app/gen/
 saida/
+_sincronizacao/

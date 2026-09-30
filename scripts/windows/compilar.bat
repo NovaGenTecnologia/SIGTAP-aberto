@@ -4,6 +4,7 @@ rem Resultado: compilar.log nesta pasta.
 setlocal
 set "LOG=%~dp0compilar.log"
 cd /d "%~dp0..\.."
+call "%~dp0sincronizar_git.bat"
 set "RAIZ=%CD%"
 echo === compilar.bat %date% %time% > "%LOG%"
 cargo --version >> "%LOG%" 2>&1

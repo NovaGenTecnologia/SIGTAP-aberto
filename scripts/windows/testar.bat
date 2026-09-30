@@ -3,6 +3,7 @@ rem Roda todos os testes do SIGTAP Aberto. Resultado: testar.log nesta pasta.
 setlocal
 set "LOG=%~dp0testar.log"
 cd /d "%~dp0..\.."
+call "%~dp0sincronizar_git.bat"
 echo === testar.bat %date% %time% > "%LOG%"
 cargo --version >> "%LOG%" 2>&1
 rustc --version >> "%LOG%" 2>&1
