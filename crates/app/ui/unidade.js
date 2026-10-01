@@ -164,6 +164,7 @@ const marca = (tem) => el("span", { class: "tem " + (tem ? "sim" : "nao"), "aria
 function vereditoAptidao(a) {
   const semExigencia = !a.habilitacao.exige && !a.servico.exige && !a.leito.exige;
   if (semExigencia) return ["livre", "Sem exigência de cadastro", "O SIGTAP não pede habilitação, serviço nem leito para este procedimento."];
+  if (!a.apta && a.habilitacao.atende) return ["ressalva", "Serviço não achado no cadastro", "A habilitação confere. O serviço exigido não está entre os serviços próprios do arquivo público; pode ser terceirizado."];
   if (!a.apta) return ["nao", "Não apta pelo cadastro", "Pelo CNES carregado, falta o que está marcado com ✕."];
   if (a.leito.exige && !a.leito.atende) return ["ressalva", "Apta, com ressalva de leito", "Habilitação e serviço conferem; o tipo de leito exigido não foi achado no cadastro."];
   return ["apta", "Apta pelo cadastro", "O CNES carregado tem o que o SIGTAP exige."];
@@ -255,6 +256,7 @@ function blocoRede(codigo) {
       title: `${F.inteiro(d.aptos)} de ${F.inteiro(d.estabelecimentos)} estabelecimentos. Clique para ver a lista.`,
       onclick: () => carregar(esc, !(abrir && esc === escopo)).catch((e) => limpar(lista).append(erro(e))) },
       el("b", { text: F.inteiro(d.aptos) }), el("span", { text: rotulo })) : null;
+    if (r.exige_servico) caixa.append(el("span", { class: "quieto pequeno", text: "Conta só quem tem o serviço como próprio: o arquivo público do CNES não traz serviço terceirizado." }));
     caixa.append(el("div", { class: "rede-ns" },
       (botao("municipio", r.municipio.nome || "no município", r.municipio)),
       (botao("regiao", r.regiao ? `região de saúde ${capitalizar(r.regiao.nome || "")}` : "", r.regiao)),

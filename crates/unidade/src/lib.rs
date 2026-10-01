@@ -694,6 +694,7 @@ pub fn rede(
     Ok(json!({
         "procedimento": r_uf.procedimento,
         "exige": r_uf.exige,
+        "exige_servico": r_uf.exige_servico,
         "competencia_cnes": r_uf.competencia_cnes,
         "competencia_sigtap": r_uf.competencia_sigtap,
         "regra_confirmada": false,

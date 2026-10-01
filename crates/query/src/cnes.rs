@@ -227,6 +227,8 @@ pub struct Rede {
     pub competencia_sigtap: String,
     /// O procedimento exige habilitação ou serviço? Se não, a lista não se aplica.
     pub exige: bool,
+    /// O procedimento exige serviço/classificação? A contagem então só vê serviço próprio.
+    pub exige_servico: bool,
     /// Estabelecimentos do escopo.
     pub no_escopo: u64,
     pub aptos: u64,
@@ -234,6 +236,11 @@ pub struct Rede {
     pub estabelecimentos: Vec<Estabelecimento>,
     pub regra_confirmada: bool,
 }
+
+/// O arquivo público de serviços (SR) só traz serviço próprio: nos seis arquivos de MS conferidos
+/// (01/2008 a 08/2026) nenhuma linha é de serviço terceirizado, e a unidade conferida no site do
+/// CNES tinha 17 pares terceirizados que não estão no arquivo. Ver `docs/fontes/cnes.md`.
+pub const AVISO_TERCEIRIZADOS: &str = "O arquivo público do CNES traz só os serviços próprios. Se a unidade presta este serviço por um terceiro contratado, ele não aparece aqui: confira no site do CNES (aba Serviços e classificação) antes de concluir.";
 
 /// CNES -> habilitações em vigor.
 type HabilitacoesPorCnes = HashMap<String, HashSet<String>>;
@@ -995,9 +1002,10 @@ impl ConsultaCnes {
         let serv_ok = pares.is_empty() || pares.iter().any(|p| p.tem);
         if !serv_ok {
             motivos.push(format!(
-                "Falta serviço/classificação: o procedimento exige um destes e a unidade não tem nenhum: {}.",
+                "Serviço/classificação não achado entre os serviços próprios: o procedimento exige um destes e nenhum está no arquivo público do CNES para a unidade: {}.",
                 pares.iter().map(|p| format!("{}/{}", p.servico.codigo, p.classificacao.codigo)).collect::<Vec<_>>().join(", ")
             ));
+            avisos.push(AVISO_TERCEIRIZADOS.to_string());
         }
 
         // Leito (correspondência por manifesto; código igual quando não há linha).
@@ -1169,6 +1177,7 @@ impl ConsultaCnes {
             competencia_cnes: self.competencia_de("ST"),
             competencia_sigtap: comp.to_string(),
             exige,
+            exige_servico: !ex.servicos.is_empty(),
             no_escopo: 0,
             aptos: 0,
             estabelecimentos: Vec::new(),
