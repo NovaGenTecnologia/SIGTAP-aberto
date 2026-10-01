@@ -6,7 +6,6 @@ chcp 65001 >nul
 set "LOG=%~dp0provar_fase1.log"
 cd /d "%~dp0..\.."
 set "RAIZ=%CD%"
-call "%~dp0sincronizar_git.bat"
 set "PROVA=%RAIZ%\saida\prova_fase1"
 if exist "%PROVA%" rmdir /s /q "%PROVA%"
 mkdir "%PROVA%"

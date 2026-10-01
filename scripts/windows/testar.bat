@@ -4,7 +4,6 @@ setlocal
 chcp 65001 >nul
 set "LOG=%~dp0testar.log"
 cd /d "%~dp0..\.."
-call "%~dp0sincronizar_git.bat"
 echo === testar.bat %date% %time% > "%LOG%"
 cargo --version >> "%LOG%" 2>&1
 rustc --version >> "%LOG%" 2>&1

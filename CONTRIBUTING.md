@@ -60,7 +60,7 @@ cargo test --workspace
 cargo build --release -p sa-app
 ```
 
-No Windows, `scripts\windows\testar.bat` e `compilar.bat` fazem o mesmo e gravam um `.log`. Para rodar os testes com dados reais, aponte `SA_ZIPS_HISTORICO` e `SA_SIGTAP_BANCO_CONSULTA` para os arquivos oficiais que você baixou. Sem eles, esses testes terminam sem rodar e **não provam nada**.
+No Windows, `scripts\windows\compilar.bat` confere o ambiente, testa, compila e empacota, e grava um `.log`; `testar.bat` roda só os testes. Para rodar os testes com dados reais, aponte `SA_ZIPS_HISTORICO` e `SA_SIGTAP_BANCO_CONSULTA` para os arquivos oficiais que você baixou. Sem eles, esses testes terminam sem rodar e **não provam nada**.
 
 Mexeu na interface? Rode a ponte de desenvolvimento (`scripts/dev/ponte_ui.py`), que serve a tela no navegador com dados simulados, e confira também em janela estreita (1024 px).
 

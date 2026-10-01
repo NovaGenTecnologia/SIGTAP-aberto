@@ -54,14 +54,20 @@ Para outras competências, use **Módulos e dados**: histórico completo, últim
 
 O `rustup` instala sozinho a versão fixada em `rust-toolchain.toml`.
 
-No Windows, dê dois cliques ou rode em `scripts\windows\`:
+No Windows, o caminho é um só: dois cliques em `scripts\windows\compilar.bat`. Ele confere o ambiente (Rust, ferramentas C++, WebView2, espaço em disco), mostra de qual versão do código está compilando, roda os testes, compila e empacota:
 
 ```bat
-diagnostico.bat    :: confere Rust, Git, Build Tools e WebView2
-testar.bat         :: roda todos os testes
-compilar.bat       :: gera saida\SIGTAP-Aberto\sigtap-aberto.exe
-provar_fase2.bat   :: compila e guia a conferência manual da Fase 2
+compilar.bat               :: confere, testa, compila e empacota
+compilar.bat -Atualizar    :: antes, traz a versão mais nova do GitHub (só se a pasta não tiver alterações)
+compilar.bat -SemTestes    :: mais rápido; não serve como prova
 ```
+
+O resultado fica em `saida\`:
+
+- `SIGTAP-Aberto\sigtap-aberto.exe`: o programa pronto para usar, com a linha de comando ao lado;
+- `SIGTAP-Aberto-v<versão>-windows-x64.zip` e o `.sha256`: o mesmo pacote que o lançamento do GitHub publica.
+
+Se algo faltar, o script para e diz o que instalar ou o que fazer. Outros scripts da pasta: `diagnostico.bat` (só lê o ambiente), `testar.bat` (só os testes), `provar_fase2.bat` (prova completa da fase, com dados reais).
 
 Cada script grava um `.log` ao lado. No Linux ou no terminal:
 
