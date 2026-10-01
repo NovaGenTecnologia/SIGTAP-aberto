@@ -190,6 +190,15 @@ O `compilar.bat` informa no fim se os dados de `saida\SIGTAP-Aberto\dados` foram
 
 Prova (Linux): teste `versao_do_banco_decide_entre_usar_refazer_ou_bloquear` com 2 ZIPs reais e o território real (mesma versão: abre direto; versão 0: guarda à parte e refaz as 2 competências; versão 99: bloqueia e o arquivo fica idêntico); `compara_versoes_do_esquema` e `le_a_versao_sem_alterar_o_banco`; suíte completa com dados reais sem falhas; avisos conferidos na ponte (`--versao-anterior`, `--bloqueio`). Não testado: no Windows.
 
+### 2.4 Lançamentos (01/10/2026)
+
+- **v0.1.0 (interna), publicada.** Windows x64 e ARM64. O fluxo conferiu a arquitetura de cada .exe (8664 e AA64) e o conteúdo dos ZIPs; baixei os pacotes publicados, os SHA-256 bateram e o atualizador leu o lançamento real e escolheu o pacote certo para cada arquitetura.
+- **v0.1.1 (preparada, falta a tag).** Pacotes para todos os sistemas em `pacotes.yml`: Windows x64/ARM64 (`.exe` direto e `.zip`), Linux x64/ARM64 (`.AppImage`, montado no Ubuntu 22.04) e macOS universal (`.zip` com o `.app`, Intel e Apple). Os cinco compilaram e passaram na conferência de arquitetura (`lipo` no macOS, `file` no Linux). O AppImage x64 rodou no Linux daqui e gravou os dados ao lado do arquivo. O lançamento publica tudo com `SHA256SUMS.txt` e uma tabela de downloads nas notas.
+- Pasta de dados: ao lado do `.exe` (Windows), do `.AppImage` (Linux) e da pasta do `.app` (macOS). No macOS aberto direto do download (App Translocation), o programa pede para mover a pasta.
+- Atualizador: só o Windows troca o executável sozinho; no Linux e no macOS ele avisa e abre a página do lançamento.
+- Tags não podem ser enviadas desta sessão (política de rede): quem lança cria a tag no computador do projeto.
+- Não testado: Linux e macOS em computadores reais com tela; pacotes ARM em máquinas ARM; atualizador do Windows de ponta a ponta (será provado com a 0.1.1).
+
 ## 3. Fechamento
 
 (preenchido ao final da fase)
