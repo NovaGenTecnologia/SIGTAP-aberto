@@ -125,10 +125,10 @@ def main():
                 return {"novos": [{"competencia": "202610", "motivo": "nova", "tamanho": 2_100_000}, {"competencia": "202609", "motivo": "republicada", "tamanho": 2_000_000}], "escopo": "2", "bytes": 4_100_000}
             return {"novos": [], "escopo": None, "bytes": 0}
         if cmd == "abrir_site": open("/tmp/ponte_sites.log", "a").write(args["url"] + "\n"); return None
-        if cmd == "info_programa": return {"versao": "0.0.1", "repositorio": "NovaGenTecnologia/sigtap-aberto", "site_sigtap": "http://sigtap.datasus.gov.br/tabela-unificada/app/sec/inicio.jsp", "so": "windows", "arquitetura": "x86_64", "windows": "Microsoft Windows [versão 10.0.19045.5000]", "webview2": "141.0.3537.57"}
+        if cmd == "info_programa": return {"versao": "0.0.1", "repositorio": "NovaGenTecnologia/SIGTAP-aberto", "site_sigtap": "http://sigtap.datasus.gov.br/tabela-unificada/app/sec/inicio.jsp", "so": "windows", "arquitetura": "x86_64", "windows": "Microsoft Windows [versão 10.0.19045.5000]", "webview2": "141.0.3537.57"}
         if cmd == "consultar_atualizacao":
             time.sleep(0.5)
-            nova = {"versao": "0.2.0", "notas": "Árvore de CIDs, verificação do banco e atualizador.", "pagina": "https://github.com/NovaGenTecnologia/sigtap-aberto/releases/tag/v0.2.0", "zip_nome": "x.zip", "zip_url": "", "zip_tamanho": 9_000_000, "soma_url": ""} if a.atualizacao else None
+            nova = {"versao": "0.2.0", "notas": "Árvore de CIDs, verificação do banco e atualizador.", "pagina": "https://github.com/NovaGenTecnologia/SIGTAP-aberto/releases/tag/v0.2.0", "zip_nome": "x.zip", "zip_url": "", "zip_tamanho": 9_000_000, "soma_url": ""} if a.atualizacao else None
             return {"atual": "0.0.1", "nova": nova}
         if cmd == "atualizar_programa":
             def sim():
