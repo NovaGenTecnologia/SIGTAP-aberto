@@ -4,7 +4,7 @@
 //! `dados\sigtap.db`, ZIPs em `dados\zips\`). Use `--banco` e `--zips` para outro lugar.
 
 use sa_core::Competencia;
-use sa_download::cortesia::{Cortesia, Evento, Pedido, baixar_lista};
+use sa_download::cortesia::{Cortesia, Evento};
 use sa_download::sigtap as dl;
 use sa_packs::sigtap::BancoSigtap;
 use sa_sources::sigtap::ZipSigtap;
@@ -491,21 +491,8 @@ fn cmd_baixar(o: &Opcoes) -> Result<(), String> {
         dl::SERVIDOR,
         dl::PASTA
     );
-    let pedidos: Vec<Pedido> = plano
-        .iter()
-        .map(|d| Pedido {
-            pasta_remota: dl::PASTA.into(),
-            nome: d.nome.clone(),
-            tamanho: d.tamanho,
-        })
-        .collect();
-    let nomes: std::collections::HashMap<PathBuf, String> = pedidos
-        .iter()
-        .map(|p| (o.zips.join(format!("{}.parcial", p.nome)), p.nome.clone()))
-        .collect();
-    let feitos = baixar_lista(
-        dl::SERVIDOR,
-        &pedidos,
+    let feitos = dl::baixar(
+        &plano,
         &o.zips,
         &cortesia,
         &AtomicBool::new(false),
@@ -529,7 +516,6 @@ fn cmd_baixar(o: &Opcoes) -> Result<(), String> {
             Evento::Concluido { arquivo } => println!("  {arquivo}: concluído e verificado"),
             Evento::Progresso { .. } => {}
         },
-        |p| dl::validar_zip(p, nomes.get(p).map(String::as_str).unwrap_or_default()),
     )
     .map_err(|e| e.to_string())?;
     println!("{} arquivo(s) em {}", feitos.len(), o.zips.display());

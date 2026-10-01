@@ -91,6 +91,38 @@ pub fn listar_servidor(cortesia: &Cortesia) -> Result<Vec<Disponivel>, ErroDownl
     Ok(disponiveis(&e))
 }
 
+/// Baixa os ZIPs do plano do FTP oficial para `pasta`, um por vez, com cortesia; cada arquivo
+/// só entra na pasta depois de validado. Devolve os caminhos finais.
+pub fn baixar(
+    plano: &[Disponivel],
+    pasta: &Path,
+    cortesia: &Cortesia,
+    cancelar: &std::sync::atomic::AtomicBool,
+    progresso: impl FnMut(crate::cortesia::Evento),
+) -> Result<Vec<PathBuf>, ErroDownload> {
+    let pedidos: Vec<crate::cortesia::Pedido> = plano
+        .iter()
+        .map(|d| crate::cortesia::Pedido {
+            pasta_remota: PASTA.into(),
+            nome: d.nome.clone(),
+            tamanho: d.tamanho,
+        })
+        .collect();
+    let nomes: BTreeMap<PathBuf, String> = pedidos
+        .iter()
+        .map(|p| (pasta.join(format!("{}.parcial", p.nome)), p.nome.clone()))
+        .collect();
+    crate::cortesia::baixar_lista(
+        SERVIDOR,
+        &pedidos,
+        pasta,
+        cortesia,
+        cancelar,
+        progresso,
+        |p| validar_zip(p, nomes.get(p).map(String::as_str).unwrap_or_default()),
+    )
+}
+
 /// Confere que um arquivo é um ZIP do SIGTAP legível (nome, limites e todas as tabelas).
 /// `nome_oficial` é o nome com que ele vai ficar guardado.
 pub fn validar_zip(arquivo: &Path, nome_oficial: &str) -> Result<(), String> {

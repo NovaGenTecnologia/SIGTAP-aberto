@@ -2768,6 +2768,12 @@ name = "sa-app"
 version = "0.0.1"
 dependencies = [
  "sa-core",
+ "sa-download",
+ "sa-packs",
+ "sa-query",
+ "sa-sources",
+ "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
 ]
