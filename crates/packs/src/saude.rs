@@ -3,7 +3,7 @@
 //! A verificação abre o arquivo só para leitura: não cria nem altera nada. Um banco danificado
 //! nunca é apagado: vai para uma pasta de quarentena, para o usuário ou o projeto examinarem.
 
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -77,6 +77,56 @@ fn falha(e: &rusqlite::Error, etapa: &str) -> Verificacao {
     }
 }
 
+/// Como a versão do esquema gravada num banco se compara com a que este programa usa.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Compatibilidade {
+    /// O banco não diz a versão (vazio ou sem `sa_info`): o programa grava a dele ao abrir.
+    SemVersao,
+    /// Mesma versão: usa como está.
+    Igual,
+    /// Gravado por uma versão anterior do programa: precisa ser refeito a partir dos arquivos oficiais.
+    Anterior(String),
+    /// Gravado por uma versão mais nova do programa: não mexer; o usuário deve atualizar o programa.
+    MaisNova(String),
+}
+
+/// Lê `sa_info.versao_esquema` sem alterar o arquivo. `Ok(None)` se o banco não tem essa informação.
+pub fn versao_esquema(caminho: &Path) -> Result<Option<String>, String> {
+    let conn = Connection::open_with_flags(caminho, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| format!("não foi possível abrir {} ({e})", caminho.display()))?;
+    let tem: bool = conn
+        .query_row(
+            "SELECT count(*) > 0 FROM sqlite_master WHERE type = 'table' AND name = 'sa_info'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("não foi possível ler {} ({e})", caminho.display()))?;
+    if !tem {
+        return Ok(None);
+    }
+    conn.query_row(
+        "SELECT valor FROM sa_info WHERE chave = 'versao_esquema'",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+    .optional()
+    .map_err(|e| format!("não foi possível ler {} ({e})", caminho.display()))
+}
+
+/// Compara a versão gravada com a atual (números inteiros; texto que não é número conta como anterior).
+pub fn compatibilidade(gravada: Option<&str>, atual: &str) -> Compatibilidade {
+    let Some(g) = gravada else {
+        return Compatibilidade::SemVersao;
+    };
+    if g == atual {
+        return Compatibilidade::Igual;
+    }
+    match (g.trim().parse::<u32>(), atual.trim().parse::<u32>()) {
+        (Ok(a), Ok(b)) if a > b => Compatibilidade::MaisNova(g.to_string()),
+        _ => Compatibilidade::Anterior(g.to_string()),
+    }
+}
+
 /// Move o banco (e os arquivos auxiliares `-wal`, `-shm`, `-journal`) para uma pasta nova
 /// `<dados>/banco_com_problema_N`, junto de um `LEIAME.txt` com o motivo. Devolve a pasta.
 /// Nada é apagado.
@@ -85,9 +135,29 @@ pub fn por_em_quarentena(
     pasta_dados: &Path,
     motivo: &str,
 ) -> Result<PathBuf, String> {
+    guardar_em_pasta(
+        caminho,
+        pasta_dados,
+        "banco_com_problema",
+        &format!(
+            "Este banco foi guardado aqui pelo SIGTAP Aberto e não está mais em uso.\r\nMotivo: {motivo}\r\n\
+             O programa refez o banco a partir dos arquivos oficiais. Se o problema se repetir, \
+             envie esta pasta ao projeto (ela não contém dados de paciente) ou apague-a para liberar espaço.\r\n"
+        ),
+    )
+}
+
+/// Move o banco (e `-wal`, `-shm`, `-journal`) para uma pasta nova `<dados>/<prefixo>_N`, com um
+/// `LEIAME.txt`. Devolve a pasta. Nada é apagado.
+pub fn guardar_em_pasta(
+    caminho: &Path,
+    pasta_dados: &Path,
+    prefixo: &str,
+    leiame: &str,
+) -> Result<PathBuf, String> {
     let mut n = 1;
     let destino = loop {
-        let d = pasta_dados.join(format!("banco_com_problema_{n}"));
+        let d = pasta_dados.join(format!("{prefixo}_{n}"));
         if !d.exists() {
             break d;
         }
@@ -112,20 +182,51 @@ pub fn por_em_quarentena(
             })?;
         }
     }
-    let _ = std::fs::write(
-        destino.join("LEIAME.txt"),
-        format!(
-            "Este banco foi guardado aqui pelo SIGTAP Aberto e não está mais em uso.\r\nMotivo: {motivo}\r\n\
-             O programa refez o banco a partir dos arquivos oficiais. Se o problema se repetir, \
-             envie esta pasta ao projeto (ela não contém dados de paciente) ou apague-a para liberar espaço.\r\n"
-        ),
-    );
+    let _ = std::fs::write(destino.join("LEIAME.txt"), leiame);
     Ok(destino)
 }
 
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn compara_versoes_do_esquema() {
+        assert_eq!(compatibilidade(None, "2"), Compatibilidade::SemVersao);
+        assert_eq!(compatibilidade(Some("2"), "2"), Compatibilidade::Igual);
+        assert_eq!(
+            compatibilidade(Some("1"), "2"),
+            Compatibilidade::Anterior("1".into())
+        );
+        assert_eq!(
+            compatibilidade(Some("3"), "2"),
+            Compatibilidade::MaisNova("3".into())
+        );
+        assert_eq!(
+            compatibilidade(Some("x"), "2"),
+            Compatibilidade::Anterior("x".into())
+        );
+    }
+
+    #[test]
+    fn le_a_versao_sem_alterar_o_banco() {
+        let d = pasta("versao");
+        let vazio = d.join("vazio.db");
+        Connection::open(&vazio)
+            .unwrap()
+            .execute_batch("CREATE TABLE t(x)")
+            .unwrap();
+        assert_eq!(versao_esquema(&vazio).unwrap(), None);
+        let com = d.join("com.db");
+        Connection::open(&com)
+            .unwrap()
+            .execute_batch("CREATE TABLE sa_info(chave TEXT PRIMARY KEY, valor TEXT); INSERT INTO sa_info VALUES('versao_esquema','7')")
+            .unwrap();
+        let antes = std::fs::read(&com).unwrap();
+        assert_eq!(versao_esquema(&com).unwrap().as_deref(), Some("7"));
+        assert_eq!(std::fs::read(&com).unwrap(), antes);
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     fn pasta(nome: &str) -> PathBuf {
         let p = std::env::temp_dir().join(format!("sa_saude_{nome}_{}", std::process::id()));

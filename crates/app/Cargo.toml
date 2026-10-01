@@ -27,6 +27,7 @@ serde_json = "1"
 
 [dev-dependencies]
 sa-download = { path = "../download", features = ["servidor-falso"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 
 [features]
 # Serve a interface embutida no executável (sem servidor de desenvolvimento).

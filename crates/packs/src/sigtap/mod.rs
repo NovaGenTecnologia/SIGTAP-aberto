@@ -291,27 +291,36 @@ impl BancoSigtap {
         conn.execute_batch(
             "PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=30000;",
         )?;
-        conn.execute_batch(ESQUEMA_META)?;
-        let versao: Option<String> = conn
-            .query_row(
+        // A versão é conferida antes de criar qualquer tabela: um banco de outra versão do
+        // programa não pode receber nada (o aplicativo decide se refaz ou pede atualização).
+        let tem_info: bool = conn.query_row(
+            "SELECT count(*) > 0 FROM sqlite_master WHERE type='table' AND name='sa_info'",
+            [],
+            |r| r.get(0),
+        )?;
+        let versao: Option<String> = if tem_info {
+            conn.query_row(
                 "SELECT valor FROM sa_info WHERE chave='versao_esquema'",
                 [],
                 |r| r.get(0),
             )
-            .optional()?;
-        match versao {
-            None => {
-                conn.execute(
-                    "INSERT INTO sa_info(chave, valor) VALUES('versao_esquema', ?1)",
-                    [VERSAO_ESQUEMA],
-                )?;
-            }
-            Some(v) if v == VERSAO_ESQUEMA => {}
-            Some(v) => {
-                return Err(ErroBanco::Inconsistencia(format!(
-                    "esquema versão {v}, este programa usa a {VERSAO_ESQUEMA}"
-                )));
-            }
+            .optional()?
+        } else {
+            None
+        };
+        if let Some(v) = &versao
+            && v != VERSAO_ESQUEMA
+        {
+            return Err(ErroBanco::Inconsistencia(format!(
+                "esquema versão {v}, este programa usa a {VERSAO_ESQUEMA}"
+            )));
+        }
+        conn.execute_batch(ESQUEMA_META)?;
+        if versao.is_none() {
+            conn.execute(
+                "INSERT INTO sa_info(chave, valor) VALUES('versao_esquema', ?1)",
+                [VERSAO_ESQUEMA],
+            )?;
         }
         Ok(Self {
             conn,

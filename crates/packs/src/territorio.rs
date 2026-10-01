@@ -12,7 +12,8 @@ use serde::Serialize;
 use std::fmt;
 use std::path::Path;
 
-const VERSAO_ESQUEMA: &str = "1";
+/// Versão do esquema de `territorio.db`. Mude ao alterar tabelas: bancos antigos são refeitos dos JSONs guardados.
+pub const VERSAO_ESQUEMA: &str = "1";
 
 const ESQUEMA: &str = "
 CREATE TABLE IF NOT EXISTS sa_info(chave TEXT PRIMARY KEY, valor TEXT NOT NULL);
@@ -119,27 +120,35 @@ impl BancoTerritorio {
     }
 
     fn preparar(conn: Connection) -> Result<Self, ErroTerritorio> {
-        conn.execute_batch(ESQUEMA)?;
-        let v: Option<String> = conn
-            .query_row(
+        // Confere a versão antes de criar tabelas: banco de outra versão do programa não é alterado.
+        let tem_info: bool = conn.query_row(
+            "SELECT count(*) > 0 FROM sqlite_master WHERE type='table' AND name='sa_info'",
+            [],
+            |r| r.get(0),
+        )?;
+        let v: Option<String> = if tem_info {
+            conn.query_row(
                 "SELECT valor FROM sa_info WHERE chave = 'versao_esquema'",
                 [],
                 |r| r.get(0),
             )
-            .optional()?;
-        match v.as_deref() {
-            None => {
-                conn.execute(
-                    "INSERT INTO sa_info VALUES('versao_esquema', ?1)",
-                    [VERSAO_ESQUEMA],
-                )?;
-            }
-            Some(VERSAO_ESQUEMA) => {}
-            Some(x) => {
-                return Err(ErroTerritorio::Inconsistencia(format!(
-                    "esquema versão {x}, este programa usa a {VERSAO_ESQUEMA}. Apague dados\\territorio.db e atualize o território"
-                )));
-            }
+            .optional()?
+        } else {
+            None
+        };
+        if let Some(x) = v.as_deref()
+            && x != VERSAO_ESQUEMA
+        {
+            return Err(ErroTerritorio::Inconsistencia(format!(
+                "esquema versão {x}, este programa usa a {VERSAO_ESQUEMA}"
+            )));
+        }
+        conn.execute_batch(ESQUEMA)?;
+        if v.is_none() {
+            conn.execute(
+                "INSERT INTO sa_info VALUES('versao_esquema', ?1)",
+                [VERSAO_ESQUEMA],
+            )?;
         }
         Ok(Self { conn })
     }

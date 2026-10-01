@@ -227,10 +227,27 @@ function pareceBancoDanificado(msg) { return /malformed|corrupt|not a database|d
 
 /** Abertura: se o programa guardou um banco danificado, avisa e refaz sozinho. */
 function tratarRecuperacao() {
+  const bloqueio = E.situacao && E.situacao.bloqueio;
+  if (bloqueio) {
+    mostrarAviso("bloqueio", { nivel: "erro", texto: bloqueio,
+      acoes: [{ rotulo: "Procurar atualizações", primaria: true, fn: () => ir({ tipo: "modulos" }) }] });
+  } else tirarAviso("bloqueio");
   const r = E.situacao && E.situacao.recuperacao;
   if (!r) { tirarAviso("recuperacao"); return; }
   const pode = (r.zips > 0 && r.bancos.includes("tabela de procedimentos")) || r.territorio_local;
   const onde = r.pastas.join(" e ");
+  const soVersao = (r.motivos || []).length > 0 && r.motivos.every((m) => m === "versao_anterior");
+  if (soVersao) {
+    mostrarAviso("recuperacao", {
+      nivel: "info",
+      texto: `Esta versão do programa organiza os dados de outro jeito. ` +
+        (pode ? `Os dados estão sendo refeitos a partir dos ${r.zips} ZIP(s) já guardados, sem baixar de novo. ` : "Baixe os dados de novo na janela que se abre. ") +
+        `A cópia antiga ficou em ${onde} e pode ser apagada depois.`,
+      acoes: [{ rotulo: "Ver em Módulos e dados", fn: () => ir({ tipo: "modulos" }) }],
+    });
+    if (pode && !E.tarefa.ativa) { E.recuperando = true; comecar("recriar_banco", { forcar: false }, "Atualizando os dados para esta versão"); }
+    return;
+  }
   mostrarAviso("recuperacao", {
     nivel: "erro",
     texto: `O banco de dados (${r.bancos.join(" e ")}) estava danificado. O arquivo foi guardado em ${onde}. ` +

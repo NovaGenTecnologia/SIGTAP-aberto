@@ -108,8 +108,10 @@ pub struct Servico {
     servidor: Mutex<Option<Vec<dl::Disponivel>>>,
     pub cancelar: Arc<AtomicBool>,
     pub ocupado: Arc<AtomicBool>,
-    /// Banco danificado achado na abertura (já guardado em quarentena), à espera de refazer.
+    /// Banco danificado ou de versão anterior achado na abertura (já guardado à parte), à espera de refazer.
     recuperacao: Mutex<Option<serde_json::Value>>,
+    /// Dados gravados por uma versão mais nova do programa: nada é aberto nem alterado.
+    bloqueio: Mutex<Option<String>>,
 }
 
 impl Servico {
@@ -121,6 +123,7 @@ impl Servico {
             cancelar: Arc::new(AtomicBool::new(false)),
             ocupado: Arc::new(AtomicBool::new(false)),
             recuperacao: Mutex::new(None),
+            bloqueio: Mutex::new(None),
         }
     }
 
@@ -129,7 +132,72 @@ impl Servico {
     pub fn iniciar(&self) {
         let mut achados: Vec<String> = Vec::new();
         let mut pastas_q: Vec<String> = Vec::new();
+        let mut motivos: Vec<&str> = Vec::new();
         let antes = carregadas(&self.pastas).ok();
+        // 1. Versão do esquema: dados de versão anterior são guardados à parte e refeitos dos
+        //    arquivos oficiais guardados; dados de versão mais nova bloqueiam (nada é alterado).
+        let mut bloqueios: Vec<String> = Vec::new();
+        for (nome, caminho, atual) in [
+            (
+                "tabela de procedimentos",
+                self.pastas.sigtap_db(),
+                sa_packs::sigtap::VERSAO_ESQUEMA,
+            ),
+            (
+                "território",
+                self.pastas.territorio_db(),
+                sa_packs::territorio::VERSAO_ESQUEMA,
+            ),
+        ] {
+            if !caminho.exists() {
+                continue;
+            }
+            let Ok(gravada) = saude::versao_esquema(&caminho) else {
+                continue; // não abre: a verificação de integridade, abaixo, decide.
+            };
+            match saude::compatibilidade(gravada.as_deref(), atual) {
+                saude::Compatibilidade::Anterior(v) => {
+                    let leiame = format!(
+                        "Este banco foi gravado por uma versão anterior do SIGTAP Aberto (esquema {v}; \
+                         a versão atual usa o {atual}) e não está mais em uso.\r\n\
+                         O programa refez o banco a partir dos arquivos oficiais guardados em dados\\zips \
+                         e dados\\territorio. Pode apagar esta pasta para liberar espaço.\r\n"
+                    );
+                    match saude::guardar_em_pasta(
+                        &caminho,
+                        &self.pastas.dados,
+                        "versao_anterior",
+                        &leiame,
+                    ) {
+                        Ok(q) => {
+                            achados.push(nome.to_string());
+                            pastas_q.push(q.display().to_string());
+                            motivos.push("versao_anterior");
+                        }
+                        Err(e) => eprintln!("Aviso: {e}"),
+                    }
+                }
+                saude::Compatibilidade::MaisNova(v) => {
+                    bloqueios.push(format!("{nome} (esquema {v}; este programa usa o {atual})"))
+                }
+                _ => {}
+            }
+        }
+        if !bloqueios.is_empty() {
+            let msg = format!(
+                "Os dados em {} foram gravados por uma versão mais nova do SIGTAP Aberto: {}. \
+                 Use a versão mais nova do programa (Sobre, Procurar atualizações, ou baixe do GitHub). \
+                 Nada foi alterado.",
+                self.pastas.dados.display(),
+                bloqueios.join("; ")
+            );
+            if let Ok(mut g) = self.bloqueio.lock() {
+                *g = Some(msg);
+            }
+            return;
+        }
+        // 2. Integridade.
+        let antes_integridade = achados.len();
         for (nome, caminho) in [
             ("tabela de procedimentos", self.pastas.sigtap_db()),
             ("território", self.pastas.territorio_db()),
@@ -152,12 +220,17 @@ impl Servico {
                 );
             }
         }
+        motivos.extend(std::iter::repeat_n(
+            "danificado",
+            achados.len() - antes_integridade,
+        ));
         if !achados.is_empty() {
             let zips = dl::locais(&self.pastas.zips()).len();
             let territorio_json = self.pastas.territorio().join(ter::ARQ_IBGE).exists();
             if let Ok(mut g) = self.recuperacao.lock() {
                 *g = Some(serde_json::json!({
                     "bancos": achados,
+                    "motivos": motivos,
                     "pastas": pastas_q,
                     "zips": zips,
                     "territorio_local": territorio_json,
@@ -403,6 +476,20 @@ impl Servico {
 
     /// Situação geral para a tela inicial e "Módulos e dados".
     pub fn situacao(&self) -> Result<serde_json::Value, String> {
+        let bloqueio = self.bloqueio.lock().ok().and_then(|g| g.clone());
+        if let Some(b) = bloqueio {
+            // Dados de versão mais nova: não abre nenhum banco e nunca oferece a carga inicial.
+            return Ok(serde_json::json!({
+                "primeira_execucao": false,
+                "bloqueio": b,
+                "competencias": [],
+                "territorio": null,
+                "zips": { "arquivos": 0, "bytes": 0, "apagaveis": 0, "bytes_apagaveis": 0, "mantida": null },
+                "pasta_dados": self.pastas.dados.display().to_string(),
+                "ocupado": self.ocupado.load(Ordering::Relaxed),
+                "recuperacao": null,
+            }));
+        }
         let competencias = self
             .com_consulta(|q| q.competencias().map_err(|e| e.to_string()))
             .unwrap_or_default();
@@ -427,6 +514,7 @@ impl Servico {
         };
         Ok(serde_json::json!({
             "primeira_execucao": competencias.is_empty() || territorio.is_none(),
+            "bloqueio": null,
             "competencias": competencias,
             "territorio": territorio,
             "zips": self.zips_guardados()?,
@@ -1334,6 +1422,102 @@ mod testes {
         }
         assert!(carregadas(&ps).unwrap().len() < 3);
         let _ = std::fs::remove_dir_all(&ps.dados);
+    }
+
+    /// JSONs do território já baixados (opcional): `SA_TERRITORIO_JSON` = pasta com ibge/demas.
+    fn territorio_json() -> Option<PathBuf> {
+        let p = PathBuf::from(std::env::var("SA_TERRITORIO_JSON").ok()?);
+        p.join(ter::ARQ_IBGE).exists().then_some(p)
+    }
+
+    fn mudar_versao(db: &Path, v: &str) {
+        rusqlite::Connection::open(db)
+            .unwrap()
+            .execute(
+                "UPDATE sa_info SET valor = ?1 WHERE chave = 'versao_esquema'",
+                [v],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn versao_do_banco_decide_entre_usar_refazer_ou_bloquear() {
+        let Some(zips) = zips_reais(2) else { return };
+        let p = pastas("versao");
+        std::fs::create_dir_all(p.zips()).unwrap();
+        for (_, z) in &zips {
+            std::fs::copy(z, p.zips().join(z.file_name().unwrap())).unwrap();
+        }
+        let ter_json = territorio_json();
+        if let Some(t) = &ter_json {
+            std::fs::create_dir_all(p.territorio()).unwrap();
+            for nome in [ter::ARQ_IBGE, ter::ARQ_DEMAS, ter::ARQ_ORIGEM] {
+                if t.join(nome).exists() {
+                    std::fs::copy(t.join(nome), p.territorio().join(nome)).unwrap();
+                }
+            }
+            gravar_territorio(&p.territorio(), &p.territorio_db()).unwrap();
+        }
+        let (em, _) = emissor();
+        Servico::novo(p.clone())
+            .recriar(&em, &|_| {}, true)
+            .unwrap();
+
+        // 1. Mesma versão: abrir de novo (como depois de compilar outro .exe) usa os dados como estão.
+        for _ in 0..2 {
+            let sv = Servico::novo(p.clone());
+            sv.iniciar();
+            let s = sv.situacao().unwrap();
+            assert!(s["recuperacao"].is_null() && s["bloqueio"].is_null(), "{s}");
+            assert_eq!(s["competencias"].as_array().unwrap().len(), 2);
+            if ter_json.is_some() {
+                assert_eq!(
+                    s["primeira_execucao"], false,
+                    "com dados compatíveis não há carga inicial"
+                );
+            }
+        }
+
+        // 2. Versão anterior: guarda à parte e refaz dos ZIPs, sem carga inicial nem download.
+        mudar_versao(&p.sigtap_db(), "0");
+        let sv = Servico::novo(p.clone());
+        sv.iniciar();
+        let rec = sv.situacao().unwrap()["recuperacao"].clone();
+        assert_eq!(rec["bancos"][0], "tabela de procedimentos", "{rec}");
+        assert_eq!(rec["motivos"][0], "versao_anterior", "{rec}");
+        assert_eq!(rec["zips"], 2);
+        let guardado = p.dados.join("versao_anterior_1");
+        assert!(guardado.join("sigtap.db").exists() && guardado.join("LEIAME.txt").exists());
+        assert!(!p.sigtap_db().exists());
+        sv.recriar(&em, &|_| {}, false).unwrap();
+        sv.reabrir().unwrap();
+        let s = sv.situacao().unwrap();
+        assert_eq!(s["competencias"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            saude::versao_esquema(&p.sigtap_db()).unwrap().as_deref(),
+            Some(sa_packs::sigtap::VERSAO_ESQUEMA)
+        );
+        drop(sv);
+
+        // 3. Versão mais nova: bloqueia, não oferece carga inicial e não altera um byte.
+        mudar_versao(&p.sigtap_db(), "99");
+        let antes = std::fs::read(p.sigtap_db()).unwrap();
+        let sv = Servico::novo(p.clone());
+        sv.iniciar();
+        let s = sv.situacao().unwrap();
+        assert_eq!(s["primeira_execucao"], false);
+        assert!(
+            s["bloqueio"].as_str().unwrap().contains("versão mais nova"),
+            "{s}"
+        );
+        assert!(BancoSigtap::abrir(&p.sigtap_db()).is_err());
+        drop(sv);
+        assert_eq!(
+            std::fs::read(p.sigtap_db()).unwrap(),
+            antes,
+            "o banco mais novo foi alterado"
+        );
+        let _ = std::fs::remove_dir_all(&p.dados);
     }
 
     #[test]

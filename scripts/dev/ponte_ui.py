@@ -36,6 +36,8 @@ def main():
     ap.add_argument("--atualizacao", action="store_true", help="simula versão nova do programa no GitHub")
     ap.add_argument("--parcial", action="store_true", help="simula histórico parcial: 3 competências antigas ainda não carregadas")
     ap.add_argument("--recuperacao", action="store_true", help="simula banco danificado achado na abertura")
+    ap.add_argument("--versao-anterior", action="store_true", help="simula dados gravados por versão anterior do programa")
+    ap.add_argument("--bloqueio", action="store_true", help="simula dados gravados por versão mais nova do programa")
     a = ap.parse_args()
     eventos, trava = [], threading.Lock()
     estado = {"primeira": a.primeira, "ocupado": False, "cancelar": False}
@@ -94,7 +96,8 @@ def main():
         return dict(primeira_execucao=estado["primeira"], competencias=comps, territorio=None,
                     zips=dict(arquivos=len(z), bytes=tam, apagaveis=len(apag), bytes_apagaveis=sum(x.stat().st_size for x in apag), mantida=ult),
                     pasta_dados="(ponte de desenvolvimento)", ocupado=estado["ocupado"],
-                    recuperacao=({"bancos": ["tabela de procedimentos"], "pastas": ["D:\\SIGTAP\\dados\\banco_com_problema_1"], "zips": 3, "territorio_local": True, "competencias_antes": ["202607", "202608", "202609"]} if a.recuperacao and estado.get("recuperacao", True) else None))
+                    bloqueio=("Os dados em D:\\SIGTAP\\dados foram gravados por uma versão mais nova do SIGTAP Aberto: tabela de procedimentos (esquema 2; este programa usa o 1). Use a versão mais nova do programa (Sobre, Procurar atualizações, ou baixe do GitHub). Nada foi alterado." if a.bloqueio else None),
+                    recuperacao=({"bancos": ["tabela de procedimentos"], "motivos": ["versao_anterior" if a.versao_anterior else "danificado"], "pastas": ["D:\\SIGTAP\\dados\\" + ("versao_anterior_1" if a.versao_anterior else "banco_com_problema_1")], "zips": 3, "territorio_local": True, "competencias_antes": ["202607", "202608", "202609"]} if (a.recuperacao or a.versao_anterior) and estado.get("recuperacao", True) else None))
 
     def tratar(cmd, args):
         comp = ["--competencia", args["competencia"]] if args.get("competencia") else []

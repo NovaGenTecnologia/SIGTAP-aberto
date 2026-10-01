@@ -216,6 +216,17 @@ Ok "SHA-256 do ZIP: $HashZip"
 Ok "SHA-256 do .exe: $HashExe"
 if ((Rodar "`"$(Join-Path $Pasta 'sigtap-aberto-cli.exe')`" ajuda >nul") -ne 0) { Falhar "a linha de comando compilada não abriu." "Me mande o $Log; pode ser antivírus bloqueando o executável novo." }
 Ok "a linha de comando abre (sigtap-aberto-cli ajuda)"
+# Dados de quem já usou o programa nesta pasta: ficam e são conferidos com a versão nova.
+$Db = Join-Path $Pasta "dados\sigtap.db"
+if (Test-Path $Db) {
+  $anterior = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+  $comps = @(& cmd.exe /d /c "`"$(Join-Path $Pasta 'sigtap-aberto-cli.exe')`" competencias 2>nul" | Where-Object { "$_".Trim() })
+  $rc = $LASTEXITCODE; $ErrorActionPreference = $anterior
+  if ($rc -eq 0) { Ok "dados mantidos: $($comps.Count) competência(s) em $Pasta\dados; o programa abre direto, sem a carga inicial" }
+  else { Avisar "os dados em $Pasta\dados são de outra versão do programa. Ao abrir, ele refaz a partir dos ZIPs guardados (versão anterior) ou avisa para atualizar (versão mais nova)." }
+} else {
+  Dizer "      primeira vez nesta pasta: ao abrir, o programa pede a carga inicial. Os dados ficam em $Pasta\dados e são mantidos nas próximas compilações."
+}
 
 # ---------------------------------------------------------------- resumo
 $min = [math]::Round(((Get-Date) - $Inicio).TotalMinutes, 1)

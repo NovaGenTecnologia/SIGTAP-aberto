@@ -50,6 +50,7 @@ Estas não têm exceção:
 7. **Segurança.** Identificador SQL que vem de dado passa por `safe_ident`; nunca concatene texto de dado em SQL; limite a memória ao abrir ZIPs e arquivos de origem não confiável.
 8. **Dependência nova só com licença compatível com AGPL-3.0** (`cargo deny check licenses`). Prefira não adicionar dependência.
 9. **Portátil.** O programa não grava nada fora da pasta dele.
+10. **Mudou o esquema de um banco, aumente o `VERSAO_ESQUEMA`** dele (`crates/packs`). O programa refaz sozinho os bancos antigos a partir dos arquivos oficiais guardados; sem isso, o usuário fica com um banco que não bate com o código.
 
 ### Preparar o ambiente
 

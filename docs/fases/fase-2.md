@@ -169,6 +169,27 @@ altura zero quando vazia.
 
 Não testado: tudo isto no Windows; o FTP real; `rundll32` abrindo o navegador; WebView2.
 
+### 2.3 Versão do banco e carga inicial (01/10/2026)
+
+Relato do cliente: a cada compilação o programa abria a tela de carga inicial.
+
+O que a pasta do cliente mostrou (só leitura): o banco já tinha `sa_info.versao_esquema = 1`, igual ao do programa; a versão não era a causa. A tela aparecia porque o `.exe` foi aberto em pastas sem `dados\`: `saida\prova_fase2\portatil\` é apagada de propósito a cada `provar_fase2.bat` (prova da primeira execução), e `saida\SIGTAP-Aberto\` só recebeu dados às 13:59, na primeira abertura depois do `compilar.bat` novo. Nas próximas compilações essa pasta mantém os dados.
+
+O que mudou, para a regra ficar explícita e segura:
+
+| Situação na abertura | Antes | Agora |
+|---|---|---|
+| Dados existem e têm a mesma versão do esquema | Abre direto | Abre direto (provado: duas aberturas seguidas, sem carga inicial) |
+| Dados de versão **anterior** | Erro "apague o banco" | Guarda o banco em `dados\versao_anterior_N\` (com LEIAME) e refaz sozinho a partir dos ZIPs e JSONs guardados, sem baixar e sem a tela inicial |
+| Dados de versão **mais nova** | Erro; a carga inicial podia gravar por cima | Bloqueia com aviso para atualizar o programa; não abre a carga inicial e **não altera um byte** do banco |
+| Banco danificado | Quarentena e refaz (v2.3) | Igual |
+
+A versão é conferida antes de criar qualquer tabela (`BancoSigtap` e `BancoTerritorio`). Regra para quem desenvolve: mudou o esquema de `sigtap.db` ou `territorio.db`, aumente o `VERSAO_ESQUEMA` correspondente; os bancos antigos dos usuários serão refeitos automaticamente.
+
+O `compilar.bat` informa no fim se os dados de `saida\SIGTAP-Aberto\dados` foram mantidos (quantas competências) ou se é a primeira vez naquela pasta.
+
+Prova (Linux): teste `versao_do_banco_decide_entre_usar_refazer_ou_bloquear` com 2 ZIPs reais e o território real (mesma versão: abre direto; versão 0: guarda à parte e refaz as 2 competências; versão 99: bloqueia e o arquivo fica idêntico); `compara_versoes_do_esquema` e `le_a_versao_sem_alterar_o_banco`; suíte completa com dados reais sem falhas; avisos conferidos na ponte (`--versao-anterior`, `--bloqueio`). Não testado: no Windows.
+
 ## 3. Fechamento
 
 (preenchido ao final da fase)
