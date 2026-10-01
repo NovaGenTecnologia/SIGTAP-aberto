@@ -78,7 +78,3 @@ Os dados baixados pelo programa pertencem às suas fontes (Ministério da Saúde
 IBGE) e seguem as licenças delas; veja `docs/fontes/licenca-dos-dados.md`.
 
 Contribuições: veja [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Componentes de terceiros embutidos
-
-- `crates/app/ui/qrcode.js`: *QR Code Generator for JavaScript* (qrcode-generator 2.0.4), Kazuhiko Arase, licença MIT. QR Code é marca registrada da DENSO WAVE INCORPORATED.

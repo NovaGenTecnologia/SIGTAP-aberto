@@ -349,31 +349,17 @@ async function desenharArvoreCid() {
 }
 
 // ---------- QR Code do Pix ----------
-function desenharQr(texto) {
-  const qr = qrcode(0, "M"); // tamanho automático, correção de erro média
-  qr.addData(texto, "Byte"); qr.make();
-  const n = qr.getModuleCount(), m = 4; // margem de 4 módulos, como manda o padrão do QR Code
-  const NS = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(NS, "svg");
-  svg.setAttribute("viewBox", `0 0 ${n + 2 * m} ${n + 2 * m}`); svg.setAttribute("shape-rendering", "crispEdges");
-  svg.setAttribute("role", "img"); svg.setAttribute("aria-label", "QR Code do Pix para apoiar o projeto");
-  const fundo = document.createElementNS(NS, "rect");
-  fundo.setAttribute("width", n + 2 * m); fundo.setAttribute("height", n + 2 * m); fundo.setAttribute("fill", "#fff");
-  const tracos = document.createElementNS(NS, "path"); let d = "";
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (qr.isDark(y, x)) d += `M${x + m} ${y + m}h1v1h-1z`;
-  tracos.setAttribute("d", d); tracos.setAttribute("fill", "#000");
-  svg.append(fundo, tracos);
-  return svg;
-}
+// A imagem (pix-qr.svg) e o texto "copia e cola" são fixos e gerados antes, por scripts/dev/gerar_qr_pix.js.
 function qrPix() {
-  const codigo = Pix.payload(APOIO.pix, APOIO.pixNome, APOIO.pixCidade);
+  const codigo = APOIO.pixCopiaECola;
+  if (!codigo) return null;
   const area = el("div", { class: "qr-pix", hidden: true });
   let feito = false;
   const botao = el("button", { class: "botao pequeno", type: "button", "aria-expanded": "false" }, "Mostrar QR Code");
   botao.addEventListener("click", () => {
     if (!feito) {
       feito = true;
-      area.append(desenharQr(codigo),
+      area.append(el("img", { src: "pix-qr.svg", alt: "QR Code do Pix para apoiar o projeto", width: "220", height: "220" }),
         el("p", { class: "quieto pequeno", text: "Abra o app do seu banco, escolha pagar com Pix e aponte a câmera. Você digita o valor que quiser." }),
         el("div", { class: "url" }, el("button", { class: "botao pequeno", type: "button", onclick: (ev) => copiar(codigo, ev.currentTarget.parentNode, "Pix copia e cola copiado") }, "Copiar Pix copia e cola"), el("span", { class: "copiado", role: "status" })));
     }
