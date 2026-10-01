@@ -10,6 +10,10 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+# Servidor FTP local para testes de integração (não entra no programa).
+servidor-falso = []
+
 [dependencies]
 sa-core = { path = "../core" }
 sa-sources = { path = "../sources" }

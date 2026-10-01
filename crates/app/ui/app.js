@@ -91,6 +91,9 @@ const E = {
   rota: { tipo: "inicio" },
   abertos: new Set(), // nós abertos da árvore
   selecionado: null,  // código de procedimento aberto
+  pilha: [],          // rotas anteriores (botão Voltar)
+  tarefa: { ativa: false, ultimo: null, falhou: false, ate: 0 }, // download/importação em segundo plano
+  ofertas: null,      // competências do servidor (tamanhos dos downloads parciais)
 };
 
 function compInfo(c) { return E.comps.find((x) => x.competencia === c); }
@@ -106,11 +109,30 @@ function erro(msg) { return el("p", { class: "erro", text: String(msg) }); }
 function carregando(txt) { return el("p", { class: "carregando", text: txt || "Carregando…" }); }
 
 // ---------- navegação ----------
-function ir(rota) { E.rota = rota; desenhar(); }
+const CONSULTA = new Set(["inicio", "busca", "ficha"]);
+function ir(rota, opc) {
+  if (!(opc && opc.substituir) && E.rota) { E.pilha.push(E.rota); if (E.pilha.length > 60) E.pilha.shift(); }
+  E.rota = rota; desenhar();
+}
+function voltar() { E.rota = E.pilha.pop() || { tipo: "inicio" }; desenhar(); }
+/** "Procedimentos": volta à última tela de consulta (ficha ou busca); já nela, vai ao início. */
+function irProcedimentos() {
+  if (CONSULTA.has(E.rota.tipo)) { if (E.rota.tipo !== "inicio") ir({ tipo: "inicio" }); return; }
+  const r = [...E.pilha].reverse().find((x) => CONSULTA.has(x.tipo));
+  ir(r || { tipo: "inicio" });
+}
+function botaoVoltar() {
+  const anterior = E.pilha[E.pilha.length - 1];
+  const destino = !anterior ? "início" : anterior.tipo === "ficha" ? F.mascara(anterior.codigo) : anterior.tipo === "busca" ? "busca" : anterior.tipo === "mudou" ? "O que mudou" : anterior.tipo === "modulos" ? "Módulos e dados" : "início";
+  return el("button", { class: "link voltar", type: "button", onclick: voltar, title: "Alt+seta para a esquerda" }, `← Voltar para ${destino}`);
+}
 
 async function desenhar() {
   const c = limpar($("conteudo"));
-  for (const b of ["ir-mudou", "ir-modulos"]) $(b).removeAttribute("aria-current");
+  c.scrollTop = 0;
+  for (const b of ["ir-inicio", "ir-mudou", "ir-modulos"]) $(b).removeAttribute("aria-current");
+  if (CONSULTA.has(E.rota.tipo)) $("ir-inicio").setAttribute("aria-current", "page");
+  atualizarRodapeProgresso();
   try {
     switch (E.rota.tipo) {
       case "busca": await telaBusca(c, E.rota.texto); break;
@@ -122,6 +144,72 @@ async function desenhar() {
   } catch (e) {
     limpar(c).append(el("div", { class: "pagina" }, erro(e)));
   }
+}
+
+// ---------- busca em tempo real (sugestões) ----------
+const Sug = { seq: 0, itens: [], ativo: -1, timer: null };
+function fecharSug() {
+  $("sugestoes").hidden = true; $("busca").setAttribute("aria-expanded", "false");
+  Sug.ativo = -1; $("busca").removeAttribute("aria-activedescendant");
+}
+function moverSug(d) {
+  if (!Sug.itens.length) return;
+  Sug.ativo = (Sug.ativo + d + Sug.itens.length) % Sug.itens.length;
+  Sug.itens.forEach((it, i) => it.no.setAttribute("aria-selected", String(i === Sug.ativo)));
+  const ativo = Sug.itens[Sug.ativo].no;
+  $("busca").setAttribute("aria-activedescendant", ativo.id);
+  ativo.scrollIntoView({ block: "nearest" });
+}
+async function sugerir(texto) {
+  const n = ++Sug.seq;
+  let r = null, falha = null;
+  try { r = await invoke("buscar", { competencia: E.comp, texto }); } catch (e) { falha = e; }
+  if (n !== Sug.seq || $("busca").value.trim() !== texto) return; // resposta de uma digitação antiga
+  const box = limpar($("sugestoes"));
+  Sug.itens = []; Sug.ativo = -1;
+  const item = (conteudo, acao) => {
+    const b = el("div", { class: "sug", role: "option", id: `sug-${Sug.itens.length}`, "aria-selected": "false",
+      onpointerdown: (ev) => { ev.preventDefault(); acao(); } }, conteudo);
+    Sug.itens.push({ no: b, acao }); return b;
+  };
+  const abrirFicha = (codigo) => () => { fecharSug(); ir({ tipo: "ficha", codigo }); };
+  const verTudo = (ligar) => () => { fecharSug(); ir({ tipo: "busca", texto, ligar }); };
+  if (falha) box.append(el("p", { class: "sug-nada", text: String(falha) }));
+  else {
+    const procs = r.procedimentos.slice(0, 8);
+    if (procs.length) {
+      box.append(el("div", { class: "sug-cab" }, el("span", { text: "Procedimentos" }), el("small", { text: F.inteiro(r.total_procedimentos) })));
+      for (const p of procs) box.append(item([el("span", { class: "c", text: p.codigo_mascarado }),
+        el("span", { class: "t" }, el("span", { class: "n", text: p.nome }), el("small", { text: [p.instrumentos.join("; "), `R$ ${F.moeda(p.valor_total_centavos)}`].filter(Boolean).join("; ") }))], abrirFicha(p.codigo)));
+    }
+    const apoio = r.apoio.slice(0, 4);
+    if (apoio.length) {
+      box.append(el("div", { class: "sug-cab" }, el("span", { text: "Tabelas de apoio" }), el("small", { text: F.inteiro(r.apoio.length) })));
+      for (const a of apoio) box.append(item([el("span", { class: "c", text: a.codigo.join(" ") }),
+        el("span", { class: "t" }, el("span", { class: "n", text: a.nome }), el("small", { text: `${NOME_TABELA[a.tabela] || a.tabela}; ${a.procedimentos ? `${F.inteiro(a.procedimentos)} procedimento(s) ligados` : "nenhum procedimento ligado"}` }))], verTudo(a)));
+    }
+    if (!procs.length && !apoio.length) box.append(el("p", { class: "sug-nada", text: `Nada encontrado para “${texto}” em ${F.competencia(E.comp)}.` }));
+    else box.append(item(el("span", { class: "sug-todos" }, `Ver todos os resultados`, el("kbd", { text: "Enter" })), verTudo(null)));
+  }
+  box.hidden = false; $("busca").setAttribute("aria-expanded", "true");
+}
+function iniciarSugestoes() {
+  const inp = $("busca");
+  inp.addEventListener("input", () => {
+    clearTimeout(Sug.timer);
+    const t = inp.value.trim();
+    if (t.length < 2 || !E.comp) { Sug.seq++; fecharSug(); return; }
+    Sug.timer = setTimeout(() => sugerir(t), 160);
+  });
+  inp.addEventListener("keydown", (ev) => {
+    if ($("sugestoes").hidden) return;
+    if (ev.key === "ArrowDown") { ev.preventDefault(); moverSug(1); }
+    else if (ev.key === "ArrowUp") { ev.preventDefault(); moverSug(-1); }
+    else if (ev.key === "Escape") { ev.preventDefault(); fecharSug(); }
+    else if (ev.key === "Enter" && Sug.ativo >= 0) { ev.preventDefault(); Sug.itens[Sug.ativo].acao(); }
+  });
+  inp.addEventListener("focus", () => { if (inp.value.trim().length >= 2 && $("sugestoes").childElementCount) { $("sugestoes").hidden = false; inp.setAttribute("aria-expanded", "true"); } });
+  document.addEventListener("pointerdown", (ev) => { if (!$("form-busca").contains(ev.target)) fecharSug(); });
 }
 
 // ---------- árvore ----------
@@ -262,7 +350,7 @@ async function telaBusca(c, texto) {
           onkeydown: (ev) => { if (ev.key === "Enter") ir({ tipo: "ficha", codigo: p.codigo }); } },
           el("td", { class: "cod", text: p.codigo_mascarado }),
           el("td", { text: p.nome }),
-          el("td", { class: "curta", text: p.instrumentos.join("; ") || "—" }),
+          el("td", { class: "instr", text: p.instrumentos.join("; ") || "—" }),
           el("td", { class: "curta", text: p.complexidade || p.tp_complexidade }),
           el("td", { class: "num", text: F.moeda(p.valor_total_centavos) })));
       }
@@ -293,6 +381,8 @@ async function telaBusca(c, texto) {
   }
   if (!r.procedimentos.length && !r.apoio.length)
     pg.append(el("p", { class: "quieto", text: "Nada encontrado. Confira a grafia, tente parte do nome ou o código com ou sem pontos." }));
+  const ligar = E.rota.ligar && r.apoio.find((a) => a.tabela === E.rota.ligar.tabela && a.codigo.join() === E.rota.ligar.codigo.join());
+  if (ligar && ligar.procedimentos) await ligados(pg, ligar);
 }
 
 async function ligados(pg, a) {
@@ -360,11 +450,15 @@ async function telaFicha(c, codigo, aba) {
     el("button", { type: "button", onclick: () => { E.abertos.add(n.codigo); revelarNaArvore(codigo); } },
       `${n.codigo.slice(-2)} ${n.nome || "sem nome na tabela de estrutura"}`)])));
   const partes = [[codigo.slice(0, 2), "grupo"], [codigo.slice(2, 4), "subgrupo"], [codigo.slice(4, 6), "forma"], [codigo.slice(6, 9), "procedimento"], [codigo.slice(9), "dígito"]];
-  const caixas = el("button", { class: "caixas", type: "button", title: "Clique para copiar o código sem pontos", "aria-label": `Copiar ${codigo}`,
-    onclick: (ev) => copiar(codigo, ev.currentTarget) }, partes.map(([v, l]) => el("span", { class: "caixa" }, el("b", { text: v }), l)),
-    el("span", { class: "copiado", text: "" }));
+  const caixas = el("button", { class: "caixas", type: "button", title: "Clique: copia sem pontos. Ctrl+clique: copia com pontos.",
+    "aria-label": `Copiar o código ${codigo}; com Ctrl, com pontos`,
+    onclick: (ev) => { const comPontos = ev.ctrlKey || ev.metaKey; copiar(comPontos ? F.mascara(codigo) : codigo, ev.currentTarget, comPontos ? "copiado com pontos" : "copiado sem pontos"); } },
+    partes.map(([v, l]) => el("span", { class: "caixa" }, el("b", { text: v }), l)),
+    el("span", { class: "copiado", role: "status", text: "" }));
+  const nome = campoDe(p, "no_procedimento").valor;
   topo.append(el("div", { class: "linha-cod" }, caixas,
-    el("h1", { class: "nome-proc", text: campoDe(p, "no_procedimento").valor })));
+    el("h1", { class: "nome-proc" }, el("button", { class: "copiar-nome", type: "button", title: "Clique para copiar o nome completo",
+      onclick: (ev) => copiar(nome, ev.currentTarget, "nome copiado") }, nome, el("span", { class: "copiado", role: "status", text: "" })))));
   // Faixa com o que o faturista confere primeiro.
   const sh = campoDe(p, "vl_sh"), sa = campoDe(p, "vl_sa"), sp = campoDe(p, "vl_sp");
   const total = (sh?.valor || 0) + (sa?.valor || 0) + (sp?.valor || 0);
@@ -411,11 +505,12 @@ async function telaFicha(c, codigo, aba) {
   }
 }
 
-async function copiar(texto, botao) {
+async function copiar(texto, botao, rotulo) {
   const aviso = botao.querySelector(".copiado");
-  try { await navigator.clipboard.writeText(texto); aviso.textContent = "copiado"; }
-  catch { aviso.textContent = "não foi possível copiar"; }
-  setTimeout(() => { aviso.textContent = ""; }, 1500);
+  try { await navigator.clipboard.writeText(texto); aviso.textContent = `${rotulo || "copiado"}: ${texto.length > 40 ? texto.slice(0, 40) + "…" : texto}`; }
+  catch { aviso.textContent = "não foi possível copiar; selecione o texto e use Ctrl+C"; }
+  clearTimeout(botao._t);
+  botao._t = setTimeout(() => { aviso.textContent = ""; }, 1800);
 }
 
 function par(k, campo, extra) {
@@ -583,7 +678,13 @@ async function abaHistorico(corpo, codigo) {
   E.comps.forEach((c, i) => {
     const marca = el("i", { class: com.has(c.competencia) ? "m" : null, title: `${F.competencia(c.competencia)}${qtd[c.competencia] ? `: ${qtd[c.competencia]} mudança(s)` : ""}` });
     if (qtd[c.competencia]) marca.style.height = `${Math.min(10 + qtd[c.competencia] * 5, 40)}px`;
-    if (com.has(c.competencia)) marca.addEventListener("click", () => document.getElementById(`ev-${c.competencia}`)?.scrollIntoView({ block: "center" }));
+    if (com.has(c.competencia)) marca.addEventListener("click", () => {
+      const alvo = document.getElementById(`ev-${c.competencia}`);
+      if (!alvo) return;
+      alvo.scrollIntoView({ block: "center" });
+      alvo.classList.remove("piscar"); void alvo.offsetWidth; // reinicia a animação
+      alvo.classList.add("piscar");
+    });
     faixa.append(marca);
     const ano = c.competencia.slice(0, 4);
     if (ano !== anoVisto && Number(ano) % 2 === 0) { const s = el("span", { text: ano }); s.style.left = `${(100 * i) / E.comps.length}%`; anos.append(s); }
@@ -639,17 +740,18 @@ async function telaMudou(c) {
   const pos = E.comps.findIndex((x) => x.competencia === E.comp);
   const de = E.rota.de || (pos > 0 ? E.comps[pos - 1].competencia : null);
   if (!de) {
-    limpar(c).append(el("div", { class: "vazio" }, el("h1", { text: "Não há competência anterior carregada" }),
-      el("p", { text: "Para comparar, baixe o histórico completo (ou a competência anterior) em Módulos e dados." })));
+    limpar(c).append(el("div", { class: "vazio" }, botaoVoltar(), el("h1", { text: "Não há competência anterior carregada" }),
+      el("p", { text: "Para comparar, baixe o histórico (ou a competência anterior) em Módulos e dados." }),
+      el("button", { class: "botao", type: "button", onclick: () => ir({ tipo: "modulos" }) }, "Ir para Módulos e dados")));
     return;
   }
   const m = await invoke("mudou", { de, para: E.comp });
   limpar(c);
   const pg = el("div", { class: "pagina" });
   c.append(pg);
-  const sel = el("select", { "aria-label": "Comparar com", onchange: (ev) => ir({ tipo: "mudou", de: ev.target.value }) },
+  const sel = el("select", { "aria-label": "Comparar com", onchange: (ev) => ir({ tipo: "mudou", de: ev.target.value }, { substituir: true }) },
     E.comps.filter((x) => x.competencia < E.comp).reverse().map((x) => el("option", { value: x.competencia, selected: x.competencia === m.de }, F.competencia(x.competencia))));
-  pg.append(el("div", { class: "cab-linha" }, el("h1", { text: `O que mudou em ${F.competencia(m.para)}` }),
+  pg.append(botaoVoltar(), el("div", { class: "cab-linha" }, el("h1", { text: `O que mudou em ${F.competencia(m.para)}` }),
     el("label", { class: "quieto" }, "comparado com ", sel)));
   const proc = m.tabelas.find((t) => t.tabela === "tb_procedimento");
   const rl = m.tabelas.filter((t) => t.tabela.startsWith("rl_"));
@@ -667,37 +769,64 @@ async function telaMudou(c) {
       el("small", { text: [t.incluidos && `${F.inteiro(t.incluidos)} incluído(s)`, t.alterados && `${F.inteiro(t.alterados)} alterado(s)`, t.excluidos && `${F.inteiro(t.excluidos)} excluído(s)`].filter(Boolean).join(", ") })));
     if (!t.presente_antes) b.append(el("p", { class: "aviso", text: "Esta tabela não veio no ZIP da competência anterior." }));
     if (!t.presente_depois) b.append(el("p", { class: "aviso", text: "Esta tabela não veio no ZIP desta competência." }));
-    const mostrar = t.itens.slice(0, 25);
-    for (const i of mostrar) {
-      const l = i.depois || i.antes;
-      const codProc = l && campoDe(l, "co_procedimento")?.valor;
-      const desc = i.tipo === "alterado"
-        ? i.campos_alterados.map((col) => `${NOME_COLUNA[col] || col}: ${F.campo(campoDe(i.antes, col)) || "vazio"} → ${F.campo(campoDe(i.depois, col)) || "vazio"}`).join("; ")
-        : resumoLinha(l, "co_procedimento") || Object.values(i.chave).join(" ");
-      b.append(el("div", { class: "mud" },
-        el("span", { class: `tag ${i.tipo}`, text: { incluido: "incluído", excluido: "excluído", alterado: "alterado" }[i.tipo] }),
-        codProc ? el("button", { class: "link mono", type: "button", onclick: () => ir({ tipo: "ficha", codigo: codProc }) }, F.mascara(codProc)) : el("span", { class: "mono", text: Object.values(i.chave).join(" ") }),
-        el("span", { text: (t.tabela === "tb_procedimento" && campoDe(l, "no_procedimento") ? campoDe(l, "no_procedimento").valor + ": " : "") + desc })));
-    }
-    const resto = t.itens.length - mostrar.length + t.itens_omitidos;
-    if (resto > 0) b.append(el("p", { class: "quieto pequeno", text: `E mais ${F.inteiro(resto)} item(ns). A linha de comando exporta tudo: sigtap-aberto-cli mudou --de ${m.de} --competencia ${m.para}` }));
+    // Primeiro 25; "ver mais" mostra mais 100 de cada vez, pedindo ao programa os que não vieram.
+    const lista = el("div", { class: "lista-mud" });
+    const mais = el("button", { class: "botao mais", type: "button" });
+    b.append(lista, mais);
+    let mostrados = 0;
+    const total = t.incluidos + t.excluidos + t.alterados;
+    const atualizarMais = () => {
+      const resto = total - mostrados;
+      mais.hidden = resto <= 0;
+      mais.textContent = `Ver mais ${F.inteiro(Math.min(100, resto))} (faltam ${F.inteiro(resto)})`;
+    };
+    const mostrar = (n) => {
+      for (const i of t.itens.slice(mostrados, mostrados + n)) lista.append(linhaMudanca(t, i));
+      mostrados = Math.min(t.itens.length, mostrados + n);
+      atualizarMais();
+    };
+    mais.addEventListener("click", async () => {
+      if (mostrados + 100 > t.itens.length && t.itens_omitidos > 0) {
+        mais.disabled = true; mais.textContent = "Carregando…";
+        try {
+          const r = await invoke("mudou", { de: m.de, para: m.para, tabela: t.tabela, desde: t.itens.length });
+          if (r) { t.itens.push(...r.itens); t.itens_omitidos = r.itens_omitidos; }
+        } catch (e) { b.append(erro(e)); }
+        mais.disabled = false;
+      }
+      mostrar(100);
+    });
+    mostrar(25);
     pg.append(b);
   }
+}
+
+function linhaMudanca(t, i) {
+  const l = i.depois || i.antes;
+  const codProc = l && campoDe(l, "co_procedimento")?.valor;
+  const desc = i.tipo === "alterado"
+    ? i.campos_alterados.map((col) => `${NOME_COLUNA[col] || col}: ${F.campo(campoDe(i.antes, col)) || "vazio"} → ${F.campo(campoDe(i.depois, col)) || "vazio"}`).join("; ")
+    : resumoLinha(l, "co_procedimento") || Object.values(i.chave).join(" ");
+  return el("div", { class: "mud" },
+    el("span", { class: `tag ${i.tipo}`, text: { incluido: "incluído", excluido: "excluído", alterado: "alterado" }[i.tipo] }),
+    codProc ? el("button", { class: "link mono", type: "button", onclick: () => ir({ tipo: "ficha", codigo: codProc }) }, F.mascara(codProc)) : el("span", { class: "mono", text: Object.values(i.chave).join(" ") }),
+    el("span", { text: (t.tabela === "tb_procedimento" && campoDe(l, "no_procedimento") ? campoDe(l, "no_procedimento").valor + ": " : "") + desc }));
 }
 
 // ---------- módulos e dados ----------
 function telaModulos(c) {
   const s = E.situacao || {};
-  const pg = el("div", { class: "pagina" });
+  const pg = el("div", { class: "pagina modulos" });
   c.append(pg);
-  pg.append(el("div", { class: "cab-linha" }, el("h1", { text: "Módulos e dados" }), el("span", { class: "quieto", text: `Pasta: ${s.pasta_dados || ""}` })));
+  pg.append(botaoVoltar(), el("div", { class: "cab-linha" }, el("h1", { text: "Módulos e dados" }), el("span", { class: "quieto", text: `Pasta: ${s.pasta_dados || ""}` })));
   const ult = E.comps[E.comps.length - 1];
   const ter = s.territorio;
+  const z = s.zips || {};
   const linhas = [
     ["Tabela de procedimentos (SIGTAP)", ult ? "carregada" : "não baixada", ult ? F.competencia(ult.competencia) : "—",
       ult ? `${ult.arquivo}${ult.publicado_em ? `, publicado em ${ult.publicado_em}` : ""}` : "ftp2.datasus.gov.br"],
     ["Histórico da tabela", `${E.comps.length} competência(s)`, E.comps.length ? `${F.competencia(E.comps[0].competencia)} a ${F.competencia(ult.competencia)}` : "—",
-      `${s.zips_guardados || 0} ZIP(s) oficiais guardados em dados\\zips; o banco pode ser refeito a partir deles`],
+      `${z.arquivos || 0} ZIP(s) oficiais guardados em dados\\zips (${F.mb(z.bytes || 0)}); com eles o banco pode ser refeito`],
     ["Território", ter ? (ter.resumo.sem_regiao_saude.length || ter.resumo.sem_ibge.length ? "com aviso" : "em dia") : "não baixado", ter ? "base das fontes" : "—",
       ter ? `IBGE: ${F.inteiro(ter.resumo.municipios_ibge)} municípios. Ministério da Saúde: ${F.inteiro(ter.resumo.municipios_saude)}, ${ter.resumo.regioes_saude} regiões de saúde.` +
         (ter.resumo.sem_regiao_saude.length ? ` Sem região de saúde na fonte: ${ter.resumo.sem_regiao_saude.join(", ")}.` : "") +
@@ -709,51 +838,227 @@ function telaModulos(c) {
   pg.append(el("table", { class: "tabela" },
     el("thead", {}, el("tr", {}, ["Módulo", "Situação", "Competências", "Origem e frescor"].map((h) => el("th", { text: h })))),
     el("tbody", {}, linhas.map((l) => el("tr", {}, el("td", {}, el("b", { text: l[0] })), l.slice(1).map((x) => el("td", { text: x })))))));
-  const prog = painelProgresso();
-  const confirmar = el("div", { class: "aviso", hidden: true },
-    "O histórico completo tem cerca de 360 MB (225 arquivos), baixados um por vez, e a carga no banco leva vários minutos. ",
-    el("button", { class: "botao", type: "button", onclick: () => { confirmar.hidden = true; baixar({ sigtap_vigente: true, territorio: false, historico: true }); } }, "Baixar mesmo assim"));
-  const caminho = el("input", { type: "text", class: "campo", placeholder: "Ex.: D:\\Downloads\\SIGTAP", "aria-label": "Pasta para importar", size: "48" });
-  pg.append(el("div", { class: "acoes" },
-    el("button", { class: "botao primario", type: "button", onclick: () => baixar({ sigtap_vigente: true, territorio: true, historico: false }) }, "Procurar atualizações"),
-    el("button", { class: "botao", type: "button", onclick: () => { confirmar.hidden = false; } }, "Baixar o histórico completo"),
-    el("button", { class: "botao", type: "button", onclick: () => invoke("cancelar") }, "Cancelar o que está em andamento")));
-  pg.append(confirmar, prog);
-  pg.append(el("section", { class: "bloco" }, el("h2", { text: "Importar de uma pasta" }),
-    el("p", { class: "quieto", text: "Sem internet ou com o FTP bloqueado? Copie para uma pasta os arquivos TabelaUnificada_AAAAMM_*.zip (do site do DATASUS) e, se quiser, ibge_municipios.json e demas_municipios.json, e indique a pasta. O programa confere cada arquivo antes de usar." }),
+
+  // Baixar: escopo, apagar depois, progresso.
+  const escolha = { escopo: "vigente" };
+  const apagar = el("input", { type: "checkbox" });
+  const apagarTxt = el("span");
+  const apagarRotulo = el("label", { class: "apagar-zips" }, apagar, apagarTxt);
+  const atualizarApagar = () => textoApagar(escolha.escopo, apagarRotulo, apagarTxt);
+  const escopos = el("fieldset", { class: "escopo" }, el("legend", {}, el("b", { text: "O que baixar da tabela" })));
+  opcoesEscopo(escopos, "escopo-modulos", escolha, atualizarApagar);
+  atualizarApagar();
+  const ocupado = () => E.tarefa.ativa;
+  pg.append(el("section", { class: "bloco" },
+    el("div", { class: "cab-linha" }, el("h2", { text: "Baixar do DATASUS" }),
+      el("small", { text: "um arquivo por vez; enquanto um baixa, o anterior já entra no banco" })),
+    escopos, apagarRotulo,
+    el("div", { class: "acoes" },
+      el("button", { class: "botao primario", type: "button", onclick: () => baixar({ sigtap: escolha.escopo, territorio: false, apagar_zips: apagar.checked }) }, "Baixar"),
+      el("button", { class: "botao", type: "button", title: "Competência mais recente e território", onclick: () => baixar({ sigtap: "vigente", territorio: true, apagar_zips: false }) }, "Procurar atualizações"),
+      el("button", { class: "botao", type: "button", onclick: () => invoke("cancelar") }, "Cancelar o que está em andamento")),
+    painelProgresso()));
+
+  // Espaço em disco: apagar ZIPs já carregados.
+  const conf = el("div", { class: "aviso", hidden: true },
+    `Apagar ${z.apagaveis} ZIP(s)? O banco continua com todas as competências, mas não poderá ser refeito a partir desses arquivos sem baixá-los de novo. `,
+    el("button", { class: "botao", type: "button", onclick: async (ev) => {
+      ev.currentTarget.disabled = true;
+      try { const m = await invoke("apagar_zips"); await atualizarSituacao(); desenhar(); setTimeout(() => avisoTopo(m), 0); }
+      catch (e) { conf.replaceWith(erro(e)); }
+    } }, "Apagar"),
+    " ", el("button", { class: "link", type: "button", onclick: () => { conf.hidden = true; } }, "Não apagar"));
+  pg.append(el("section", { class: "bloco" },
+    el("div", { class: "cab-linha" }, el("h2", { text: "Espaço em disco" }), el("small", { text: `${z.arquivos || 0} ZIP(s), ${F.mb(z.bytes || 0)}` })),
+    z.apagaveis
+      ? el("p", {}, `${z.apagaveis} ZIP(s) já estão no banco e podem ser apagados, liberando ${F.mb(z.bytes_apagaveis)}. O da competência mais recente (${F.competencia(z.mantida)}) fica sempre guardado.`)
+      : el("p", { class: "quieto", text: z.arquivos ? `Nada a apagar: só o ZIP da competência mais recente${z.mantida ? ` (${F.competencia(z.mantida)})` : ""} ou ZIPs ainda não carregados.` : "Nenhum ZIP guardado." }),
+    z.apagaveis ? el("div", { class: "acoes" }, el("button", { class: "botao", type: "button", disabled: ocupado(), onclick: () => { conf.hidden = false; } }, `Apagar ZIPs já carregados (libera ${F.mb(z.bytes_apagaveis)})`)) : null,
+    conf));
+
+  // Importar de uma pasta.
+  const caminho = el("input", { type: "text", class: "campo", placeholder: "Ex.: D:\\Downloads\\SIGTAP", "aria-label": "Pasta para importar" });
+  pg.append(el("section", { class: "bloco", id: "importar" }, el("h2", { text: "Importar de uma pasta" }),
+    el("p", { class: "quieto", text: "Sem internet ou com o FTP bloqueado? Baixe os arquivos por outro caminho, junte numa pasta e indique a pasta aqui. O programa confere cada arquivo antes de usar." }),
     el("div", { class: "acoes" }, caminho,
-      el("button", { class: "botao", type: "button", onclick: () => caminho.value.trim() && importar(caminho.value.trim()) }, "Importar"))));
+      el("button", { class: "botao", type: "button", onclick: async () => {
+        try { const p = await invoke("escolher_pasta"); if (p) caminho.value = p; } catch (e) { avisoTopo(String(e)); }
+      } }, "Procurar pasta…"),
+      el("button", { class: "botao primario", type: "button", onclick: () => caminho.value.trim() ? importar(caminho.value.trim()) : caminho.focus() }, "Importar")),
+    instrucoesManuais()));
 }
 
-// ---------- tarefas em segundo plano ----------
-let painelAtual = null;
-function painelProgresso() {
-  painelAtual = el("div", { class: "progresso", hidden: !(E.situacao && E.situacao.ocupado) },
-    el("div", { class: "trilho" }, el("div", { class: "barra-prog" })), el("span", { class: "msg" }));
-  return painelAtual;
+/** Passo a passo para baixar à mão (rede que bloqueia FTP ou computador sem internet). */
+function instrucoesManuais() {
+  const url = (u) => el("span", { class: "url" },
+    el("button", { class: "botao pequeno", type: "button", title: "Copiar o endereço", onclick: (ev) => copiar(u, ev.currentTarget.parentNode, "copiado") }, "Copiar"),
+    el("code", { text: u }), el("span", { class: "copiado", role: "status" }));
+  const IBGE = "https://servicodados.ibge.gov.br/api/v1/localidades/municipios?view=nivelado";
+  const DEMAS = "https://apidadosabertos.saude.gov.br/macrorregiao-e-regiao-de-saude/municipio";
+  const paginas = [0, 860, 1720, 2580, 3440, 4300, 5160];
+  return el("details", { class: "manual" },
+    el("summary", { text: "Como baixar os arquivos à mão" }),
+    el("ol", {},
+      el("li", {}, el("b", { text: "Tabela de procedimentos (SIGTAP). " }),
+        "Abra o endereço abaixo no Explorador de Arquivos do Windows (cole na barra de endereço) ou num programa de FTP, como o FileZilla:", url("ftp://ftp2.datasus.gov.br/pub/sistemas/tup/downloads/"),
+        "Copie os arquivos ", el("code", { text: "TabelaUnificada_AAAAMM_vXXXXXXXXXX.zip" }), " das competências que quiser. Se a mesma competência tiver mais de um arquivo, use o de versão (vXXXXXXXXXX) maior: é a republicação."),
+      el("li", {}, el("b", { text: "Municípios do IBGE. " }), "Abra no navegador e salve a página (Ctrl+S) como ", el("code", { text: "ibge_municipios.json" }), ":", url(IBGE)),
+      el("li", {}, el("b", { text: "Regiões de saúde (Ministério da Saúde). " }),
+        "A lista vem em páginas. Abra cada endereço e salve como ", el("code", { text: "demas_1.json" }), ", ", el("code", { text: "demas_2.json" }), " e assim por diante:",
+        el("div", { class: "urls" }, paginas.map((o) => url(`${DEMAS}?limit=1000&offset=${o}`))),
+        "Hoje o servidor devolve até 860 municípios por página; se uma página trouxer outro número, some esse número ao offset da próxima. Pare quando a página vier vazia. O programa junta as páginas e recusa município repetido."),
+      el("li", {}, el("b", { text: "Importe. " }), "Ponha todos os arquivos na mesma pasta, clique em Procurar pasta… e depois em Importar.")));
 }
-function mostrarProgresso(p) {
-  for (const alvo of [painelAtual, $("primeira-progresso")]) {
-    if (!alvo) continue;
-    alvo.hidden = false;
-    const barra = alvo.querySelector(".barra-prog");
-    const msg = alvo.querySelector(".msg") || $("primeira-msg");
-    if (p.total > 0) barra.style.width = `${Math.min(100, (100 * p.feito) / p.total).toFixed(0)}%`;
-    msg.textContent = p.total > 0 && p.etapa !== "carga" && p.feito < p.total
-      ? `${p.mensagem}: ${(p.feito / 1e6).toFixed(1)} de ${(p.total / 1e6).toFixed(1)} MB` : p.mensagem;
+
+function avisoTopo(msg) {
+  const pg = document.querySelector("#conteudo .pagina");
+  if (pg) pg.insertBefore(el("p", { class: "aviso", role: "status", text: msg }), pg.children[1] || null);
+}
+
+// ---------- escopo do download ----------
+const ESCOPOS = [
+  ["vigente", "Só a competência mais recente", 1],
+  ["6", "Últimos 6 meses", 6],
+  ["12", "Últimos 12 meses", 12],
+  ["24", "Últimos 24 meses", 24],
+  ["tudo", "Histórico completo", Infinity],
+];
+function calcEscopo(n) {
+  const cs = E.ofertas && E.ofertas.competencias;
+  if (!cs || !cs.length) return null;
+  const sel = cs.slice(-Math.min(n, cs.length));
+  const baixar = sel.filter((c) => !c.guardado);
+  return {
+    n: sel.length, de: sel[0].competencia, ate: sel[sel.length - 1].competencia,
+    nBaixar: baixar.length, bytes: baixar.reduce((s, c) => s + c.tamanho, 0),
+    libera: sel.slice(0, -1).filter((c) => !c.carregado).reduce((s, c) => s + c.tamanho, 0),
+  };
+}
+function textoEscopo(n) {
+  if (E.ofertas === "falhou") return "tamanho indisponível: o servidor não respondeu agora";
+  const k = calcEscopo(n);
+  if (!k) return "consultando o tamanho no servidor…";
+  const faixa = k.n > 1 ? `${k.n} competências, ${F.competencia(k.de)} a ${F.competencia(k.ate)}` : F.competencia(k.ate);
+  return `${faixa}; ${k.nBaixar ? `${k.nBaixar} a baixar, ${F.mb(k.bytes)}` : "já guardada(s)"}`;
+}
+function opcoesEscopo(caixa, nome, escolha, aoMudar, rotulos) {
+  const spans = [];
+  for (const [v, rotulo0, n] of ESCOPOS) {
+    const rotulo = (rotulos && rotulos[v]) || rotulo0;
+    const sp = el("small", { text: textoEscopo(n) });
+    spans.push([sp, n]);
+    caixa.append(el("label", { class: "opcao" },
+      el("input", { type: "radio", name: nome, value: v, checked: v === escolha.escopo, onchange: () => { escolha.escopo = v; aoMudar && aoMudar(); } }),
+      el("span", {}, rotulo, " ", sp)));
+  }
+  caixa._atualizar = () => spans.forEach(([sp, n]) => { sp.textContent = textoEscopo(n); });
+  carregarOfertas().then(() => { caixa._atualizar(); aoMudar && aoMudar(); });
+}
+let ofertasPromessa = null;
+function carregarOfertas() {
+  if (!ofertasPromessa) ofertasPromessa = invoke("ofertas", {}).then((o) => { E.ofertas = o; }).catch(() => { E.ofertas = "falhou"; ofertasPromessa = null; });
+  return ofertasPromessa;
+}
+function textoApagar(escopo, rotulo, txt) {
+  const n = (ESCOPOS.find((x) => x[0] === escopo) || [])[2] || 1;
+  rotulo.hidden = n === 1;
+  const k = calcEscopo(n);
+  txt.textContent = `Apagar os ZIPs depois de carregá-los no banco${k && k.libera ? ` (libera cerca de ${F.mb(k.libera)})` : ""}. ` +
+    "O da competência mais recente fica guardado. Sem os demais, o banco só pode ser refeito baixando-os de novo.";
+}
+
+// ---------- tarefas em segundo plano (download, importação) ----------
+/** Painel de progresso; todos os painéis com data-tarefa mostram o mesmo estado. */
+function painelProgresso() {
+  const p = el("div", { class: "progresso", "data-tarefa": "" },
+    el("div", { class: "trilho" }, el("div", { class: "barra-prog" })),
+    el("div", { class: "prog-txt" }, el("b", { class: "resumo" }), el("span", { class: "msg" })));
+  p.hidden = !E.tarefa.ultimo;
+  if (E.tarefa.ultimo) desenharProgresso(p, E.tarefa.ultimo);
+  return p;
+}
+function pct(p) { return `${Math.floor(100 * (p.fracao || 0))}%`; }
+function desenharProgresso(alvo, p) {
+  alvo.hidden = false;
+  alvo.classList.toggle("indeterminado", !!p.indeterminado);
+  alvo.classList.toggle("falhou", !!p.falhou);
+  const barra = alvo.querySelector(".barra-prog");
+  barra.style.width = p.indeterminado ? "" : `${(100 * (p.fracao || 0)).toFixed(1)}%`;
+  const res = alvo.querySelector(".resumo"), msg = alvo.querySelector(".msg");
+  if (res) {
+    res.textContent = p.indeterminado ? (p.resumo || "Preparando") : `${pct(p)}${p.resumo ? ` ${p.resumo}` : ""}`;
+    msg.textContent = p.mensagem || "";
+  } else if (E.tarefa.ativa) {
+    msg.textContent = p.indeterminado ? (p.mensagem || "Preparando") : `${pct(p)} ${p.resumo || p.mensagem || ""}`;
+  } else {
+    msg.textContent = `${p.resumo} ${p.mensagem || ""}`; // fim: o resultado por extenso
   }
 }
-async function baixar(pedido) {
-  try { await invoke("baixar", { pedido }); mostrarProgresso({ mensagem: "Iniciando…", feito: 0, total: 0 }); }
-  catch (e) { mostrarFalha(e); }
+function mostrarProgresso(p) {
+  E.tarefa.ultimo = p;
+  for (const alvo of document.querySelectorAll("[data-tarefa]")) desenharProgresso(alvo, p);
+  atualizarRodapeProgresso();
 }
-async function importar(pasta) {
-  try { await invoke("importar", { pasta }); mostrarProgresso({ mensagem: "Importando…", feito: 0, total: 0 }); }
-  catch (e) { mostrarFalha(e); }
+/** Barra no rodapé, à direita, quando a tela atual não mostra o progresso. */
+function atualizarRodapeProgresso() {
+  const r = $("rodape-progresso");
+  const visivelNaTela = !$("primeira").hidden || E.rota.tipo === "modulos";
+  const mostrar = !!E.tarefa.ultimo && (E.tarefa.ativa || E.tarefa.falhou || Date.now() < E.tarefa.ate) && !visivelNaTela;
+  r.hidden = !mostrar;
+  if (mostrar) { desenharProgresso(r, E.tarefa.ultimo); r.title = `${E.tarefa.ultimo.resumo || ""}\n${E.tarefa.ultimo.mensagem || ""}\nClique para ver em Módulos e dados`.trim(); }
 }
+function iniciarTarefa(msg) {
+  E.tarefa = { ativa: true, ultimo: null, falhou: false, ate: 0 };
+  $("primeira-cortesia").hidden = true;
+  $("primeira").classList.add("rodando");
+  mostrarProgresso({ resumo: msg, mensagem: "", fracao: 0, indeterminado: true });
+}
+async function comecar(cmd, args, msg) {
+  const antes = E.tarefa;
+  iniciarTarefa(msg);
+  try { await invoke(cmd, args); }
+  catch (e) {
+    E.tarefa = antes.ativa ? antes : { ...antes, ativa: false };
+    for (const alvo of document.querySelectorAll("[data-tarefa]")) alvo.hidden = !E.tarefa.ultimo;
+    atualizarRodapeProgresso();
+    $("primeira-baixar").disabled = false;
+    $("primeira").classList.remove("rodando");
+    mostrarFalha(e);
+  }
+}
+const baixar = (pedido) => comecar("baixar", { pedido }, "Iniciando o download");
+const importar = (pasta) => comecar("importar", { pasta }, "Importando");
 function mostrarFalha(e) {
   if (!$("primeira").hidden) { $("primeira-erro").hidden = false; $("primeira-erro").textContent = String(e); }
-  else if (painelAtual) { painelAtual.hidden = false; painelAtual.querySelector(".msg").textContent = String(e); }
+  else avisoTopo(String(e));
+}
+async function fimTarefa(f) {
+  const antes = E.tarefa.ultimo || { fracao: 0 };
+  E.tarefa.ativa = false;
+  E.tarefa.falhou = !f.ok;
+  E.tarefa.ate = Date.now() + 10000;
+  $("primeira").classList.remove("rodando");
+  $("primeira-baixar").disabled = false;
+  $("primeira-continuar").hidden = true;
+  await atualizarSituacao();
+  if (!$("arvore-raiz").querySelector(".no")) await desenharArvore();
+  mostrarProgresso({
+    resumo: f.ok ? "Concluído." : f.cancelada ? "Cancelado." : "Não concluído.",
+    mensagem: f.mensagem, fracao: f.ok ? 1 : antes.fracao, indeterminado: false, falhou: !f.ok,
+  });
+  if (!f.ok && !$("primeira").hidden) { $("primeira-erro").hidden = false; $("primeira-erro").textContent = f.mensagem; }
+  if (E.rota.tipo === "modulos" || E.rota.tipo === "inicio") desenhar();
+  carregarOfertasDeNovo();
+  setTimeout(atualizarRodapeProgresso, 10100);
+}
+function carregarOfertasDeNovo() { ofertasPromessa = null; if (E.ofertas && E.ofertas !== "falhou") carregarOfertas(); }
+
+/** Dados novos no meio de uma tarefa (primeira competência carregada, território gravado). */
+async function dadosAtualizados() {
+  await atualizarSituacao();
+  if (E.comps.length && !$("arvore-raiz").querySelector(".no")) await desenharArvore();
+  if (E.rota.tipo === "inicio" && $("primeira").hidden) desenhar();
+  $("primeira-continuar").hidden = !(E.tarefa.ativa && !E.situacao.primeira_execucao && !$("primeira").hidden);
 }
 
 // ---------- inicialização ----------
@@ -766,13 +1071,42 @@ async function atualizarSituacao() {
   if (E.comp) sel.value = E.comp;
   sel.disabled = !E.comps.length;
   rodape();
-  $("primeira").hidden = !E.situacao.primeira_execucao;
+  // A janela da primeira execução abre quando falta o obrigatório; durante um download ela
+  // só fecha quando a pessoa escolhe continuar.
+  if (E.situacao.primeira_execucao) $("primeira").hidden = false;
+  else if (!E.tarefa.ativa) $("primeira").hidden = true;
+  atualizarRodapeProgresso();
+}
+
+function primeiraExecucao() {
+  const escolha = { escopo: "vigente" };
+  const apagarTxt = $("primeira-apagar-txt");
+  const atualizar = () => textoApagar(escolha.escopo, $("primeira-apagar-rotulo"), apagarTxt);
+  const caixa = $("primeira-escopo");
+  caixa.querySelectorAll("label").forEach((x) => x.remove());
+  opcoesEscopo(caixa, "escopo-primeira", escolha, atualizar, { vigente: "Agora não, só a competência mais recente" });
+  atualizar();
+  $("primeira-baixar").addEventListener("click", () => {
+    $("primeira-erro").hidden = true;
+    $("primeira-baixar").disabled = true;
+    baixar({ sigtap: escolha.escopo, territorio: true, apagar_zips: $("primeira-apagar").checked });
+  });
+  $("primeira-cancelar").addEventListener("click", () => invoke("cancelar"));
+  $("primeira-continuar").addEventListener("click", () => { $("primeira").hidden = true; $("primeira-continuar").hidden = true; desenhar(); });
+  $("primeira-importar").addEventListener("click", () => {
+    $("primeira").hidden = true; ir({ tipo: "modulos" });
+    setTimeout(() => $("importar")?.scrollIntoView({ block: "start" }), 0);
+  });
 }
 
 function divisorArvore() {
   const corpo = document.querySelector(".corpo");
-  const aplicar = (px) => corpo.style.setProperty("--largura-arvore", `${Math.max(220, Math.min(560, px))}px`);
-  try { const v = Number(localStorage.getItem("largura-arvore")); if (v) aplicar(v); } catch { /* sem armazenamento: usa o padrão */ }
+  let pedida = 296;
+  const aplicar = (px) => { pedida = px; corpo.style.setProperty("--largura-arvore", `${Math.max(220, Math.min(limiteArvore(), px))}px`); };
+  window.addEventListener("resize", () => aplicar(pedida));
+  let salva = 0;
+  try { salva = Number(localStorage.getItem("largura-arvore")) || 0; } catch { /* sem armazenamento: usa o padrão */ }
+  aplicar(salva || 296);
   const d = $("divisor");
   d.addEventListener("pointerdown", (ev) => {
     d.setPointerCapture(ev.pointerId);
@@ -790,37 +1124,35 @@ function divisorArvore() {
   });
 }
 
+/** Largura máxima da árvore: o conteúdo nunca fica mais estreito que o mínimo legível. */
+const CONTEUDO_MIN = 730; // medido: a tabela mais larga (compatíveis) pede ~716 px
+function limiteArvore() { return Math.max(220, Math.min(560, window.innerWidth - CONTEUDO_MIN)); }
+
 async function iniciar() {
   divisorArvore();
+  iniciarSugestoes();
   $("form-busca").addEventListener("submit", (ev) => {
     ev.preventDefault();
+    clearTimeout(Sug.timer); Sug.seq++; fecharSug();
     const t = $("busca").value.trim();
     if (t) ir({ tipo: "busca", texto: t });
   });
   document.addEventListener("keydown", (ev) => {
     if (ev.ctrlKey && ev.key.toLowerCase() === "k") { ev.preventDefault(); $("busca").focus(); $("busca").select(); }
+    if (ev.altKey && ev.key === "ArrowLeft" && E.pilha.length) { ev.preventDefault(); voltar(); }
   });
+  document.addEventListener("mouseup", (ev) => { if (ev.button === 3 && E.pilha.length) { ev.preventDefault(); voltar(); } });
   $("competencia").addEventListener("change", async (ev) => {
     E.comp = ev.target.value; rodape(); await desenharArvore(); desenhar();
   });
+  $("ir-inicio").addEventListener("click", irProcedimentos);
   $("ir-mudou").addEventListener("click", () => ir({ tipo: "mudou" }));
   $("ir-modulos").addEventListener("click", () => ir({ tipo: "modulos" }));
-  $("primeira-baixar").addEventListener("click", () => {
-    $("primeira-erro").hidden = true;
-    $("primeira-baixar").disabled = true;
-    baixar({ sigtap_vigente: true, territorio: true, historico: $("primeira-historico").checked });
-  });
-  $("primeira-cancelar").addEventListener("click", () => invoke("cancelar"));
-  $("primeira-importar").addEventListener("click", () => { $("primeira").hidden = true; ir({ tipo: "modulos" }); });
-  await tauri.event.listen("progresso", (ev) => mostrarProgresso(ev.payload));
-  await tauri.event.listen("tarefa_fim", async (ev) => {
-    const f = ev.payload;
-    $("primeira-baixar").disabled = false;
-    await atualizarSituacao();
-    await desenharArvore();
-    if (f.ok) { mostrarProgresso({ mensagem: f.mensagem, feito: 1, total: 1, etapa: "fim" }); if (E.rota.tipo === "modulos") desenhar(); }
-    else mostrarFalha(f.cancelada ? `Cancelado. ${f.mensagem}` : f.mensagem);
-  });
+  $("rodape-progresso").addEventListener("click", () => ir({ tipo: "modulos" }));
+  primeiraExecucao();
+  await tauri.event.listen("progresso", (ev) => { if (E.tarefa.ativa) mostrarProgresso(ev.payload); });
+  await tauri.event.listen("dados_atualizados", () => dadosAtualizados());
+  await tauri.event.listen("tarefa_fim", (ev) => fimTarefa(ev.payload));
   try {
     await atualizarSituacao();
   } catch (e) {

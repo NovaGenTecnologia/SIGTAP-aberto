@@ -35,7 +35,9 @@ pub struct MudancaTabela {
     pub excluidos: usize,
     pub alterados: usize,
     pub itens: Vec<ItemMudanca>,
-    /// Itens não detalhados por causa do limite.
+    /// Posição do primeiro item de `itens` na lista completa da tabela.
+    pub desde: usize,
+    /// Itens não detalhados depois de `itens` (por causa do limite).
     pub itens_omitidos: usize,
 }
 
@@ -197,6 +199,34 @@ impl Consulta {
         para: Competencia,
         limite: usize,
     ) -> Result<Mudancas, ErroConsulta> {
+        self.mudancas(de, para, None, 0, limite)
+    }
+
+    /// Mais itens de uma tabela de "o que mudou": `limite` itens a partir da posição `desde`
+    /// (botão "ver mais" da interface). A ordem é a mesma de [`Self::o_que_mudou`].
+    pub fn o_que_mudou_tabela(
+        &self,
+        de: Competencia,
+        para: Competencia,
+        tabela: &str,
+        desde: usize,
+        limite: usize,
+    ) -> Result<Option<MudancaTabela>, ErroConsulta> {
+        Ok(self
+            .mudancas(de, para, Some(tabela), desde, limite)?
+            .tabelas
+            .into_iter()
+            .next())
+    }
+
+    fn mudancas(
+        &self,
+        de: Competencia,
+        para: Competencia,
+        so: Option<&str>,
+        desde: usize,
+        limite: usize,
+    ) -> Result<Mudancas, ErroConsulta> {
         let sa = self.exigir(de)?;
         let sb = self.exigir(para)?;
         let pa: BTreeSet<String> = util::tabelas(self.conn(), sa)?.into_iter().collect();
@@ -204,6 +234,9 @@ impl Consulta {
         let chaves = sa_sources::sigtap::chaves_naturais();
         let mut tabelas = Vec::new();
         for t in pa.union(&pb) {
+            if so.is_some_and(|x| x != t) {
+                continue;
+            }
             let a = if pa.contains(t) {
                 self.ids_vigentes(t, sa)?
             } else {
@@ -240,7 +273,7 @@ impl Consulta {
                 }
             }
             let mut itens = Vec::new();
-            for (k, x, y) in pares.iter().take(limite) {
+            for (k, x, y) in pares.iter().skip(desde).take(limite) {
                 let tipo = match (x, y) {
                     (Some(_), Some(_)) => "alterado",
                     (Some(_), None) => "excluido",
@@ -265,7 +298,8 @@ impl Consulta {
                 incluidos: ni,
                 excluidos: ne,
                 alterados: na,
-                itens_omitidos: pares.len().saturating_sub(limite),
+                desde,
+                itens_omitidos: pares.len().saturating_sub(desde + itens.len()),
                 itens,
             });
         }

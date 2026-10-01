@@ -276,3 +276,100 @@ body { grid-template-rows: 48px 1fr 26px; }
 .no.selecionado .cod .seg { color: var(--verde); }
 .no .seta { width: 10px; flex: none; }
 .arvore li.aberto > .no .texto-no { -webkit-line-clamp: 1; }
+
+/* ===== v2.2: busca em tempo real, voltar, progresso único, downloads parciais (01/10/2026) ===== */
+:root { --linha-forte: #A9B5AF; }
+/* Sugestões da busca */
+.busca { position: relative; }
+.sugestoes { position: absolute; top: calc(100% + 4px); left: 0; width: max(100%, 600px); z-index: 20; max-height: min(70vh, 520px); overflow: auto;
+  background: var(--sup); color: var(--tinta); border: 1px solid var(--linha); border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(23, 36, 43, .18); padding: 4px 0; }
+.sug-cab { display: flex; justify-content: space-between; padding: 6px 12px 3px; font-size: 11px; color: var(--tinta2); font-weight: 600; }
+.sug-cab small { font-family: var(--mono); font-weight: 400; }
+.sug { display: grid; grid-template-columns: 116px 1fr; gap: 10px; align-items: baseline; padding: 5px 12px; cursor: pointer; }
+.sug .c { font-family: var(--mono); font-size: 12px; color: var(--verde-esc); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sug .t { display: flex; flex-direction: column; min-width: 0; }
+.sug .n { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; }
+.sug small { font-size: 11px; color: var(--tinta2); }
+.sug:hover, .sug[aria-selected="true"] { background: var(--verde-claro); }
+.sug-todos { grid-column: 1 / -1; color: var(--verde); font-weight: 500; display: flex; gap: 8px; align-items: center; }
+.sug-todos kbd { font-family: var(--mono); font-size: 11px; color: var(--tinta2); border: 1px solid var(--linha); border-radius: 3px; padding: 0 4px; }
+.sug:has(.sug-todos) { border-top: 1px solid var(--linha); margin-top: 4px; padding-top: 7px; }
+.sug-nada { margin: 0; padding: 8px 12px; color: var(--tinta2); }
+/* Voltar */
+.link.voltar { align-self: flex-start; font-size: 12.5px; }
+.vazio .link.voltar { margin-bottom: 12px; display: inline-block; }
+/* Progresso: uma barra para o conjunto, resumo e detalhe */
+.progresso { align-items: flex-start; }
+.progresso .trilho { margin-top: 6px; width: 320px; }
+.prog-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.prog-txt .resumo { font-weight: 600; font-variant-numeric: tabular-nums; }
+.prog-txt .msg { color: var(--tinta2); overflow-wrap: anywhere; }
+.progresso.falhou .barra-prog, .prog-rodape.falhou .barra-prog { background: var(--ambar); }
+.indeterminado .barra-prog { width: 30% !important; animation: vaivem 1.2s ease-in-out infinite alternate; }
+@keyframes vaivem { from { transform: translateX(-100%); } to { transform: translateX(330%); } }
+.prog-rodape { display: flex; align-items: center; gap: 8px; border: 0; background: none; padding: 0; cursor: pointer; color: var(--tinta);
+  font-size: 11.5px; max-width: 46vw; min-width: 0; }
+.prog-rodape .trilho { width: 120px; height: 5px; background: var(--sup); border: 1px solid var(--linha); }
+.prog-rodape .msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.prog-rodape:hover .msg { text-decoration: underline; }
+.rodape { min-width: 0; }
+.rodape > b, .rodape > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* Escopo do download */
+.escopo { border: 1px solid var(--linha); border-radius: 4px; margin: 0; padding: 8px 14px 10px; display: flex; flex-direction: column; gap: 3px; }
+.escopo legend { padding: 0 4px; }
+.escopo legend small { color: var(--tinta2); font-size: 12px; font-weight: 400; margin-left: 4px; }
+.opcao { display: flex; gap: 8px; align-items: baseline; cursor: pointer; padding: 2px 0; }
+.opcao input { accent-color: var(--verde); }
+.opcao small { color: var(--tinta2); font-size: 12px; margin-left: 4px; }
+.apagar-zips { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; color: var(--tinta2); cursor: pointer; }
+.apagar-zips input { accent-color: var(--verde); }
+.janela { max-height: calc(100vh - 96px); overflow: auto; gap: 12px; }
+/* Instruções do download manual */
+.manual summary { font-size: 13px; font-weight: 500; }
+.manual ol { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; max-width: 100ch; }
+.manual code { font-size: 12px; }
+.url { display: flex; gap: 8px; align-items: baseline; margin: 3px 0; position: relative; }
+.botao.pequeno { padding: 2px 8px; font-size: 12px; }
+.url code { background: var(--papel); padding: 1px 6px; border-radius: 3px; overflow-wrap: anywhere; }
+.url .copiado { position: static; }
+.urls { display: flex; flex-direction: column; margin: 4px 0; }
+/* O que mudou: ver mais */
+.lista-mud { display: flex; flex-direction: column; }
+.botao.mais { align-self: flex-start; margin-top: 4px; }
+/* Histórico: o mês clicado na linha do tempo pisca */
+.evento.piscar { animation: piscar .45s ease-in-out 4 alternate; }
+@keyframes piscar { from { background: transparent; } to { background: var(--ambar-f); box-shadow: inset 3px 0 var(--ambar); } }
+@media (prefers-reduced-motion: reduce) {
+  .evento.piscar { animation: none; background: var(--ambar-f); box-shadow: inset 3px 0 var(--ambar); }
+  .indeterminado .barra-prog { animation: none; width: 100% !important; opacity: .45; }
+}
+/* Ficha: nome copiável */
+.copiar-nome { all: unset; cursor: copy; position: relative; border-radius: 2px; }
+.copiar-nome:hover { background: var(--verde-claro); }
+.copiar-nome:focus-visible { outline: 2px solid var(--verde); outline-offset: 2px; }
+.copiar-nome .copiado { bottom: -16px; font-weight: 600; white-space: nowrap; }
+.copiado { white-space: nowrap; }
+/* Árvore: seta um pouco maior; linha sob os níveis abertos um pouco mais marcada */
+.no .seta { width: 12px; font-size: 13px; line-height: 1; color: var(--tinta); opacity: .75; }
+.arvore li.aberto > .no { box-shadow: 0 1px 0 var(--linha-forte); }
+/* Largura mínima sem rolagem horizontal */
+.modulos .tabela td:last-child { overflow-wrap: anywhere; }
+.campo { min-width: 0; flex: 1 1 260px; }
+.acoes { flex-wrap: wrap; }
+.tabela td.instr { min-width: 120px; }
+.colunas { grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); }
+/* Primeira execução cabe em 1366×768 sem rolar: obrigatórios juntos, escopo em duas colunas, ações sempre à vista. */
+.janela { padding: 20px 24px 0; gap: 10px; }
+.janela h1 { font-size: 19px; }
+.modulo.obrigatorio { padding: 9px 14px; }
+.linha-mod { display: block; }
+.linha-mod small { margin-left: 6px; }
+.janela .escopo { display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; padding: 6px 14px 8px; }
+.janela .escopo legend { grid-column: 1 / -1; }
+.janela .acoes { position: sticky; bottom: 0; background: var(--sup); padding: 10px 0 18px; margin-top: 2px; border-top: 1px solid var(--linha); }
+.janela .opcao small { display: block; margin-left: 0; }
+.janela .opcao { align-items: flex-start; }
+.janela .opcao input { margin-top: 3px; }
+.janela .escopo { align-items: start; }
+#primeira.rodando .escopo, #primeira.rodando .apagar-zips { display: none; }

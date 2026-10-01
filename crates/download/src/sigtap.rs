@@ -85,8 +85,17 @@ pub fn planejar(
 
 /// Lista o servidor oficial.
 pub fn listar_servidor(cortesia: &Cortesia) -> Result<Vec<Disponivel>, ErroDownload> {
-    let mut f = Ftp::conectar(SERVIDOR, cortesia.porta, cortesia.tempo_limite)?;
-    let e = f.listar(PASTA)?;
+    listar_de(SERVIDOR, PASTA, cortesia)
+}
+
+/// Lista os ZIPs do SIGTAP de um servidor FTP (o oficial, ou um falso nos testes).
+pub fn listar_de(
+    servidor: &str,
+    pasta: &str,
+    cortesia: &Cortesia,
+) -> Result<Vec<Disponivel>, ErroDownload> {
+    let mut f = Ftp::conectar(servidor, cortesia.porta, cortesia.tempo_limite)?;
+    let e = f.listar(pasta)?;
     f.sair();
     Ok(disponiveis(&e))
 }
@@ -100,10 +109,23 @@ pub fn baixar(
     cancelar: &std::sync::atomic::AtomicBool,
     progresso: impl FnMut(crate::cortesia::Evento),
 ) -> Result<Vec<PathBuf>, ErroDownload> {
+    baixar_de(SERVIDOR, PASTA, plano, pasta, cortesia, cancelar, progresso)
+}
+
+/// Como [`baixar`], de um servidor e pasta remota dados.
+pub fn baixar_de(
+    servidor: &str,
+    pasta_remota: &str,
+    plano: &[Disponivel],
+    pasta: &Path,
+    cortesia: &Cortesia,
+    cancelar: &std::sync::atomic::AtomicBool,
+    progresso: impl FnMut(crate::cortesia::Evento),
+) -> Result<Vec<PathBuf>, ErroDownload> {
     let pedidos: Vec<crate::cortesia::Pedido> = plano
         .iter()
         .map(|d| crate::cortesia::Pedido {
-            pasta_remota: PASTA.into(),
+            pasta_remota: pasta_remota.into(),
             nome: d.nome.clone(),
             tamanho: d.tamanho,
         })
@@ -113,7 +135,7 @@ pub fn baixar(
         .map(|p| (pasta.join(format!("{}.parcial", p.nome)), p.nome.clone()))
         .collect();
     crate::cortesia::baixar_lista(
-        SERVIDOR,
+        servidor,
         &pedidos,
         pasta,
         cortesia,

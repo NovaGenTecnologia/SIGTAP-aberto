@@ -56,6 +56,13 @@ const Formatos = (() => {
     return c.valor ?? "";
   }
 
+  /** Bytes em MB (ou GB) com vírgula decimal: 19800000 → "19,8 MB". */
+  function mb(bytes) {
+    const n = Number(bytes) || 0;
+    const [v, u] = n >= 1e9 ? [n / 1e9, "GB"] : [n / 1e6, "MB"];
+    return `${v.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ${u}`;
+  }
+
   /** Nota com o valor como está no arquivo oficial, quando a exibição o converte. */
   function notaOficial(c) {
     if (!c) return "";
@@ -67,7 +74,7 @@ const Formatos = (() => {
     return "";
   }
 
-  return { moeda, percentual, idade, inteiro, competencia, mascara, campo, notaOficial };
+  return { moeda, percentual, idade, inteiro, competencia, mascara, campo, notaOficial, mb };
 })();
 
 if (typeof module !== "undefined") module.exports = Formatos;

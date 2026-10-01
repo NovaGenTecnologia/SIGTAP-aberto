@@ -287,7 +287,10 @@ impl BancoSigtap {
     }
 
     fn preparar(conn: Connection) -> Result<Self, ErroBanco> {
-        conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL;")?;
+        // busy_timeout: o aplicativo consulta numa conexão enquanto outra carrega competências.
+        conn.execute_batch(
+            "PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=30000;",
+        )?;
         conn.execute_batch(ESQUEMA_META)?;
         let versao: Option<String> = conn
             .query_row(

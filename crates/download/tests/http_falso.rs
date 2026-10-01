@@ -207,3 +207,44 @@ fn territorio_baixado_validado_e_lido_da_pasta() {
     assert!(ter::ler_pasta(&pasta).is_ok());
     let _ = std::fs::remove_dir_all(&pasta);
 }
+
+#[test]
+fn territorio_importado_de_paginas_salvas_do_navegador() {
+    use sa_download::territorio as ter;
+    let ibge = r#"[{"municipio-id":1100015,"municipio-nome":"A","microrregiao-id":1,"microrregiao-nome":"m","mesorregiao-id":1,"mesorregiao-nome":"m","regiao-imediata-id":1,"regiao-imediata-nome":"i","regiao-intermediaria-id":1,"regiao-intermediaria-nome":"i","UF-id":11,"UF-sigla":"RO","UF-nome":"Rondônia","regiao-id":1,"regiao-sigla":"N","regiao-nome":"Norte"}]"#;
+    let item = |cod: &str| {
+        format!(
+            r#"{{"codigo_regiao_pais":"1","regiao_pais":"Norte","codigo_uf":"11","uf":"Rondônia","codigo_macrorregiao_saude":"1101","macrorregiao_saude":"M","codigo_regiao_saude":"11001","regiao_saude":"R","codigo_municipio":"{cod}","municipio":"RO - A","populacao_estimada_ibge_2022":5}}"#
+        )
+    };
+    let base = std::env::temp_dir().join(format!("sa-ter-imp-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let origem = base.join("origem");
+    let destino = base.join("destino");
+    std::fs::create_dir_all(&origem).unwrap();
+    // Sem arquivos de território: nada a fazer.
+    assert_eq!(ter::preparar_importacao(&origem, &destino).unwrap(), None);
+    std::fs::write(origem.join(ter::ARQ_IBGE), ibge).unwrap();
+    // Duas páginas como o navegador salva (objeto com a lista) e uma página vazia.
+    let pg = |itens: &str| format!("{{\"{}\":[{itens}]}}", ter::LISTA_DEMAS);
+    std::fs::write(origem.join("demas_1.json"), pg(&item("110001"))).unwrap();
+    std::fs::write(origem.join("DEMAS_2.json"), pg(&item("110002"))).unwrap();
+    std::fs::write(origem.join("demas_3.json"), pg("")).unwrap();
+    assert_eq!(
+        ter::preparar_importacao(&origem, &destino).unwrap(),
+        Some(3)
+    );
+    let t = ter::ler_pasta(&destino).unwrap();
+    assert_eq!((t.ibge.len(), t.demas.len()), (1, 2));
+    assert!(t.origem_demas.url.starts_with("importação manual"));
+    // A mesma página salva duas vezes é recusada na validação (município repetido).
+    std::fs::write(origem.join("demas_4.json"), pg(&item("110002"))).unwrap();
+    ter::preparar_importacao(&origem, &destino).unwrap();
+    let e = ter::ler_pasta(&destino).unwrap_err();
+    assert!(e.to_string().contains("repetido"), "{e}");
+    // Página que não é do DEMAS: erro com o nome do arquivo.
+    std::fs::write(origem.join("demas_4.json"), "{\"outra\":[]}").unwrap();
+    let e = ter::preparar_importacao(&origem, &destino).unwrap_err();
+    assert!(e.to_string().contains("demas_4.json"), "{e}");
+    let _ = std::fs::remove_dir_all(&base);
+}

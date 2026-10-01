@@ -439,6 +439,28 @@ fn o_que_mudou_bate_com_intervalos_em_todas_as_viradas() {
         .find(|i| i.chave["co_procedimento"] == "0604840020")
         .unwrap();
     assert_eq!(mepo.campos_alterados, ["vl_idade_minima"]);
+
+    // "Ver mais": páginas pequenas de cada tabela, concatenadas, reproduzem a lista completa.
+    let completo = q.o_que_mudou(c("202608"), c("202609"), usize::MAX).unwrap();
+    for t in &completo.tabelas {
+        let mut juntos = Vec::new();
+        let mut desde = 0;
+        loop {
+            let pg = q
+                .o_que_mudou_tabela(c("202608"), c("202609"), &t.tabela, desde, 7)
+                .unwrap()
+                .unwrap();
+            assert_eq!(pg.desde, desde);
+            assert_eq!(pg.itens_omitidos + desde + pg.itens.len(), t.itens.len());
+            desde += pg.itens.len();
+            juntos.extend(pg.itens.into_iter().map(|i| (i.tipo, i.chave)));
+            if pg.itens_omitidos == 0 {
+                break;
+            }
+        }
+        let todos: Vec<_> = t.itens.iter().map(|i| (i.tipo, i.chave.clone())).collect();
+        assert_eq!(juntos, todos, "paginação de {}", t.tabela);
+    }
 }
 
 /// Completude do manifesto de referências: toda coluna CO_/NU_ de qualquer tabela do banco é

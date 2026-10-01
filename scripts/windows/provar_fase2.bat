@@ -17,6 +17,15 @@ cargo --version >> "%LOG%" 2>&1
 echo --- 1. testes do workspace %time% >> "%LOG%"
 cargo test --workspace --locked >> "%LOG%" 2>&1
 echo CODIGO_TESTES=%errorlevel% >> "%LOG%"
+echo --- 1b. download e carga em paralelo (FTP local servindo os ZIPs reais de historico_zips) %time% >> "%LOG%"
+set "SA_ZIPS_HISTORICO=%RAIZ%\..\historico_zips"
+if not exist "%SA_ZIPS_HISTORICO%" goto sem_zips
+cargo test --release --locked -p sa-app -- --nocapture >> "%LOG%" 2>&1
+echo CODIGO_PIPELINE=%errorlevel% >> "%LOG%"
+goto compilar
+:sem_zips
+echo FALTA a pasta historico_zips ao lado de sigtap-aberto >> "%LOG%"
+:compilar
 echo --- 2. compilacao do programa e da linha de comando %time% >> "%LOG%"
 cargo build --release --locked -p sa-cli -p sa-app >> "%LOG%" 2>&1
 echo CODIGO_COMPILAR=%errorlevel% >> "%LOG%"
@@ -50,9 +59,16 @@ echo Pronto. Resultado em: %LOG%
 echo.
 echo Agora o teste manual: vai abrir a pasta %PROVA%\portatil com o programa sozinho.
 echo 1. Abra o sigtap-aberto.exe. Deve aparecer a tela de primeira execucao.
-echo 2. Clique em Baixar agora (sem marcar o historico). Espere terminar.
-echo 3. Busque "desfibrilador", abra 04.06.01.057-9, veja as abas e o Historico.
-echo 4. Feche o programa e confira que so ha dados, dados_webview e o .exe na pasta.
+echo 2. Escolha "Ultimos 6 meses", marque "Apagar os ZIPs" e clique em Baixar agora.
+echo    A barra deve encher uma vez so, com "Fazendo download X de 6; carregadas no banco Y de 6".
+echo    Quando aparecer "Usar enquanto termina", clique: a barra vai para o rodape, a direita.
+echo 3. Digite "desfib" na busca: as sugestoes aparecem sem Enter. Abra 04.06.01.057-9.
+echo    Clique no codigo (copia sem pontos), Ctrl+clique (com pontos), clique no nome (copia o nome).
+echo 4. Historico: clique numa barra da linha do tempo; o mes deve piscar.
+echo 5. O que mudou e Modulos e dados: confira o botao Voltar e o "Ver mais".
+echo 6. Modulos e dados: Procurar pasta... abre a janela do Windows; "Como baixar os arquivos a mao".
+echo 7. Diminua a janela ate o minimo: nao pode aparecer barra de rolagem horizontal.
+echo 8. Feche o programa e confira que so ha dados, dados_webview e o .exe na pasta.
 explorer "%PROVA%\portatil"
 pause
 exit /b 0

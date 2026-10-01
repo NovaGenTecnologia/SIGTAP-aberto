@@ -208,3 +208,67 @@ pub fn ler_pasta(pasta: &Path) -> Result<Territorio, ErroTerritorioDl> {
         demas,
     })
 }
+
+/// Importação manual: prepara em `destino` os arquivos do território encontrados em `origem`.
+/// Aceita `ibge_municipios.json` e, para o DEMAS, `demas_municipios.json` (lista já juntada)
+/// ou as páginas salvas do navegador (`demas*.json`, cada uma com a lista
+/// `macrorregiao_regiao_saude_municipios` ou uma lista simples), que são juntadas.
+/// Devolve `Ok(None)` quando a pasta não tem território, ou o número de páginas juntadas.
+/// Não valida o conteúdo: chame [`ler_pasta`] em `destino` depois.
+pub fn preparar_importacao(
+    origem: &Path,
+    destino: &Path,
+) -> Result<Option<usize>, ErroTerritorioDl> {
+    let ibge = origem.join(ARQ_IBGE);
+    if !ibge.exists() {
+        return Ok(None);
+    }
+    let erro = |p: &Path, e: String| ErroTerritorioDl::Arquivo(p.to_path_buf(), e);
+    let paginas: Vec<PathBuf> = if origem.join(ARQ_DEMAS).exists() {
+        vec![origem.join(ARQ_DEMAS)]
+    } else {
+        let mut v: Vec<PathBuf> = std::fs::read_dir(origem)
+            .map_err(|e| erro(origem, e.to_string()))?
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                let n = p
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_lowercase())
+                    .unwrap_or_default();
+                n.starts_with("demas") && n.ends_with(".json")
+            })
+            .collect();
+        v.sort();
+        v
+    };
+    if paginas.is_empty() {
+        return Ok(None);
+    }
+    let mut itens: Vec<serde_json::Value> = Vec::new();
+    for p in &paginas {
+        let m = std::fs::metadata(p).map_err(|e| erro(p, e.to_string()))?;
+        if m.len() > crate::http::LIMITE_RESPOSTA {
+            return Err(erro(p, "arquivo grande demais".into()));
+        }
+        let b = std::fs::read(p).map_err(|e| erro(p, e.to_string()))?;
+        let v: serde_json::Value = serde_json::from_slice(&b)
+            .map_err(|e| erro(p, format!("não é um JSON válido ({e})")))?;
+        let lista = match &v {
+            serde_json::Value::Array(a) => a,
+            serde_json::Value::Object(o) => o
+                .get(LISTA_DEMAS)
+                .and_then(|x| x.as_array())
+                .ok_or_else(|| erro(p, format!("não tem a lista '{LISTA_DEMAS}'")))?,
+            _ => return Err(erro(p, "formato inesperado".into())),
+        };
+        itens.extend(lista.iter().cloned());
+    }
+    std::fs::create_dir_all(destino).map_err(|e| erro(destino, e.to_string()))?;
+    std::fs::copy(&ibge, destino.join(ARQ_IBGE)).map_err(|e| erro(&ibge, e.to_string()))?;
+    let juntos = serde_json::to_vec(&itens).map_err(|e| erro(destino, e.to_string()))?;
+    std::fs::write(destino.join(ARQ_DEMAS), juntos)
+        .map_err(|e| erro(&destino.join(ARQ_DEMAS), e.to_string()))?;
+    let _ = std::fs::remove_file(destino.join(ARQ_ORIGEM));
+    Ok(Some(paginas.len()))
+}

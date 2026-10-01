@@ -7,5 +7,7 @@
 pub mod cortesia;
 pub mod ftp;
 pub mod http;
+#[cfg(feature = "servidor-falso")]
+pub mod servidor_falso;
 pub mod sigtap;
 pub mod territorio;

@@ -39,8 +39,9 @@ Comandos:
   arvore [nó] [--competencia AAAAMM]
                                   grupos, ou filhos do nó (2, 4 ou 6 dígitos), em JSON
   historico <código>              linha do tempo do procedimento, em JSON
-  mudou [--de AAAAMM] [--competencia AAAAMM]
-                                  o que mudou da competência anterior (ou de --de), em JSON
+  mudou [TABELA] [--de AAAAMM] [--competencia AAAAMM] [--desde N]
+                                  o que mudou da competência anterior (ou de --de), em JSON;
+                                  com TABELA, só ela, a partir do item N (padrão 0)
   ajuda                           mostra esta ajuda
 
 Opções:
@@ -57,6 +58,7 @@ struct Opcoes {
     ultima: bool,
     todas: bool,
     de: Option<Competencia>,
+    desde: Option<usize>,
     livres: Vec<PathBuf>,
 }
 
@@ -78,6 +80,7 @@ fn ler_opcoes(args: &[String]) -> Result<Opcoes, String> {
         ultima: false,
         todas: false,
         de: None,
+        desde: None,
         livres: Vec::new(),
     };
     let mut i = 0;
@@ -108,6 +111,14 @@ fn ler_opcoes(args: &[String]) -> Result<Opcoes, String> {
                 o.competencia = Some(
                     Competencia::de_texto(&valor(i, "--competencia")?)
                         .map_err(|e| e.to_string())?,
+                );
+                i += 1;
+            }
+            "--desde" => {
+                o.desde = Some(
+                    valor(i, "--desde")?
+                        .parse()
+                        .map_err(|_| "--desde espera um número".to_string())?,
                 );
                 i += 1;
             }
@@ -306,10 +317,23 @@ fn cmd_consulta(cmd: &str, o: &Opcoes) -> Result<(), String> {
                     Competencia::de_texto(&cs[pos - 1].competencia).map_err(|e| e.to_string())?
                 }
             };
-            serde_json::to_string_pretty(
-                &q.o_que_mudou(de, comp, sa_query::mudancas::LIMITE_ITENS)
+            if livre.is_empty() {
+                serde_json::to_string_pretty(
+                    &q.o_que_mudou(de, comp, sa_query::mudancas::LIMITE_ITENS)
+                        .map_err(|e| e.to_string())?,
+                )
+            } else {
+                serde_json::to_string_pretty(
+                    &q.o_que_mudou_tabela(
+                        de,
+                        comp,
+                        &livre,
+                        o.desde.unwrap_or(0),
+                        sa_query::mudancas::LIMITE_ITENS,
+                    )
                     .map_err(|e| e.to_string())?,
-            )
+                )
+            }
         }
     }
     .map_err(|e| format!("falha ao gerar JSON ({e})"))?;
