@@ -106,6 +106,35 @@ arquivo a cada entrega; a interface do programa segue a versão mais recente.
 | v1 | "v1 — 1440×900 (30/09)" | 6406dc9 | 6 telas com dados reais |
 | v2 | "v2 — 1366×768 (01/10)" | fc4a700 | Pior caso de tela (1366×697 úteis); árvore em escada pela numeração com ancestrais fixos e divisor ajustável; ficha compacta (faixa-chave, abas agrupadas, "Para cobrar"); busca agrupada por forma; início com resumo |
 | v2.1 | mesma página da v2 (versão salva "v2.1") | a4f4de1 | Árvore sem recuo: o código inteiro faz a escada; prefixo do pai em cinza claro, pedaço do nível em verde escuro |
+| v2.2 | página "v2.2 — 1366×768 (01/10)" (pendente: aba do Penpot suspensa) | 388c65d | Busca com sugestões ao digitar; Voltar e "Procedimentos" na barra; barra de progresso única com "Fazendo download X de N"; progresso no rodapé ao sair da tela; downloads parciais (6/12/24 meses) com tamanho real; apagar ZIPs; Procurar pasta e instruções de download manual; "ver mais" no O que mudou; cópia com Ctrl+clique e do nome; mês do histórico pisca; seta da árvore maior |
+
+### 2.1 Entrega v2.2 (01/10/2026): o que foi provado e onde
+
+Provado no Linux (contêiner), com dados reais:
+- Download e carga em duas linhas de trabalho (`sa-app`, testes `servico::testes`): FTP local servindo
+  4 ZIPs oficiais (202606–202609). A carga começa antes do fim dos downloads; ordem da mais recente
+  para a mais antiga; a barra nunca volta e termina em 100%; o banco montado de trás para frente
+  (`resumo_logico`) é idêntico ao montado em ordem, inclusive depois de acrescentar uma competência
+  mais antiga; com "apagar ZIPs" só fica o ZIP de 09/2026; cancelar para as duas linhas sem deixar
+  arquivo pela metade com nome final.
+- Carga retroativa medida: 2,1–2,5 s por competência contra 1,4–1,5 s em ordem; por isso a mais recente
+  vem primeiro (fica utilizável logo) e as antigas entram de trás para frente.
+- "Ver mais" do O que mudou: páginas de 7 itens de cada tabela, concatenadas, reproduzem a lista
+  completa (08/2026→09/2026). Consultas reais: 7 testes passando contra o banco de 225 competências.
+- Importação manual do território: páginas `demas*.json` salvas do navegador são juntadas; página
+  repetida é recusada (município repetido); arquivo estranho é recusado com o nome.
+- Interface pela ponte de desenvolvimento (download simulado): sugestões, teclado, cópias (sem pontos,
+  com pontos, nome), piscar, ver mais, voltar, rodapé, primeira execução cabendo em 1366×697 sem rolar.
+- Largura mínima: sem rolagem horizontal em todas as telas a 1024 px, inclusive com a árvore alargada
+  ao máximo (a árvore é limitada para o conteúdo nunca ficar abaixo de 730 px; a tabela mais larga,
+  Compatíveis, pede ~716 px). A 960 px já aparece rolagem; o mínimo da janela fica 1024×640.
+
+Não testado: nada disso no Windows; o FTP real do DATASUS com as duas linhas (o contêiner não alcança);
+a janela "Procurar pasta" (tauri-plugin-dialog 2.8.1, MIT/Apache-2.0) só existe no programa compilado.
+Dependência nova conferida com `cargo deny check licenses`.
+
+Achado: o banco não tinha `busy_timeout`; consulta e carga simultâneas poderiam falhar com "database is
+locked". Agora 30 s.
 
 ## 3. Fechamento
 
