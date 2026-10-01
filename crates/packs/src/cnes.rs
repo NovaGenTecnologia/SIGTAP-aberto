@@ -123,6 +123,12 @@ pub struct BancoCnes {
     conn: Connection,
 }
 
+/// SHA-256 em hexadecimal (para registrar a origem de cada arquivo carregado).
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+}
+
 /// Nome da tabela de um tipo (`cnes_st`...). O tipo já foi validado pelo manifesto.
 pub fn tabela(tipo: &str) -> Result<Ident, ErroCnes> {
     safe_ident(&format!("cnes_{}", tipo.to_ascii_lowercase()))
@@ -560,6 +566,19 @@ impl BancoCnes {
         }
         tx.commit()?;
         Ok(mapa.len())
+    }
+
+    /// Remove do banco tudo o que veio de um tipo de arquivo (a tabela e os registros de controle).
+    /// Usado quando o usuário troca ou esquece a unidade: os profissionais dela saem.
+    pub fn remover(&mut self, tipo: &str) -> Result<(), ErroCnes> {
+        let tab = tabela(tipo)?;
+        let tx = self.conn.transaction()?;
+        tx.execute_batch(&format!("DROP TABLE IF EXISTS {tab};"))?;
+        for controle in ["sa_arquivo", "sa_campo", "sa_privacidade"] {
+            tx.execute(&format!("DELETE FROM {controle} WHERE tipo = ?1"), [tipo])?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     /// Os arquivos carregados, por tipo.

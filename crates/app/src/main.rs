@@ -7,6 +7,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod servico;
+mod unidade;
 
 use sa_core::Competencia;
 use sa_download::atualizador;
@@ -398,6 +399,174 @@ async fn apagar_zips(s: Estado<'_>) -> Result<String, String> {
     s.apagar_zips()
 }
 
+
+// ---- Fase 3: CNES, minha unidade, favoritos, anotações e exportação ----
+
+/// Situação do módulo CNES: UFs carregadas, competência de cada uma e a unidade escolhida.
+#[tauri::command]
+async fn cnes_situacao(s: Estado<'_>) -> Result<serde_json::Value, String> {
+    Ok(unidade::situacao(&s.pastas))
+}
+
+#[tauri::command]
+fn cnes_baixar(app: AppHandle, s: Estado<'_>, pedido: unidade::PedidoCnes) -> Result<(), String> {
+    let s = s.inner().clone();
+    em_segundo_plano(app, s, move |sv, emissor, _| {
+        unidade::baixar_cnes(&sv.pastas, &pedido, &sv.cancelar, emissor)
+    })
+}
+
+#[tauri::command]
+fn cnes_importar(app: AppHandle, s: Estado<'_>, pasta: String, uf: String) -> Result<(), String> {
+    let s = s.inner().clone();
+    em_segundo_plano(app, s, move |sv, emissor, _| {
+        unidade::importar_cnes(&sv.pastas, &PathBuf::from(pasta), &uf, emissor)
+    })
+}
+
+/// Competências do CNES que o servidor oficial tem para a UF.
+#[tauri::command]
+async fn cnes_competencias(uf: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || unidade::competencias_no_servidor(&uf))
+        .await
+        .map_err(|e| format!("falha interna ao listar o servidor ({e})"))?
+}
+
+#[tauri::command]
+async fn cnes_apagar(s: Estado<'_>, uf: String) -> Result<String, String> {
+    if s.ocupado.load(Ordering::SeqCst) {
+        return Err("há uma tarefa em andamento. Espere terminar ou cancele.".into());
+    }
+    unidade::apagar_uf(&s.pastas, &uf)
+}
+
+#[tauri::command]
+async fn cnes_buscar(s: Estado<'_>, uf: String, texto: String) -> Result<serde_json::Value, String> {
+    unidade::buscar_estabelecimentos(&s.pastas, &uf, &texto)
+}
+
+#[tauri::command]
+async fn unidade_definir(s: Estado<'_>, uf: String, cnes: String) -> Result<serde_json::Value, String> {
+    if s.ocupado.load(Ordering::SeqCst) {
+        return Err("há uma tarefa em andamento. Espere terminar e escolha a unidade de novo.".into());
+    }
+    unidade::definir_minha(&s.pastas, &uf, &cnes)
+}
+
+#[tauri::command]
+async fn unidade_limpar(s: Estado<'_>) -> Result<(), String> {
+    unidade::limpar_minha(&s.pastas)
+}
+
+#[tauri::command]
+async fn unidade_ver(s: Estado<'_>, competencia: Option<String>) -> Result<serde_json::Value, String> {
+    s.com_consulta(|q| {
+        let c = s.competencia(q, competencia.as_deref())?;
+        unidade::unidade(&s.pastas, q, c)
+    })
+}
+
+/// "Minha unidade está apta?" para um procedimento. `null` sem unidade escolhida.
+#[tauri::command]
+async fn aptidao(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    codigo: String,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|q| {
+        let c = s.competencia(q, competencia.as_deref())?;
+        unidade::aptidao(&s.pastas, q, c, &codigo)
+    })
+}
+
+/// "Quem faz na rede": município, região de saúde e UF da unidade escolhida.
+#[tauri::command]
+async fn rede(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    codigo: String,
+    escopo: Option<String>,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|q| {
+        let c = s.competencia(q, competencia.as_deref())?;
+        unidade::rede(&s.pastas, q, c, &codigo, escopo.as_deref().unwrap_or("municipio"))
+    })
+}
+
+#[tauri::command]
+async fn marcar_favorito(
+    s: Estado<'_>,
+    tipo: String,
+    codigo: String,
+    favorito: bool,
+) -> Result<serde_json::Value, String> {
+    let u = unidade::usuario(&s.pastas)?;
+    u.favoritar(&tipo, &codigo, favorito).map_err(|e| e.to_string())?;
+    json(u.marcado(&tipo, &codigo).map_err(|e| e.to_string())?)
+}
+
+#[tauri::command]
+async fn anotar(
+    s: Estado<'_>,
+    tipo: String,
+    codigo: String,
+    texto: String,
+) -> Result<serde_json::Value, String> {
+    let u = unidade::usuario(&s.pastas)?;
+    u.anotar(&tipo, &codigo, &texto).map_err(|e| e.to_string())?;
+    json(u.marcado(&tipo, &codigo).map_err(|e| e.to_string())?)
+}
+
+#[tauri::command]
+async fn marcado(s: Estado<'_>, tipo: String, codigo: String) -> Result<serde_json::Value, String> {
+    json(unidade::usuario(&s.pastas)?.marcado(&tipo, &codigo).map_err(|e| e.to_string())?)
+}
+
+/// Favoritos e anotações do tipo, com o nome de cada procedimento na competência pedida.
+#[tauri::command]
+async fn marcados(
+    s: Estado<'_>,
+    tipo: String,
+    competencia: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let itens = unidade::usuario(&s.pastas)?.marcados(&tipo).map_err(|e| e.to_string())?;
+    s.com_consulta(|q| {
+        let c = s.competencia(q, competencia.as_deref())?;
+        unidade::marcados_com_nome(q, c, &itens)
+    })
+}
+
+/// Exporta uma planilha montada pela interface. Abre a janela "Salvar como"; a extensão
+/// escolhida (.xlsx ou .csv) decide o formato. Devolve `null` se o usuário desistir.
+#[tauri::command]
+async fn exportar(
+    app: AppHandle,
+    planilha: sa_query::exportar::Planilha,
+    nome: String,
+    aba: Option<usize>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    planilha.validar()?;
+    let limpo: String = nome
+        .chars()
+        .map(|c| if c.is_alphanumeric() || "-_ .".contains(c) { c } else { '_' })
+        .take(80)
+        .collect();
+    let Some(destino) = app
+        .dialog()
+        .file()
+        .set_title("Exportar")
+        .set_file_name(format!("{limpo}.xlsx"))
+        .add_filter("Planilha do Excel (.xlsx)", &["xlsx"])
+        .add_filter("Texto separado por ponto e vírgula (.csv)", &["csv"])
+        .blocking_save_file()
+        .and_then(|p| p.into_path().ok())
+    else {
+        return Ok(None);
+    };
+    unidade::exportar(&destino, &planilha, aba.unwrap_or(0)).map(Some)
+}
+
 /// Janela do Windows para escolher a pasta de importação.
 #[tauri::command]
 async fn escolher_pasta(app: AppHandle) -> Option<String> {
@@ -526,7 +695,23 @@ fn main() {
             cancelar,
             ofertas,
             apagar_zips,
-            escolher_pasta
+            escolher_pasta,
+            cnes_situacao,
+            cnes_baixar,
+            cnes_importar,
+            cnes_competencias,
+            cnes_apagar,
+            cnes_buscar,
+            unidade_definir,
+            unidade_limpar,
+            unidade_ver,
+            aptidao,
+            rede,
+            marcar_favorito,
+            anotar,
+            marcado,
+            marcados,
+            exportar
         ])
         .setup(move |app| {
             WebviewWindowBuilder::new(app, "principal", WebviewUrl::App("index.html".into()))

@@ -106,3 +106,25 @@ impl Consulta {
             .collect())
     }
 }
+
+impl Consulta {
+    /// Nome de um procedimento na competência; `None` se ele não existe nela.
+    pub fn nome_procedimento(
+        &self,
+        comp: Competencia,
+        codigo: &str,
+    ) -> Result<Option<String>, ErroConsulta> {
+        use rusqlite::OptionalExtension;
+        let seq = self.exigir(comp)?;
+        let t = ident("tb_procedimento")?;
+        let v = ident_vig("tb_procedimento")?;
+        Ok(self
+            .conn()
+            .prepare_cached(&format!(
+                "SELECT c.no_procedimento FROM {t} c JOIN {v} v ON v.sa_id = c.sa_id
+                 WHERE v.vig_ini <= ?1 AND v.vig_fim >= ?1 AND c.co_procedimento = ?2 LIMIT 1"
+            ))?
+            .query_row(rusqlite::params![seq, codigo], |r| r.get(0))
+            .optional()?)
+    }
+}
