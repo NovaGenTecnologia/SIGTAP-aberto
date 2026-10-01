@@ -98,6 +98,14 @@ Achados desta etapa:
 - Dependência nova com licença fora da lista: `webpki-root-certs` (CDLA-Permissive-2.0, lista de certificados raiz da Mozilla). Exceção documentada em `deny.toml`.
 - Protótipo migrado do Figma (limite de chamadas do plano Starter) para o Penpot do cliente.
 
+Versionamento das telas (Penpot do cliente): uma página por versão e uma versão salva do
+arquivo a cada entrega; a interface do programa segue a versão mais recente.
+
+| Versão | Página no Penpot | Interface (commit) | O que mudou |
+|---|---|---|---|
+| v1 | "v1 — 1440×900 (30/09)" | 6406dc9 | 6 telas com dados reais |
+| v2 | "v2 — 1366×768 (01/10)" | fc4a700 | Pior caso de tela (1366×697 úteis); árvore em escada pela numeração com ancestrais fixos e divisor ajustável; ficha compacta (faixa-chave, abas agrupadas, "Para cobrar"); busca agrupada por forma; início com resumo |
+
 ## 3. Fechamento
 
 (preenchido ao final da fase)
