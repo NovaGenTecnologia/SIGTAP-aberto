@@ -5,6 +5,7 @@
 const APOIO = {
   pix: "55ecf356-13c8-4d1b-bf18-b49cba5343e0",       // chave Pix do desenvolvedor (CPF/CNPJ, e-mail, celular ou chave aleatória)
   pixNome: "",   // nome que aparece no Pix (a pessoa confere antes de pagar)
+  pixCidade: "BRASIL", // cidade do recebedor (só informativa no QR Code; até 15 letras)
   sponsors: "",  // usuário no GitHub Sponsors (https://github.com/sponsors/<usuario>)
   email: "",     // e-mail para sugestões e problemas (opcional)
 };

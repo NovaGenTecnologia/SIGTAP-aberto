@@ -431,3 +431,8 @@ body { grid-template-rows: 48px auto 1fr 26px; }
 .janela > * { flex-shrink: 0; }
 .janela .campo { flex: none; width: 100%; }
 .rodape > b { flex: none; }
+
+/* QR Code do Pix (Sobre) */
+.qr-bloco { margin-top: 8px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.qr-pix { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.qr-pix svg { width: 220px; height: 220px; border: 1px solid #c9d3ce; border-radius: 6px; background: #fff; }

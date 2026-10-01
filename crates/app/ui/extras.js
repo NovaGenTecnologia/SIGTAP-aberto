@@ -348,6 +348,40 @@ async function desenharArvoreCid() {
   atualizarBotaoTudo();
 }
 
+// ---------- QR Code do Pix ----------
+function desenharQr(texto) {
+  const qr = qrcode(0, "M"); // tamanho automático, correção de erro média
+  qr.addData(texto, "Byte"); qr.make();
+  const n = qr.getModuleCount(), m = 4; // margem de 4 módulos, como manda o padrão do QR Code
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${n + 2 * m} ${n + 2 * m}`); svg.setAttribute("shape-rendering", "crispEdges");
+  svg.setAttribute("role", "img"); svg.setAttribute("aria-label", "QR Code do Pix para apoiar o projeto");
+  const fundo = document.createElementNS(NS, "rect");
+  fundo.setAttribute("width", n + 2 * m); fundo.setAttribute("height", n + 2 * m); fundo.setAttribute("fill", "#fff");
+  const tracos = document.createElementNS(NS, "path"); let d = "";
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (qr.isDark(y, x)) d += `M${x + m} ${y + m}h1v1h-1z`;
+  tracos.setAttribute("d", d); tracos.setAttribute("fill", "#000");
+  svg.append(fundo, tracos);
+  return svg;
+}
+function qrPix() {
+  const codigo = Pix.payload(APOIO.pix, APOIO.pixNome, APOIO.pixCidade);
+  const area = el("div", { class: "qr-pix", hidden: true });
+  let feito = false;
+  const botao = el("button", { class: "botao pequeno", type: "button", "aria-expanded": "false" }, "Mostrar QR Code");
+  botao.addEventListener("click", () => {
+    if (!feito) {
+      feito = true;
+      area.append(desenharQr(codigo),
+        el("p", { class: "quieto pequeno", text: "Abra o app do seu banco, escolha pagar com Pix e aponte a câmera. Você digita o valor que quiser." }),
+        el("div", { class: "url" }, el("button", { class: "botao pequeno", type: "button", onclick: (ev) => copiar(codigo, ev.currentTarget.parentNode, "Pix copia e cola copiado") }, "Copiar Pix copia e cola"), el("span", { class: "copiado", role: "status" })));
+    }
+    area.hidden = !area.hidden; botao.textContent = area.hidden ? "Mostrar QR Code" : "Esconder QR Code"; botao.setAttribute("aria-expanded", String(!area.hidden));
+  });
+  return el("div", { class: "qr-bloco" }, botao, area);
+}
+
 // ---------- Sobre ----------
 function abrirSobre() {
   const i = E.info || {};
@@ -355,7 +389,8 @@ function abrirSobre() {
     el("span", { class: "quieto", text: `Chave Pix${APOIO.pixNome ? ` (${APOIO.pixNome})` : ""}` }),
     el("div", { class: "url" }, el("code", { text: APOIO.pix }),
       el("button", { class: "botao pequeno", type: "button", onclick: (ev) => copiar(APOIO.pix, ev.currentTarget.parentNode, "chave Pix copiada") }, "Copiar chave Pix"),
-      el("span", { class: "copiado", role: "status" }))) : null;
+      el("span", { class: "copiado", role: "status" })),
+    qrPix()) : null;
   const sponsors = APOIO.sponsors ? el("button", { class: "botao", type: "button", onclick: () => abrirSite(`https://github.com/sponsors/${APOIO.sponsors}`) }, "Apoiar pelo GitHub Sponsors") : null;
   abrirModal("Sobre o SIGTAP Aberto", [
     el("p", { class: "agradece", text: "Obrigado por usar o SIGTAP Aberto." }),
