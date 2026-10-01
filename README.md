@@ -15,6 +15,9 @@ Você digita um código, um nome, um CID ou um CBO. O programa responde na hora:
 - **Busca em tempo real.** Código com ou sem máscara, nome sem acento, CID, CBO, habilitação, serviço/classificação.
 - **Duas árvores.** Procedimentos (grupo → subgrupo → forma) e CIDs (letra → categoria → subcategoria), cada uma com a contagem de procedimentos ligados.
 - **Histórico.** Linha do tempo de cada campo e de cada relação, comparação entre duas competências e a tela "O que mudou" no mês.
+- **Minha unidade.** Baixe o CNES da sua UF, escolha o seu estabelecimento e veja habilitações (com portaria e vigência), serviços e classificações, leitos, equipamentos e profissionais por CBO.
+- **"Minha unidade pode cobrar?"** Em cada procedimento, o programa compara o cadastro do CNES com a habilitação, o serviço e o leito que o SIGTAP exige, diz o que falta e mostra quem mais faz na rede (município, região de saúde, UF). A regra está marcada como **não confirmada** e o arquivo público do CNES não traz serviço terceirizado: é apoio, não veredito.
+- **Favoritos, anotações e exportação.** Guarde procedimentos e notas no seu computador; exporte ficha, busca, unidade e rede para Excel ou CSV.
 - **Avisa quando há novidade.** Confere o servidor oficial de tempos em tempos e diz se saiu uma competência nova ou republicada. Não baixa nada sem você mandar.
 - **Baixa as tabelas oficiais sozinho,** com cortesia com os servidores (uma conexão, um arquivo por vez, retomada), e tem passo a passo para quem precisa baixar à mão.
 - **Cuida do próprio banco.** Confere a integridade ao abrir; se algo estiver danificado, guarda o arquivo ruim numa pasta à parte e refaz a partir dos ZIPs.
@@ -25,7 +28,7 @@ Você digita um código, um nome, um CID ou um CBO. O programa responde na hora:
 - Não é prontuário, agendamento nem substituto do sistema de gestão do hospital.
 - Não transmite nada ao DATASUS nem à ANS. Ele confere e orienta; quem envia é você.
 - **Conferência dos arquivos de faturamento (BPA, APAC, AIH) ainda não está pronta.** É o próximo grande módulo. Cada regra só deixa de ser "não confirmada" depois de provada com arquivo rejeitado real e o retorno oficial.
-- Cruzamento com CNES, SIA e SIH e correlação TUSS × SIGTAP estão no roteiro, não no programa.
+- Cruzamento com a produção do SIA e do SIH e correlação TUSS × SIGTAP estão no roteiro, não no programa.
 
 ## Princípios
 
@@ -112,6 +115,7 @@ sigtap-aberto-cli conferir <pasta de zips>   # reconstrói cada competência e c
 | `crates/packs` | Módulos de dados por escopo (SQLite + `ATTACH`) e saúde do banco |
 | `crates/download` | Download com cortesia, retomada, modo manual e atualizador |
 | `crates/query` | Consultas com saída JSON |
+| `crates/unidade` | CNES por UF, minha unidade, aptidão, rede, favoritos e exportação |
 | `crates/validate` | Conferência pré-envio (ainda só a fronteira do módulo) |
 | `crates/cli` | Linha de comando |
 | `crates/app` | Aplicativo desktop (Tauri 2) |
