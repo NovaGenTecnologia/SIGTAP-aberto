@@ -27,6 +27,9 @@ pub struct ItemProcedimento {
     pub valor_total_centavos: i64,
     /// Instrumentos de registro (nomes de `tb_registro`).
     pub instrumentos: Vec<String>,
+    /// Forma de organização (6 dígitos) e seu nome na competência, para agrupar listas.
+    pub forma: String,
+    pub forma_nome: Option<String>,
 }
 
 /// Código de uma tabela de apoio encontrado.
@@ -117,7 +120,15 @@ impl Consulta {
         let instrumentos = st
             .query_map(rusqlite::params![seq, codigo], |r| r.get(0))?
             .collect::<Result<Vec<String>, _>>()?;
+        let presentes: std::collections::BTreeSet<String> =
+            util::tabelas(self.conn(), seq)?.into_iter().collect();
+        let forma_nome = self
+            .estrutura(seq, &presentes, codigo)?
+            .pop()
+            .and_then(|n| n.nome);
         Ok(Some(ItemProcedimento {
+            forma: codigo[..6].to_string(),
+            forma_nome,
             codigo: codigo.to_string(),
             codigo_mascarado: mascarar(codigo),
             nome: texto(&v[1]),

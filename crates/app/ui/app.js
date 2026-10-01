@@ -185,11 +185,38 @@ async function revelarNaArvore(codigo) {
 
 // ---------- início ----------
 function telaInicio(c) {
-  c.append(el("div", { class: "vazio" },
-    el("h1", { text: "Consulte a Tabela de Procedimentos do SUS" }),
-    el("p", { text: "Digite um código (com ou sem pontos), parte do nome, um CID, um CBO ou uma habilitação na busca acima, ou navegue pela árvore à esquerda." }),
-    el("p", { class: "quieto", text: "Exemplos: 04.06.01.057-9, consulta medica, I42.0, 225120, 0802." }),
-  ));
+  const pg = el("div", { class: "pagina inicio" });
+  c.append(pg);
+  pg.append(el("h1", { text: "Consulte a Tabela de Procedimentos do SUS" }));
+  pg.append(el("p", { class: "quieto", text: "Digite na busca acima um código (com ou sem pontos), parte do nome, um CID, um CBO ou uma habilitação. Ou navegue pela árvore à esquerda." }));
+  const ex = el("div", { class: "filtros" }, el("span", { class: "quieto pequeno", text: "Experimente" }));
+  for (const t of ["04.06.01.057-9", "consulta medica", "I42.0", "225120", "0802"])
+    ex.append(el("button", { class: "chip", type: "button", onclick: () => { $("busca").value = t; ir({ tipo: "busca", texto: t }); } }, t));
+  pg.append(ex);
+  const cartoes = el("div", { class: "cartoes" });
+  pg.append(cartoes);
+  const ult = E.comps[E.comps.length - 1];
+  cartoes.append(el("section", { class: "bloco" },
+    el("h2", { text: "Dados carregados" }),
+    el("div", { class: "par" }, el("span", { class: "k", text: "Competência em uso" }), el("span", { class: "v num", text: F.competencia(E.comp) }), el("span")),
+    el("div", { class: "par" }, el("span", { class: "k", text: "Competências guardadas" }), el("span", { class: "v num", text: String(E.comps.length) }),
+      el("span", { class: "n", text: E.comps.length ? `${F.competencia(E.comps[0].competencia)} a ${F.competencia(ult.competencia)}` : "" })),
+    el("button", { class: "link", type: "button", onclick: () => ir({ tipo: "modulos" }) }, "Ver módulos e dados")));
+  const mud = el("section", { class: "bloco" }, el("h2", { text: `O que mudou em ${F.competencia(E.comp)}` }), el("span", { class: "quieto", text: "Comparando com a competência anterior…" }));
+  cartoes.append(mud);
+  const pos = E.comps.findIndex((x) => x.competencia === E.comp);
+  if (pos > 0) {
+    invoke("mudou", { de: E.comps[pos - 1].competencia, para: E.comp }).then((m) => {
+      limpar(mud).append(el("h2", { text: `O que mudou em ${F.competencia(m.para)}` }));
+      const proc = m.tabelas.find((t) => t.tabela === "tb_procedimento") || { incluidos: 0, excluidos: 0, alterados: 0 };
+      const outros = m.tabelas.filter((t) => t.tabela !== "tb_procedimento").reduce((s, t) => s + t.incluidos + t.excluidos + t.alterados, 0);
+      for (const [k, n] of [["Procedimentos incluídos", proc.incluidos], ["Procedimentos alterados", proc.alterados], ["Procedimentos excluídos", proc.excluidos], ["Vínculos e tabelas de apoio", outros]])
+        mud.append(el("div", { class: "par" }, el("span", { class: "k", text: k }), el("span", { class: "v num", text: F.inteiro(n) }), el("span")));
+      mud.append(el("button", { class: "link", type: "button", onclick: () => ir({ tipo: "mudou" }) }, `Ver o que mudou de ${F.competencia(m.de)} para ${F.competencia(m.para)}`));
+    }).catch((e) => limpar(mud).append(erro(e)));
+  } else {
+    limpar(mud).append(el("h2", { text: "O que mudou" }), el("p", { class: "quieto", text: "Só há uma competência carregada. Baixe o histórico em Módulos e dados para comparar." }));
+  }
 }
 
 // ---------- busca ----------
@@ -212,12 +239,24 @@ async function telaBusca(c, texto) {
     const corpo = el("tbody");
     const desenharLinhas = () => {
       limpar(corpo);
-      for (const p of r.procedimentos.filter((p) => !filtro || p.instrumentos.includes(filtro))) {
-        corpo.append(el("tr", { class: "clicavel", onclick: () => ir({ tipo: "ficha", codigo: p.codigo }) },
+      // Agrupado pela forma de organização, na ordem do código.
+      let forma = null;
+      const lista = r.procedimentos.filter((p) => !filtro || p.instrumentos.includes(filtro));
+      const porForma = {};
+      for (const p of lista) porForma[p.forma] = (porForma[p.forma] || 0) + 1;
+      for (const p of lista) {
+        if (p.forma !== forma) {
+          forma = p.forma;
+          corpo.append(el("tr", { class: "grupo" }, el("td", { colspan: "5" },
+            el("span", { class: "mono", text: pontuar(p.forma) }), " ", p.forma_nome || "forma sem nome na tabela de estrutura",
+            el("small", { text: ` ${porForma[p.forma]}` }))));
+        }
+        corpo.append(el("tr", { class: "clicavel", tabindex: "0", onclick: () => ir({ tipo: "ficha", codigo: p.codigo }),
+          onkeydown: (ev) => { if (ev.key === "Enter") ir({ tipo: "ficha", codigo: p.codigo }); } },
           el("td", { class: "cod", text: p.codigo_mascarado }),
           el("td", { text: p.nome }),
-          el("td", { text: p.instrumentos.join("; ") || "—" }),
-          el("td", { text: p.complexidade || p.tp_complexidade }),
+          el("td", { class: "curta", text: p.instrumentos.join("; ") || "—" }),
+          el("td", { class: "curta", text: p.complexidade || p.tp_complexidade }),
           el("td", { class: "num", text: F.moeda(p.valor_total_centavos) })));
       }
       for (const b of filtros.querySelectorAll(".chip")) b.setAttribute("aria-pressed", String((b.dataset.v || null) === filtro));
@@ -238,12 +277,12 @@ async function telaBusca(c, texto) {
     const t = el("tbody");
     for (const a of r.apoio) {
       t.append(el("tr", { class: a.procedimentos ? "clicavel" : null, onclick: a.procedimentos ? () => ligados(pg, a) : null },
-        el("td", { text: NOME_TABELA[a.tabela] || a.tabela }),
+        el("td", { class: "curta", text: NOME_TABELA[a.tabela] || a.tabela }),
         el("td", { class: "cod", text: a.codigo.join(" ") }),
         el("td", { text: a.nome }),
         el("td", { class: "num", text: a.procedimentos ? `${F.inteiro(a.procedimentos)} procedimento(s)` : "nenhum procedimento" })));
     }
-    pg.append(el("table", { class: "tabela" }, el("thead", {}, el("tr", {}, ["Tabela", "Código", "Nome", "Ligados"].map((h) => el("th", { text: h })))), t));
+    pg.append(el("table", { class: "tabela" }, el("thead", {}, el("tr", {}, ["Tabela", "Código", "Nome", "Ligados"].map((h, i) => el("th", { class: i === 3 ? "num" : null, text: h })))), t));
   }
   if (!r.procedimentos.length && !r.apoio.length)
     pg.append(el("p", { class: "quieto", text: "Nada encontrado. Confira a grafia, tente parte do nome ou o código com ou sem pontos." }));
@@ -257,23 +296,41 @@ async function ligados(pg, a) {
   const t = el("tbody");
   for (const p of lista) t.append(el("tr", { class: "clicavel", onclick: () => ir({ tipo: "ficha", codigo: p.codigo }) },
     el("td", { class: "cod", text: p.codigo_mascarado }), el("td", { text: p.nome }),
-    el("td", { text: p.instrumentos.join("; ") }), el("td", { class: "num", text: F.moeda(p.valor_total_centavos) })));
+    el("td", { class: "curta", text: p.instrumentos.join("; ") }), el("td", { class: "num", text: F.moeda(p.valor_total_centavos) })));
   sec.append(el("table", { class: "tabela" }, t));
   pg.append(sec);
   sec.scrollIntoView({ block: "start" });
 }
 
 // ---------- ficha ----------
-function campoDe(linha, coluna) { return linha.campos.find((c) => c.coluna === coluna); }
+function campoDe(linha, coluna) { return linha && linha.campos.find((c) => c.coluna === coluna); }
 function nomesDe(linha, coluna) {
   // Nome do código: referência cuja última coluna é esta.
-  return linha.nomes.filter((n) => n.colunas[n.colunas.length - 1] === coluna);
+  return linha ? linha.nomes.filter((n) => n.colunas[n.colunas.length - 1] === coluna) : [];
 }
 function textoNome(n) {
   if (!n.tabela_presente) return { falta: `${NOME_TABELA[n.tabela] || n.tabela} não veio no ZIP desta competência` };
   if (!n.encontrados.length) return { falta: "sem nome nesta competência" };
-  return { texto: n.encontrados.map((m) => Object.values(m).filter(Boolean)[0] || "").join(" / ") };
+  // Nome curto primeiro (no_*); descrições longas (ds_*) só no "Texto oficial".
+  const curto = (m) => { const ks = Object.keys(m).sort((a, b) => (b.startsWith("no_") - a.startsWith("no_"))); const k = ks.find((x) => m[x]); return k ? m[k] : ""; };
+  return { texto: n.encontrados.map(curto).join(" / ") };
 }
+function nomeDe(linha, coluna) { const n = nomesDe(linha, coluna)[0]; return n ? (textoNome(n).texto || textoNome(n).falta) : ""; }
+
+// Grupos de abas (ordem de uso do faturista). Tabela nova, sem grupo, cai em "Relações".
+const GRUPOS_ABA = [
+  ["Exigências para cobrar", ["rl_procedimento_registro.co_procedimento", "rl_procedimento_cid.co_procedimento", "rl_procedimento_ocupacao.co_procedimento",
+    "rl_procedimento_habilitacao.co_procedimento", "rl_procedimento_servico.co_procedimento", "rl_procedimento_leito.co_procedimento",
+    "rl_procedimento_modalidade.co_procedimento"]],
+  ["Valores e regras", ["rl_procedimento_incremento.co_procedimento", "rl_procedimento_regra_cond.co_procedimento", "rl_procedimento_detalhe.co_procedimento"]],
+  ["Relações", ["rl_procedimento_compativel.co_procedimento_principal", "rl_procedimento_compativel.co_procedimento_compativel",
+    "rl_excecao_compatibilidade.co_procedimento_principal", "rl_excecao_compatibilidade.co_procedimento_compativel",
+    "rl_excecao_compatibilidade.co_procedimento_restricao", "rl_procedimento_origem.co_procedimento", "rl_procedimento_origem.co_procedimento_origem",
+    "rl_procedimento_sia_sih.co_procedimento", "rl_procedimento_renases.co_procedimento", "rl_procedimento_tuss.co_procedimento",
+    "rl_procedimento_comp_rede.co_procedimento"]],
+];
+const chaveRel = (r) => `${r.tabela}.${r.coluna}`;
+const nomeRel = (r) => NOME_RELACAO[chaveRel(r)] || `${r.tabela} (${r.coluna})`;
 
 async function telaFicha(c, codigo, aba) {
   c.append(carregando());
@@ -282,71 +339,82 @@ async function telaFicha(c, codigo, aba) {
   if (!f) {
     c.append(el("div", { class: "vazio" },
       el("h1", { text: `${F.mascara(codigo)} não existe em ${F.competencia(E.comp)}` }),
-      el("p", { text: "Ele pode ter sido incluído depois ou excluído antes desta competência. Troque a competência no alto ou veja o histórico." }),
-      el("button", { class: "botao", type: "button", onclick: () => ir({ tipo: "ficha", codigo, aba: "Histórico" }) }, "Ver histórico")));
-    if (aba !== "Histórico") return;
+      el("p", { text: "Ele pode ter sido incluído depois ou excluído antes desta competência. Troque a competência no alto ou veja o histórico abaixo." })));
+    const corpo = el("div"); c.append(corpo);
+    await abaHistorico(corpo, codigo);
+    return;
   }
   if (E.selecionado !== codigo) { E.selecionado = codigo; revelarNaArvore(codigo); }
-  const p = f ? f.procedimento[0] : null;
+  const p = f.procedimento[0];
+  const rel = (t, col) => f.relacoes.find((r) => r.tabela === t && r.coluna === (col || "co_procedimento"));
   const topo = el("div", { class: "ficha-topo" });
   c.append(topo);
-  if (f) {
-    topo.append(el("div", { class: "trilha" }, f.estrutura.map((n, i) => [i ? "  /  " : "",
-      el("button", { type: "button", onclick: () => { E.abertos.add(n.codigo); revelarNaArvore(codigo); } },
-        `${n.codigo.slice(-2)} ${n.nome || "sem nome na tabela de estrutura"}`)])));
-    const partes = [[codigo.slice(0, 2), "grupo"], [codigo.slice(2, 4), "subgrupo"], [codigo.slice(4, 6), "forma"], [codigo.slice(6, 9), "procedimento"], [codigo.slice(9), "dígito"]];
-    topo.append(el("div", { class: "linha-cod" },
-      el("div", { class: "caixas", "aria-label": f.codigo_mascarado }, partes.map(([v, l]) => el("div", { class: "caixa" }, el("b", { text: v }), l))),
-      el("div", { class: "espaco" }),
-      el("button", { class: "botao", type: "button", onclick: (ev) => copiar(codigo, ev.currentTarget) }, `Copiar ${codigo}`),
-      el("button", { class: "botao primario", type: "button", onclick: () => ir({ tipo: "ficha", codigo, aba: "Histórico" }) }, "Ver histórico")));
-    topo.append(el("h1", { class: "nome-proc", text: campoDe(p, "no_procedimento").valor }));
-    const desc = f.relacoes.find((r) => r.tabela === "tb_descricao");
-    if (desc && desc.linhas.length) topo.append(el("p", { class: "descricao", text: `Descrição oficial: ${campoDe(desc.linhas[0], "ds_procedimento").valor}` }));
-    const etq = el("div", { class: "etiquetas" });
-    const cx = campoDe(p, "tp_complexidade"); if (cx) etq.append(el("span", { class: "etiqueta", text: F.campo(cx) }));
-    for (const r of f.relacoes.filter((r) => r.tabela === "rl_procedimento_registro" || r.tabela === "rl_procedimento_modalidade"))
-      for (const l of r.linhas) for (const n of l.nomes) { const t = textoNome(n); if (t.texto) etq.append(el("span", { class: "etiqueta", text: t.texto })); }
-    const fin = nomesDe(p, "co_financiamento")[0]; if (fin) { const t = textoNome(fin); if (t.texto) etq.append(el("span", { class: "etiqueta", text: t.texto })); }
-    if (f.procedimento.length > 1) etq.append(el("span", { class: "etiqueta ambar", text: `${f.procedimento.length} linhas para este código no arquivo oficial` }));
-    topo.append(etq);
-  } else {
-    topo.append(el("h1", { class: "nome-proc", text: F.mascara(codigo) }));
+  topo.append(el("div", { class: "trilha" }, f.estrutura.map((n, i) => [i ? " / " : "",
+    el("button", { type: "button", onclick: () => { E.abertos.add(n.codigo); revelarNaArvore(codigo); } },
+      `${n.codigo.slice(-2)} ${n.nome || "sem nome na tabela de estrutura"}`)])));
+  const partes = [[codigo.slice(0, 2), "grupo"], [codigo.slice(2, 4), "subgrupo"], [codigo.slice(4, 6), "forma"], [codigo.slice(6, 9), "procedimento"], [codigo.slice(9), "dígito"]];
+  const caixas = el("button", { class: "caixas", type: "button", title: "Clique para copiar o código sem pontos", "aria-label": `Copiar ${codigo}`,
+    onclick: (ev) => copiar(codigo, ev.currentTarget) }, partes.map(([v, l]) => el("span", { class: "caixa" }, el("b", { text: v }), l)),
+    el("span", { class: "copiado", text: "" }));
+  topo.append(el("div", { class: "linha-cod" }, caixas,
+    el("h1", { class: "nome-proc", text: campoDe(p, "no_procedimento").valor })));
+  const desc = rel("tb_descricao");
+  if (desc && desc.linhas.length) {
+    const d = el("p", { class: "descricao recolhida", text: campoDe(desc.linhas[0], "ds_procedimento").valor });
+    const b = el("button", { class: "link pequeno", type: "button", onclick: () => { d.classList.toggle("recolhida"); b.textContent = d.classList.contains("recolhida") ? "Mostrar a descrição inteira" : "Recolher"; } }, "Mostrar a descrição inteira");
+    topo.append(el("div", { class: "desc-bloco" }, el("span", { class: "rotulo", text: "Descrição oficial" }), d, b));
   }
-  // Abas: Resumo, Histórico e uma por tabela que cita o procedimento (inclusive vazias).
+  // Faixa com o que o faturista confere primeiro.
+  const sh = campoDe(p, "vl_sh"), sa = campoDe(p, "vl_sa"), sp = campoDe(p, "vl_sp");
+  const total = (sh?.valor || 0) + (sa?.valor || 0) + (sp?.valor || 0);
+  const instr = (rel("rl_procedimento_registro")?.linhas || []).map((l) => nomeDe(l, "co_registro")).filter(Boolean);
+  const modal = (rel("rl_procedimento_modalidade")?.linhas || []).map((l) => nomeDe(l, "co_modalidade")).filter(Boolean);
+  const chave = el("dl", { class: "chave" },
+    el("div", {}, el("dt", { text: "Valor total" }), el("dd", { class: "valor", text: `R$ ${F.moeda(total)}` })),
+    el("div", {}, el("dt", { text: "Instrumento" }), el("dd", { text: instr.join("; ") || "—" })),
+    el("div", {}, el("dt", { text: "Complexidade" }), el("dd", { text: F.campo(campoDe(p, "tp_complexidade")) })),
+    el("div", {}, el("dt", { text: "Modalidade" }), el("dd", { text: modal.join("; ") || "—" })),
+    el("div", {}, el("dt", { text: "Financiamento" }), el("dd", { text: nomeDe(p, "co_financiamento") || campoDe(p, "co_financiamento")?.valor || "—" })));
+  if (f.procedimento.length > 1) chave.append(el("div", {}, el("dt", { text: "Atenção" }), el("dd", { class: "ambar", text: `${f.procedimento.length} linhas para este código no arquivo oficial` })));
+  topo.append(chave);
+  // Abas agrupadas; as vazias ficam escondidas atrás de um botão.
   const abas = el("div", { class: "abas", role: "tablist" });
-  const lista = [["Resumo", null], ["Histórico", null]];
-  if (f) {
-    // Ordem de uso do faturista; tabelas vazias no fim; tabela nova (sem nome) aparece mesmo assim.
-    const ordem = Object.keys(NOME_RELACAO);
-    const pos = (r) => { const i = ordem.indexOf(`${r.tabela}.${r.coluna}`); return (r.linhas.length ? 0 : 1000) + (i < 0 ? 500 : i); };
-    for (const r of [...f.relacoes].sort((a, b) => pos(a) - pos(b))) {
-      if (r.tabela === "tb_descricao") continue;
-      lista.push([NOME_RELACAO[`${r.tabela}.${r.coluna}`] || `${r.tabela} (${r.coluna})`, r]);
-    }
+  const aba_ = (nome, r) => el("button", {
+    class: "aba" + (r && !r.linhas.length ? " vazia" : ""), role: "tab", type: "button",
+    "aria-selected": String(nome === aba), onclick: () => ir({ tipo: "ficha", codigo, aba: nome }),
+  }, nome, r ? el("small", { text: String(r.linhas.length) }) : null);
+  abas.append(el("div", { class: "grupo-abas" }, aba_("Resumo"), aba_("Histórico")));
+  const usadas = new Set();
+  const vazias = [];
+  const grupos = GRUPOS_ABA.map(([g, chaves]) => [g, chaves.map((k) => f.relacoes.find((r) => chaveRel(r) === k)).filter(Boolean)]);
+  const semGrupo = f.relacoes.filter((r) => r.tabela !== "tb_descricao" && !GRUPOS_ABA.some(([, ks]) => ks.includes(chaveRel(r))));
+  grupos[2][1].push(...semGrupo);
+  let abaVazia = false;
+  for (const [g, rs] of grupos) {
+    const cheias = rs.filter((r) => r.linhas.length);
+    for (const r of rs) { usadas.add(nomeRel(r)); if (!r.linhas.length) { vazias.push(r); if (nomeRel(r) === aba) abaVazia = true; } }
+    if (cheias.length) abas.append(el("div", { class: "grupo-abas" }, el("span", { class: "rotulo-grupo", text: g }), cheias.map((r) => aba_(nomeRel(r), r))));
   }
-  for (const [nome, r] of lista) {
-    if (!f && nome !== "Histórico") continue;
-    abas.append(el("button", {
-      class: "aba" + (r && !r.linhas.length ? " vazia" : ""), role: "tab", type: "button",
-      "aria-selected": String(nome === aba), onclick: () => ir({ tipo: "ficha", codigo, aba: nome }),
-    }, nome, r ? el("small", { text: String(r.linhas.length) }) : null));
+  if (vazias.length) {
+    const box = el("div", { class: "grupo-abas", hidden: !abaVazia }, el("span", { class: "rotulo-grupo", text: "Sem linhas nesta competência" }), vazias.map((r) => aba_(nomeRel(r), r)));
+    abas.append(el("button", { class: "link pequeno mais-abas", type: "button", onclick: (ev) => { box.hidden = !box.hidden; ev.currentTarget.textContent = box.hidden ? `+ ${vazias.length} vazias` : "esconder vazias"; } }, abaVazia ? "esconder vazias" : `+ ${vazias.length} vazias`), box);
   }
   topo.append(abas);
   const corpo = el("div");
   c.append(corpo);
-  if (aba === "Resumo") resumo(corpo, f, p);
+  if (aba === "Resumo") resumo(corpo, f, p, rel, codigo);
   else if (aba === "Histórico") await abaHistorico(corpo, codigo);
   else {
-    const r = lista.find(([n]) => n === aba);
-    if (r && r[1]) tabelaRelacao(corpo, r[1]);
+    const r = f.relacoes.find((x) => nomeRel(x) === aba);
+    if (r) tabelaRelacao(corpo, r);
   }
 }
 
 async function copiar(texto, botao) {
-  try { await navigator.clipboard.writeText(texto); botao.textContent = "Copiado"; }
-  catch { botao.textContent = "Não foi possível copiar"; }
-  setTimeout(() => { botao.textContent = `Copiar ${texto}`; }, 1500);
+  const aviso = botao.querySelector(".copiado");
+  try { await navigator.clipboard.writeText(texto); aviso.textContent = "copiado"; }
+  catch { aviso.textContent = "não foi possível copiar"; }
+  setTimeout(() => { aviso.textContent = ""; }, 1500);
 }
 
 function par(k, campo, extra) {
@@ -356,53 +424,77 @@ function par(k, campo, extra) {
     el("span", { class: "n", text: extra || (campo ? F.notaOficial(campo) : "") }));
 }
 
-function resumo(corpo, f, p) {
+/** Linha da conferência: rótulo, resumo e atalho para a aba. */
+function conf(k, valor, nota, irPara, codigo) {
+  return el("div", { class: "par conf" },
+    el("span", { class: "k", text: k }),
+    el("span", { class: "v", text: valor }),
+    el("span", { class: "n" }, nota || "", irPara ? el("button", { class: "link pequeno", type: "button", onclick: () => ir({ tipo: "ficha", codigo, aba: irPara }) }, " ver") : null));
+}
+
+function listaCurta(r, col, max) {
+  if (!r || !r.linhas.length) return "nenhum";
+  // Códigos distintos (a habilitação, por exemplo, repete o código em grupos diferentes).
+  const vistos = new Map();
+  for (const l of r.linhas) { const c = campoDe(l, col).valor; if (!vistos.has(c)) vistos.set(c, `${c} ${nomeDe(l, col)}`.trim()); }
+  const itens = [...vistos.values()];
+  return itens.slice(0, max).join("; ") + (itens.length > max ? `; e mais ${itens.length - max}` : "");
+}
+
+function resumo(corpo, f, p, rel, codigo) {
   const cols = el("div", { class: "colunas" });
   corpo.append(cols);
   const A = el("div", { class: "coluna" }), B = el("div", { class: "coluna" });
   cols.append(A, B);
   const v = (c) => campoDe(p, c);
-  const sh = v("vl_sh"), sa = v("vl_sa"), sp = v("vl_sp");
-  A.append(el("section", { class: "bloco" },
-    el("div", { class: "cab-linha" }, el("h2", { text: "Valores" }), el("small", { text: "em reais; no arquivo oficial, em centavos" })),
-    par("Serviço hospitalar (SH)", sh), par("Serviço profissional (SP)", sp), par("Serviço ambulatorial (SA)", sa),
-    par("Total", { valor: (sh?.valor || 0) + (sa?.valor || 0) + (sp?.valor || 0), unidade: "centavos" }, "SH + SA + SP")));
+  // Coluna A: o que precisa estar certo para cobrar.
   const im = v("vl_idade_minima"), ix = v("vl_idade_maxima");
-  const idade = im && ix
-    ? (im.sentinela || ix.sentinela ? { valor: "Não se aplica" } : { valor: `${F.idade(im.valor)} a ${F.idade(ix.valor)}` })
-    : null;
-  const usos = el("section", { class: "bloco" }, el("div", { class: "cab-linha" }, el("h2", { text: "Regras de uso" })),
+  const idade = im && ix ? (im.sentinela || ix.sentinela ? "Não se aplica" : `${F.idade(im.valor)} a ${F.idade(ix.valor)}`) : "—";
+  const cid = rel("rl_procedimento_cid");
+  const princ = cid ? cid.linhas.filter((l) => campoDe(l, "st_principal")?.valor === "S").length : 0;
+  const hab = rel("rl_procedimento_habilitacao");
+  const gruposHab = hab ? new Set(hab.linhas.map((l) => campoDe(l, "nu_grupo_habilitacao")?.valor).filter(Boolean)).size : 0;
+  const serv = rel("rl_procedimento_servico");
+  const n = (r) => (r ? r.linhas.length : 0);
+  A.append(el("section", { class: "bloco destaque" },
+    el("div", { class: "cab-linha" }, el("h2", { text: "Para cobrar" }), el("small", { text: "o que o registro precisa respeitar" })),
     par("Sexo", v("tp_sexo")),
-    el("div", { class: "par" }, el("span", { class: "k", text: "Idade" }), el("span", { class: "v", text: idade ? idade.valor : "—" }),
+    el("div", { class: "par" }, el("span", { class: "k", text: "Idade" }), el("span", { class: "v", text: idade }),
       el("span", { class: "n", text: im && ix ? `${im.valor} a ${ix.valor} meses no arquivo oficial` : "" })),
     par("Quantidade máxima", v("qt_maxima_execucao")),
     par("Permanência (dias)", v("qt_dias_permanencia")),
     v("qt_tempo_permanencia") ? par("Tempo de permanência", v("qt_tempo_permanencia")) : null,
-    par("Pontos", v("qt_pontos")));
-  A.append(usos);
-  const fin = nomesDe(p, "co_financiamento")[0], rub = nomesDe(p, "co_rubrica")[0];
-  A.append(el("section", { class: "bloco" }, el("div", { class: "cab-linha" }, el("h2", { text: "Financiamento" })),
-    par("Financiamento", { valor: fin ? (textoNome(fin).texto || textoNome(fin).falta) : (v("co_financiamento")?.valor || "—") }, `código ${v("co_financiamento")?.valor || "—"}`),
-    par("Rubrica", { valor: v("co_rubrica")?.valor ? (rub ? (textoNome(rub).texto || textoNome(rub).falta) : v("co_rubrica").valor) : "Sem rubrica" }, v("co_rubrica")?.valor ? `código ${v("co_rubrica").valor}` : "")));
-  // Coluna B: atributos, incremento, regras.
-  const rel = (t) => f.relacoes.find((r) => r.tabela === t && r.coluna === "co_procedimento");
+    par("Pontos", v("qt_pontos")),
+    conf("CID", n(cid) ? `${n(cid)} aceito(s)` : "sem exigência de CID", n(cid) ? `${princ} como principal. ${listaCurta(cid, "co_cid", 3)}` : "", n(cid) ? "CID" : null, codigo),
+    conf("CBO", n(rel("rl_procedimento_ocupacao")) ? `${n(rel("rl_procedimento_ocupacao"))} ocupação(ões)` : "sem exigência de CBO", listaCurta(rel("rl_procedimento_ocupacao"), "co_ocupacao", 3), n(rel("rl_procedimento_ocupacao")) ? "CBO" : null, codigo),
+    conf("Habilitação", n(hab) ? `${n(hab)} vínculo(s)` : "sem exigência", n(hab) ? `${gruposHab ? `${gruposHab} grupo(s); ` : ""}${listaCurta(hab, "co_habilitacao", 3)}` : "", n(hab) ? "Habilitação" : null, codigo),
+    conf("Serviço/classificação", n(serv) ? `${n(serv)} combinação(ões)` : "sem exigência", n(serv) ? serv.linhas.slice(0, 3).map((l) => `${campoDe(l, "co_servico").valor}/${campoDe(l, "co_classificacao").valor} ${nomeDe(l, "co_classificacao")}`).join("; ") : "", n(serv) ? "Serviço" : null, codigo),
+    conf("Leito", n(rel("rl_procedimento_leito")) ? listaCurta(rel("rl_procedimento_leito"), "co_tipo_leito", 4) : "sem exigência", "", null, codigo)));
+  // Coluna B: valores e regras.
+  const sh = v("vl_sh"), sa = v("vl_sa"), sp = v("vl_sp");
+  B.append(el("section", { class: "bloco" },
+    el("div", { class: "cab-linha" }, el("h2", { text: "Valores" }), el("small", { text: "em reais; no arquivo oficial, em centavos" })),
+    par("Serviço hospitalar (SH)", sh), par("Serviço profissional (SP)", sp), par("Serviço ambulatorial (SA)", sa),
+    el("div", { class: "par total" }, el("span", { class: "k", text: "Total" }), el("span", { class: "v num", text: F.moeda((sh?.valor || 0) + (sa?.valor || 0) + (sp?.valor || 0)) }), el("span", { class: "n", text: "SH + SA + SP" })),
+    el("div", { class: "par" }, el("span", { class: "k", text: "Financiamento" }), el("span", { class: "v", text: nomeDe(p, "co_financiamento") || "—" }), el("span", { class: "n", text: `código ${v("co_financiamento")?.valor || "—"}` })),
+    el("div", { class: "par" }, el("span", { class: "k", text: "Rubrica" }), el("span", { class: "v", text: v("co_rubrica")?.valor ? (nomeDe(p, "co_rubrica") || v("co_rubrica").valor) : "sem rubrica" }), el("span", { class: "n", text: v("co_rubrica")?.valor ? `código ${v("co_rubrica").valor}` : "" }))));
   const blocoItens = (titulo, r, col, extra) => {
     const b = el("section", { class: "bloco" }, el("div", { class: "cab-linha" }, el("h2", { text: titulo }), el("small", { text: String(r ? r.linhas.length : 0) })));
     if (!r || !r.linhas.length) { b.append(el("span", { class: "quieto", text: "Nenhum nesta competência." })); return b; }
     for (const l of r.linhas) {
-      const cod = campoDe(l, col)?.valor;
       const ns = nomesDe(l, col).map(textoNome);
-      b.append(el("div", { class: "item" }, el("span", { class: "c", text: cod }),
-        el("span", { text: ns[0]?.texto || ns[0]?.falta || "" }), el("span", { text: extra ? extra(l) : "" }),
-        ns.slice(1).filter((n) => n.texto).map((n) => el("span", { class: "d", text: n.texto }))));
+      const detalhes = ns.slice(1).filter((x) => x.texto);
+      b.append(el("div", { class: "item" }, el("span", { class: "c", text: campoDe(l, col)?.valor }),
+        el("span", { text: ns[0]?.texto || ns[0]?.falta || "" }), el("span", { class: "x", text: extra ? extra(l) : "" }),
+        detalhes.length ? el("details", { class: "d" }, el("summary", { text: "Texto oficial" }), detalhes.map((x) => el("p", { text: x.texto }))) : null));
     }
     return b;
   };
-  B.append(blocoItens("Atributos complementares", rel("rl_procedimento_detalhe"), "co_detalhe"));
   B.append(blocoItens("Incremento por habilitação", rel("rl_procedimento_incremento"), "co_habilitacao", (l) =>
     ["vl_percentual_sh", "vl_percentual_sa", "vl_percentual_sp"].map((k) => [k.slice(-2).toUpperCase(), campoDe(l, k)?.valor || 0])
-      .filter(([, n]) => n).map(([k, n]) => `+${F.percentual(n)} ${k}`).join(", ")));
+      .filter(([, x]) => x).map(([k, x]) => `+${F.percentual(x)} ${k}`).join(", ")));
   B.append(blocoItens("Regras condicionadas", rel("rl_procedimento_regra_cond"), "co_regra_condicionada"));
+  B.append(blocoItens("Atributos complementares", rel("rl_procedimento_detalhe"), "co_detalhe"));
 }
 
 function tabelaRelacao(corpo, r) {
@@ -415,25 +507,44 @@ function tabelaRelacao(corpo, r) {
   const cols = r.linhas[0].campos.filter((c) => c.coluna !== r.coluna && c.coluna !== "dt_competencia");
   const temQtd = r.linhas.some((l) => l.quantidade > 1);
   const corpoT = el("tbody");
+  const linhas = [];
   for (const l of r.linhas) {
     const tr = el("tr");
+    const textos = [];
     for (const c0 of cols) {
       const c = campoDe(l, c0.coluna);
       const ns = nomesDe(l, c0.coluna).map(textoNome);
+      const ehCod = /^(co_|nu_)/.test(c.coluna);
       const ehProc = /^co_procedimento/.test(c.coluna) && /^\d{10}$/.test(c.valor);
-      const td = el("td", { class: /^(co_|nu_)/.test(c.coluna) ? "cod" : null },
-        ehProc ? el("button", { class: "link", type: "button", onclick: () => ir({ tipo: "ficha", codigo: c.valor }) }, F.mascara(c.valor)) : F.campo(c),
+      const principal = ns[0];
+      const td = el("td", { class: ehCod ? "codnome" : null },
+        ehProc ? el("button", { class: "link mono", type: "button", onclick: () => ir({ tipo: "ficha", codigo: c.valor }) }, F.mascara(c.valor))
+               : el("span", { class: ehCod ? "mono" : null, text: F.campo(c) }),
+        principal ? (principal.texto ? el("span", { class: "nome", text: principal.texto }) : el("span", { class: "falta", text: principal.falta })) : null,
         c.situacao && c.situacao !== "oficial" ? el("span", { class: "falta", text: F.notaOficial(c) }) : null,
-        ns.map((n) => n.texto ? el("span", { class: "nomeado", text: n.texto }) : el("span", { class: "falta", text: n.falta })));
+        ns.slice(1).filter((x) => x.texto).length ? el("details", {}, el("summary", { text: "Texto oficial" }), ns.slice(1).filter((x) => x.texto).map((x) => el("p", { text: x.texto }))) : null);
+      textos.push(td.textContent);
       tr.append(td);
     }
     if (temQtd) tr.append(el("td", { class: "num", text: String(l.quantidade) }));
     corpoT.append(tr);
+    linhas.push([tr, textos.join(" ").toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[̀-ͯ]/g, "")]);
+  }
+  if (r.linhas.length > 12) {
+    const conta = el("span", { class: "quieto pequeno", text: `${r.linhas.length} linha(s)` });
+    const filtro = el("input", { type: "search", class: "campo", placeholder: "Filtrar por código ou nome", "aria-label": "Filtrar linhas",
+      oninput: (ev) => {
+        const q = ev.target.value.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+        let n = 0;
+        for (const [tr, t] of linhas) { const ok = !q || t.includes(q); tr.hidden = !ok; if (ok) n++; }
+        conta.textContent = q ? `${n} de ${r.linhas.length} linha(s)` : `${r.linhas.length} linha(s)`;
+      } });
+    sec.append(el("div", { class: "filtros" }, filtro, conta));
   }
   sec.append(el("table", { class: "tabela" },
     el("thead", {}, el("tr", {}, cols.map((c) => el("th", { text: nomeColuna(c) })), temQtd ? el("th", { text: "Repetições no arquivo" }) : null)),
     corpoT));
-  sec.append(el("p", { class: "quieto pequeno", text: `Tabela oficial: ${r.tabela.toUpperCase()}, ${r.linhas.length} linha(s) em ${F.competencia(E.comp)}.` }));
+  sec.append(el("p", { class: "quieto pequeno", text: `Tabela oficial ${r.tabela.toUpperCase()}: ${r.linhas.length} linha(s) em ${F.competencia(E.comp)}.` }));
 }
 
 // ---------- histórico ----------
@@ -443,10 +554,11 @@ function resumoLinha(l, ignorar) {
   for (const c of l.campos) {
     if (c.coluna === ignorar || c.coluna === "dt_competencia" || c.coluna === "co_procedimento") continue;
     if (!/^(co_|nu_|tp_|st_)/.test(c.coluna)) continue;
+    if (c.valor === "" || c.valor === null) continue;
     const n = nomesDe(l, c.coluna).map(textoNome).find((x) => x.texto);
     partes.push(`${c.valor}${n ? " " + n.texto : (c.situacao === "oficial" ? " " + c.descricao : "")}`);
   }
-  return partes.join("; ");
+  return partes.join(", ");
 }
 
 async function abaHistorico(corpo, codigo) {
@@ -458,43 +570,59 @@ async function abaHistorico(corpo, codigo) {
   const com = new Set(h.competencias_com_mudanca);
   const qtd = {}; for (const e of h.eventos) qtd[e.competencia] = (qtd[e.competencia] || 0) + 1;
   const faixa = el("div", { class: "faixa", role: "img", "aria-label": `${com.size} competências com mudança` });
-  for (const c of E.comps) {
-    const i = el("i", { class: com.has(c.competencia) ? "m" : null, title: `${F.competencia(c.competencia)}${qtd[c.competencia] ? `: ${qtd[c.competencia]} mudança(s)` : ""}` });
-    if (qtd[c.competencia]) i.style.height = `${Math.min(10 + qtd[c.competencia] * 5, 40)}px`;
-    if (com.has(c.competencia)) i.addEventListener("click", () => document.getElementById(`ev-${c.competencia}`)?.scrollIntoView({ block: "center" }));
-    faixa.append(i);
-  }
-  const anos = el("div", { class: "anos" }, el("span", { text: F.competencia(h.primeira_carregada) }), el("span", { text: F.competencia(h.ultima_carregada) }));
+  const anos = el("div", { class: "anos" });
+  let anoVisto = null;
+  E.comps.forEach((c, i) => {
+    const marca = el("i", { class: com.has(c.competencia) ? "m" : null, title: `${F.competencia(c.competencia)}${qtd[c.competencia] ? `: ${qtd[c.competencia]} mudança(s)` : ""}` });
+    if (qtd[c.competencia]) marca.style.height = `${Math.min(10 + qtd[c.competencia] * 5, 40)}px`;
+    if (com.has(c.competencia)) marca.addEventListener("click", () => document.getElementById(`ev-${c.competencia}`)?.scrollIntoView({ block: "center" }));
+    faixa.append(marca);
+    const ano = c.competencia.slice(0, 4);
+    if (ano !== anoVisto && Number(ano) % 2 === 0) { const s = el("span", { text: ano }); s.style.left = `${(100 * i) / E.comps.length}%`; anos.append(s); }
+    anoVisto = ano;
+  });
   sec.append(el("section", { class: "bloco" },
     el("div", { class: "cab-linha" }, el("h2", { text: `${com.size} competência(s) com mudança entre ${F.competencia(h.primeira_carregada)} e ${F.competencia(h.ultima_carregada)}` }),
-      el("small", { text: `${h.competencias_carregadas} competência(s) carregadas` })),
+      el("small", { text: `${h.competencias_carregadas} competência(s) carregadas; clique numa barra para ir ao mês` })),
     faixa, anos,
     h.competencias_carregadas < 2 ? el("p", { class: "aviso", text: "Só uma competência carregada: baixe o histórico completo em Módulos e dados para ver as mudanças." }) : null));
-  const lista = el("section", { class: "bloco" });
-  let atual = null, grupo = null;
-  for (const e of h.eventos) {
-    if (e.competencia !== atual) {
-      atual = e.competencia;
-      grupo = el("div");
-      lista.append(el("div", { class: "evento", id: `ev-${atual}` }, el("span", { class: "mono", text: e.rotulo }), grupo));
+  const lista = el("section", { class: "bloco lista-eventos" });
+  // Agrupa por competência e, dentro dela, inclusões/exclusões da mesma tabela numa linha só.
+  const porComp = new Map();
+  for (const e of h.eventos) { if (!porComp.has(e.competencia)) porComp.set(e.competencia, []); porComp.get(e.competencia).push(e); }
+  for (const [comp, evs] of porComp) {
+    const grupo = el("div", { class: "eventos" });
+    lista.append(el("div", { class: "evento", id: `ev-${comp}` }, el("span", { class: "mono", text: evs[0].rotulo }), grupo));
+    const juntos = new Map();
+    for (const e of evs) {
+      if (e.tipo === "alterado") {
+        const desc = el("span", {}, e.campos_alterados.map((col) => {
+          const a = e.antes && campoDe(e.antes, col), d = e.depois && campoDe(e.depois, col);
+          return el("span", { class: "mud-campo" }, `${NOME_COLUNA[col] || col}: `,
+            el("span", { class: "antes", text: a ? F.campo(a) || "vazio" : "campo ausente" }), " → ",
+            el("span", { class: "depois", text: d ? F.campo(d) || "vazio" : "campo ausente" }));
+        }));
+        const k = resumoLinha(e.depois, e.coluna);
+        grupo.append(linhaEvento("alterado", NOME_TABELA[e.tabela] || e.tabela, [e.tabela !== "tb_procedimento" && k ? el("span", { class: "quieto", text: `${k}: ` }) : null, desc], e));
+      } else {
+        const chave = `${e.tipo}|${e.tabela}|${e.tabela_ausente}|${e.tabela_voltou}`;
+        if (!juntos.has(chave)) juntos.set(chave, { e, itens: [] });
+        juntos.get(chave).itens.push(resumoLinha(e.antes || e.depois, e.coluna));
+      }
     }
-    const nomeT = NOME_TABELA[e.tabela] || e.tabela;
-    let desc;
-    if (e.tipo === "alterado") {
-      desc = el("span", {}, e.campos_alterados.map((col) => {
-        const a = e.antes && campoDe(e.antes, col), d = e.depois && campoDe(e.depois, col);
-        return el("span", { class: "mud-campo" }, `${NOME_COLUNA[col] || col}: `,
-          el("span", { class: "antes", text: a ? F.campo(a) || "vazio" : "campo ausente" }), " → ",
-          el("span", { class: "depois", text: d ? F.campo(d) || "vazio" : "campo ausente" }), "  ");
-      }));
-    } else desc = el("span", { text: resumoLinha(e.antes || e.depois, e.coluna) });
-    const nota = e.tabela_ausente ? " (a tabela não veio no ZIP desta competência)" : e.tabela_voltou ? " (a tabela voltou a vir no ZIP)" : "";
-    grupo.append(el("div", { class: "mud" },
-      el("span", { class: `tag ${e.tipo}`, text: { incluido: "incluído", excluido: "excluído", alterado: "alterado" }[e.tipo] }),
-      el("span", { text: nomeT }), el("span", {}, desc, nota ? el("span", { class: "quieto", text: nota }) : null)));
+    for (const { e, itens } of juntos.values())
+      grupo.append(linhaEvento(e.tipo, NOME_TABELA[e.tabela] || e.tabela, el("span", {}, itens.filter(Boolean).map((t) => el("span", { class: "item-ev", text: t }))), e));
   }
   if (!h.eventos.length) lista.append(el("p", { class: "quieto", text: "Nenhuma mudança nas competências carregadas." }));
   sec.append(lista);
+}
+
+function linhaEvento(tipo, nomeT, desc, e) {
+  const nota = e.tabela_ausente ? " (a tabela não veio no ZIP desta competência)" : e.tabela_voltou ? " (a tabela voltou a vir no ZIP)" : "";
+  return el("div", { class: "mud" },
+    el("span", { class: `tag ${tipo}`, text: { incluido: "incluído", excluido: "excluído", alterado: "alterado" }[tipo] }),
+    el("span", { class: "tabela-ev", text: nomeT }),
+    el("span", {}, desc, nota ? el("span", { class: "quieto", text: nota }) : null));
 }
 
 // ---------- o que mudou ----------
@@ -577,7 +705,7 @@ function telaModulos(c) {
   const confirmar = el("div", { class: "aviso", hidden: true },
     "O histórico completo tem cerca de 360 MB (225 arquivos), baixados um por vez, e a carga no banco leva vários minutos. ",
     el("button", { class: "botao", type: "button", onclick: () => { confirmar.hidden = true; baixar({ sigtap_vigente: true, territorio: false, historico: true }); } }, "Baixar mesmo assim"));
-  const caminho = el("input", { type: "text", class: "caminho", placeholder: "Ex.: D:\\Downloads\\SIGTAP", "aria-label": "Pasta para importar", size: "48" });
+  const caminho = el("input", { type: "text", class: "campo", placeholder: "Ex.: D:\\Downloads\\SIGTAP", "aria-label": "Pasta para importar", size: "48" });
   pg.append(el("div", { class: "acoes" },
     el("button", { class: "botao primario", type: "button", onclick: () => baixar({ sigtap_vigente: true, territorio: true, historico: false }) }, "Procurar atualizações"),
     el("button", { class: "botao", type: "button", onclick: () => { confirmar.hidden = false; } }, "Baixar o histórico completo"),
@@ -665,11 +793,13 @@ async function iniciar() {
   });
   try {
     await atualizarSituacao();
-    await desenharArvore();
   } catch (e) {
     $("conteudo").append(el("div", { class: "pagina" }, erro(e)));
+    return;
   }
   desenhar();
+  $("arvore-raiz").append(el("li", {}, carregando("Carregando a árvore…")));
+  desenharArvore().catch((e) => limpar($("arvore-raiz")).append(el("li", {}, erro(e))));
 }
 
 iniciar();

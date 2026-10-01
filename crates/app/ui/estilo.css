@@ -69,19 +69,10 @@ h2 { font-size: 14px; font-weight: 600; margin: 0; }
 .trilha { font-size: 12px; color: var(--tinta2); }
 .trilha button { background: none; border: 0; padding: 0; color: inherit; cursor: pointer; }
 .trilha button:hover { text-decoration: underline; }
-.linha-cod { display: flex; align-items: center; gap: 24px; }
-.caixas { display: flex; gap: 6px; }
-.caixa { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; color: var(--tinta2); }
-.caixa b { font-family: var(--mono); font-size: 22px; font-weight: 600; color: var(--verde-esc); border: 1px solid var(--verde);
-  border-radius: 2px; padding: 2px 8px; background: var(--sup); }
-.nome-proc { font-size: 19px; font-weight: 600; line-height: 25px; margin: 0; }
-.descricao { font-size: 12px; color: var(--tinta2); margin: 0; }
 .etiquetas { display: flex; gap: 8px; flex-wrap: wrap; }
 .etiqueta { display: inline-block; padding: 3px 8px; border-radius: 3px; background: var(--papel); font-size: 12px; font-weight: 500; font-style: normal; }
 .etiqueta.ambar { background: var(--ambar-f); color: var(--ambar); }
 .etiqueta.verde { background: var(--verde-claro); color: var(--verde-esc); }
-.abas { display: flex; overflow-x: auto; }
-.aba { background: none; border: 0; border-bottom: 3px solid transparent; padding: 8px 9px 9px; cursor: pointer; white-space: nowrap; }
 .aba small { font-family: var(--mono); color: var(--tinta2); margin-left: 4px; }
 .aba.vazia { color: var(--tinta2); }
 .aba[aria-selected="true"] { border-bottom-color: var(--verde); color: var(--verde-esc); font-weight: 600; }
@@ -103,9 +94,6 @@ h2 { font-size: 14px; font-weight: 600; margin: 0; }
 .par .v { font-weight: 500; font-size: 14px; }
 .par .v.num { font-family: var(--mono); }
 .par .n { font-size: 11px; color: var(--tinta2); }
-.item { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: baseline; }
-.item .c { font-family: var(--mono); color: var(--verde); font-weight: 500; }
-.item .d { grid-column: 2 / 4; font-size: 12px; color: var(--tinta2); }
 
 /* Tabelas */
 .tabela { width: 100%; border-collapse: collapse; background: var(--sup); border: 1px solid var(--linha); border-radius: 4px; }
@@ -128,11 +116,9 @@ h2 { font-size: 14px; font-weight: 600; margin: 0; }
 .faixa i { flex: 1; min-width: 1px; background: var(--linha); height: 6px; }
 .faixa i.m { background: var(--ambar); cursor: pointer; }
 .faixa i.sel { background: var(--verm); }
-.anos { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--tinta2); }
 .evento { display: grid; grid-template-columns: 90px 1fr; gap: 18px; padding: 9px 16px; border-top: 1px solid var(--linha); }
 .evento.sel { background: var(--verm-f); }
 .evento > .mono { font-size: 14px; font-weight: 600; color: var(--verde-esc); }
-.mud { display: grid; grid-template-columns: 70px 190px 1fr; gap: 10px; align-items: baseline; padding: 2px 0; }
 .tag { display: inline-block; text-align: center; padding: 1px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; }
 .tag.incluido { background: var(--ent-f); color: var(--ent); }
 .tag.excluido { background: var(--verm-f); color: var(--verm); }
@@ -167,3 +153,72 @@ h2 { font-size: 14px; font-weight: 600; margin: 0; }
 .vazio { padding: 48px 32px; color: var(--tinta2); max-width: 640px; }
 .carregando { padding: 24px 32px; color: var(--tinta2); }
 @media (prefers-reduced-motion: reduce) { .barra-prog { transition: none; } }
+
+/* ===== Revisão de design (01/10/2026) ===== */
+/* Ficha: código em caixas + nome numa linha; faixa-chave; descrição recolhida. */
+.linha-cod { display: flex; align-items: flex-start; gap: 20px; }
+.caixas { display: flex; gap: 5px; border: 0; background: none; padding: 0; cursor: copy; position: relative; flex: none; }
+.caixa { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 10px; color: var(--tinta2); }
+.caixa b { font-family: var(--mono); font-size: 20px; font-weight: 600; color: var(--verde-esc); border: 1px solid var(--verde);
+  border-radius: 2px; padding: 1px 7px; background: var(--sup); }
+.caixas:hover .caixa b { background: var(--verde-claro); }
+.copiado { position: absolute; left: 0; bottom: -18px; font-size: 11px; color: var(--ent); font-weight: 600; }
+.nome-proc { font-size: 18px; font-weight: 600; line-height: 24px; margin: 2px 0 0; max-width: 75ch; }
+.desc-bloco { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; align-items: baseline; max-width: 110ch; }
+.desc-bloco .rotulo { font-size: 12px; color: var(--tinta2); }
+.desc-bloco .link { grid-column: 2; justify-self: start; }
+.descricao { margin: 0; font-size: 12px; color: var(--tinta); }
+.descricao.recolhida { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.chave { display: flex; flex-wrap: wrap; gap: 0; margin: 2px 0 0; border: 1px solid var(--linha); border-radius: 4px; background: var(--papel); }
+.chave > div { padding: 7px 16px 8px; border-right: 1px solid var(--linha); }
+.chave > div:last-child { border-right: 0; }
+.chave dt { font-size: 11px; color: var(--tinta2); }
+.chave dd { margin: 1px 0 0; font-weight: 500; }
+.chave dd.valor { font-family: var(--mono); font-size: 17px; font-weight: 600; color: var(--verde-esc); }
+.chave dd.ambar { color: var(--ambar); }
+/* Abas em grupos que quebram linha; vazias escondidas. */
+.abas { display: flex; flex-wrap: wrap; align-items: flex-end; column-gap: 18px; row-gap: 0; }
+.grupo-abas { display: flex; align-items: flex-end; flex-wrap: wrap; }
+.rotulo-grupo { font-size: 11px; color: var(--tinta2); padding: 0 6px 11px 0; white-space: nowrap; }
+.aba { background: none; border: 0; border-bottom: 3px solid transparent; padding: 8px 8px 9px; cursor: pointer; white-space: nowrap; }
+.mais-abas { padding-bottom: 11px; }
+/* Resumo: "Para cobrar" destacado; total com peso. */
+.bloco.destaque { border-color: var(--verde); box-shadow: inset 3px 0 var(--verde); }
+.par.total .v { font-size: 16px; font-weight: 600; color: var(--verde-esc); }
+.par .n .link { margin-left: 4px; }
+.item { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; align-items: baseline; }
+.item .c { font-family: var(--mono); color: var(--verde); font-weight: 500; }
+.item .x { font-family: var(--sans); white-space: nowrap; }
+.item .d, .codnome details { grid-column: 2 / 4; font-size: 12px; color: var(--tinta2); }
+details summary { cursor: pointer; color: var(--verde); font-size: 12px; }
+details p { margin: 4px 0 0; }
+/* Tabelas: código e nome juntos; colunas curtas sem quebra; grupos. */
+.tabela td.codnome .mono { font-weight: 500; color: var(--verde-esc); margin-right: 8px; }
+.tabela td.codnome .nome { color: var(--tinta); }
+.tabela td.codnome .falta { display: inline; margin-left: 4px; }
+.tabela td.curta { white-space: nowrap; }
+.tabela tr.grupo td { background: var(--papel); font-weight: 600; font-size: 12px; padding-top: 10px; }
+.tabela tr.grupo small { color: var(--tinta2); font-weight: 400; }
+.tabela tr.clicavel:focus-visible td { background: var(--verde-claro); }
+.campo { border: 1px solid var(--linha); border-radius: 4px; padding: 6px 10px; background: var(--sup); min-width: 280px; }
+/* Árvore: folhas numa linha, mais densa. */
+.no { padding: 4px 12px; }
+/* Histórico. */
+.anos { position: relative; height: 14px; font-family: var(--mono); font-size: 10px; color: var(--tinta2); }
+.anos span { position: absolute; top: 0; }
+.lista-eventos { padding: 0; gap: 0; }
+.mud { display: grid; grid-template-columns: 70px 170px 1fr; gap: 10px; align-items: baseline; padding: 3px 0; }
+.eventos { display: flex; flex-direction: column; }
+.item-ev { display: inline; }
+.item-ev + .item-ev::before { content: "; "; }
+.mud-campo { display: inline-block; margin-right: 14px; }
+.tabela-ev { color: var(--tinta2); }
+/* Início. */
+.inicio h1 { font-size: 24px; }
+.cartoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; max-width: 980px; }
+.cartoes .link { justify-self: start; margin-top: 4px; }
+.par.conf { grid-template-columns: 170px 1fr; row-gap: 1px; }
+.par.conf .n { grid-column: 2; }
+.bloco > .link, .cartoes .link { align-self: flex-start; }
+.tabela th { white-space: nowrap; }
+.inicio { max-width: 1040px; }
