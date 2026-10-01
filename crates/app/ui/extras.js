@@ -18,10 +18,12 @@ const urlRepo = () => `https://github.com/${(E.info && E.info.repositorio) || ""
 const Modal = { retorno: null };
 function abrirModal(titulo, corpo, opc) {
   const j = limpar($("modal-janela"));
-  j.className = "janela" + (opc && opc.larga ? " larga" : "");
+  j.className = "janela" + (opc && opc.larga ? " larga" : "") + (opc && opc.classe ? " " + opc.classe : "");
   j.append(
     el("div", { class: "cab-janela" },
-      el("h1", { id: "modal-titulo", text: titulo }),
+      el("div", { class: "titulos" },
+        el("h1", { id: "modal-titulo", text: titulo }),
+        opc && opc.subtitulo ? el("p", { class: "subtitulo", text: opc.subtitulo }) : null),
       el("button", { class: "icone fechar", type: "button", "aria-label": "Fechar", title: "Fechar (Esc)", onclick: fecharModal }, "×")),
     ...[].concat(corpo));
   Modal.retorno = document.activeElement;
@@ -348,57 +350,67 @@ async function desenharArvoreCid() {
   atualizarBotaoTudo();
 }
 
-// ---------- QR Code do Pix ----------
-// A imagem (pix-qr.svg) e o texto "copia e cola" são fixos e gerados antes, por scripts/dev/gerar_qr_pix.js.
-function qrPix() {
-  const codigo = APOIO.pixCopiaECola;
-  if (!codigo) return null;
-  const area = el("div", { class: "qr-pix", hidden: true });
-  let feito = false;
-  const botao = el("button", { class: "botao pequeno", type: "button", "aria-expanded": "false" }, "Mostrar QR Code");
-  botao.addEventListener("click", () => {
-    if (!feito) {
-      feito = true;
-      area.append(el("img", { src: "pix-qr.svg", alt: "QR Code do Pix para apoiar o projeto", width: "220", height: "220" }),
-        el("p", { class: "quieto pequeno", text: "Abra o app do seu banco, escolha pagar com Pix e aponte a câmera. Você digita o valor que quiser." }),
-        el("div", { class: "url" }, el("button", { class: "botao pequeno", type: "button", onclick: (ev) => copiar(codigo, ev.currentTarget.parentNode, "Pix copia e cola copiado") }, "Copiar Pix copia e cola"), el("span", { class: "copiado", role: "status" })));
-    }
-    area.hidden = !area.hidden; botao.textContent = area.hidden ? "Mostrar QR Code" : "Esconder QR Code"; botao.setAttribute("aria-expanded", String(!area.hidden));
-  });
-  return el("div", { class: "qr-bloco" }, botao, area);
-}
-
 // ---------- Sobre ----------
+// O QR Code (pix-qr.svg) e o "copia e cola" são fixos, gerados antes por scripts/dev/gerar_qr_pix.js.
+function botaoCopiar(rotulo, texto, aviso) {
+  return el("span", { class: "url" },
+    el("button", { class: "botao pequeno", type: "button", onclick: (ev) => copiar(texto, ev.currentTarget.parentNode, aviso) }, rotulo),
+    el("span", { class: "copiado", role: "status" }));
+}
+function painelApoio() {
+  if (!APOIO.pix && !APOIO.sponsors) {
+    return el("aside", { class: "apoio-painel vazio-apoio" },
+      el("h2", { text: "Apoie o projeto" }),
+      el("p", { class: "quieto", text: "As formas de apoiar o projeto serão publicadas aqui em breve." }));
+  }
+  return el("aside", { class: "apoio-painel", "aria-labelledby": "apoio-titulo" },
+    el("h2", { id: "apoio-titulo", text: "Apoie o projeto" }),
+    el("p", { class: "apoio-texto", text: "Se o programa ajuda no seu trabalho, contribua pelo Pix com o valor que quiser: aponte a câmera do app do banco." }),
+    APOIO.pixCopiaECola ? el("img", { class: "qr", src: "pix-qr.svg", alt: "QR Code do Pix para apoiar o projeto", width: "140", height: "140" }) : null,
+    APOIO.pix ? el("div", { class: "chave" },
+      el("code", { text: APOIO.pix, title: APOIO.pixNome ? `Chave Pix aleatória (${APOIO.pixNome})` : "Chave Pix aleatória" })) : null,
+    el("div", { class: "apoio-botoes" },
+      APOIO.pix ? botaoCopiar("Copiar chave", APOIO.pix, "chave Pix copiada") : null,
+      APOIO.pixCopiaECola ? botaoCopiar("Copiar Pix copia e cola", APOIO.pixCopiaECola, "Pix copia e cola copiado") : null,
+      APOIO.sponsors ? el("button", { class: "botao pequeno", type: "button", onclick: () => abrirSite(`https://github.com/sponsors/${APOIO.sponsors}`) }, "GitHub Sponsors") : null),
+    el("p", { class: "quieto pequeno", text: "Voluntário: não gera recibo nem libera recurso extra. O programa é completo sem isso." }));
+}
+const PROMESSAS = [
+  ["Gratuito e aberto", "Pode copiar, instalar e distribuir à vontade. O código é público (AGPL-3.0) e vai continuar público."],
+  ["Fica no seu computador", "Nada seu ou de paciente sai daqui. Não há cadastro, conta nem telemetria."],
+  ["Dados oficiais", "As tabelas vêm direto do DATASUS e do IBGE, com a fonte e a data em cada tela."],
+  ["Não oficial", "Não substitui o SIGTAP, o SIA nem o SIH. Confira no site oficial antes de faturar."],
+];
 function abrirSobre() {
   const i = E.info || {};
-  const pix = APOIO.pix ? el("div", { class: "apoio-pix" },
-    el("span", { class: "quieto", text: `Chave Pix${APOIO.pixNome ? ` (${APOIO.pixNome})` : ""}` }),
-    el("div", { class: "url" }, el("code", { text: APOIO.pix }),
-      el("button", { class: "botao pequeno", type: "button", onclick: (ev) => copiar(APOIO.pix, ev.currentTarget.parentNode, "chave Pix copiada") }, "Copiar chave Pix"),
-      el("span", { class: "copiado", role: "status" })),
-    qrPix()) : null;
-  const sponsors = APOIO.sponsors ? el("button", { class: "botao", type: "button", onclick: () => abrirSite(`https://github.com/sponsors/${APOIO.sponsors}`) }, "Apoiar pelo GitHub Sponsors") : null;
-  abrirModal("Sobre o SIGTAP Aberto", [
-    el("p", { class: "agradece", text: "Obrigado por usar o SIGTAP Aberto." }),
-    el("p", { text: "Este programa existe para ajudar quem fatura no SUS: consultar a Tabela de Procedimentos com o histórico de cada competência, conferir as regras de cobrança e evitar glosas. Tudo roda neste computador; nenhum dado seu ou de paciente sai dele." }),
-    el("p", { text: "O SIGTAP Aberto é gratuito e pode ser copiado e distribuído livremente: o código é aberto (licença AGPL-3.0) e o que é público continua público. Os dados vêm das fontes oficiais (DATASUS e IBGE); nenhum dado oficial é redistribuído pelo programa." }),
-    el("p", { text: "Se ele ajuda no seu trabalho e você quiser contribuir para que continue sendo desenvolvido e atualizado, pode apoiar o projeto com uma contribuição voluntária. É opcional: o programa continua completo sem ela, e a contribuição não dá direito a recibo nem a nenhum recurso extra." }),
-    (pix || sponsors) ? el("div", { class: "apoio" }, pix, sponsors) : el("p", { class: "quieto", text: "As formas de apoiar o projeto serão publicadas aqui em breve." }),
-    el("p", { class: "quieto pequeno", text: "Ferramenta não oficial. Não substitui o SIGTAP, o SIA ou o SIH do Ministério da Saúde: confira no site oficial antes de faturar." }),
-    el("div", { class: "info-versao" },
-      el("span", { class: "quieto", text: `Versão ${i.versao || ""}${i.repositorio ? ` · ${i.repositorio}` : ""}` }),
-      el("button", { class: "link", type: "button", onclick: () => abrirSite(urlRepo()) }, "Código-fonte no GitHub"),
-      el("button", { class: "link", type: "button", onclick: () => { fecharModal(); ir({ tipo: "modulos" }); } }, "Procurar atualizações")),
-    el("div", { class: "acoes" }, el("div", { class: "espaco" }),
+  abrirModal("SIGTAP Aberto", [
+    el("div", { class: "sobre-grade" },
+      el("section", { class: "sobre-texto" },
+        el("p", { class: "agradece", text: "Obrigado por usar." }),
+        el("p", { class: "missao", text: "Este programa existe para ajudar quem fatura no SUS: consultar a Tabela de Procedimentos com o histórico de cada competência, conferir as regras de cobrança e evitar glosas." }),
+        el("dl", { class: "promessas" }, PROMESSAS.flatMap(([t, d]) => [el("dt", { text: t }), el("dd", { text: d })])),
+        el("div", { class: "sobre-links" },
+          el("button", { class: "link", type: "button", onclick: () => abrirSite(urlRepo()) }, "Código-fonte no GitHub"),
+          el("button", { class: "link", type: "button", onclick: () => { fecharModal(); ir({ tipo: "modulos" }); } }, "Procurar atualizações"))),
+      painelApoio()),
+    el("div", { class: "acoes" },
       el("button", { class: "botao", type: "button", onclick: () => { fecharModal(); abrirFeedback(); } }, "Sugerir ou relatar"),
+      el("div", { class: "espaco" }),
       el("button", { class: "botao primario", type: "button", onclick: fecharModal }, "Fechar")),
-  ], { larga: false });
+  ], { larga: true, classe: "com-faixa sobre", subtitulo: `Versão ${i.versao || "?"}${i.repositorio ? `, ${i.repositorio}` : ""}` });
 }
 
 // ---------- feedback ----------
+// [valor, rótulo, prefixo do título, dica curta, orientação no campo de texto]
 const TIPOS_FEEDBACK = [
-  ["sugestao", "Sugestão", "Sugestão"], ["problema", "Problema no programa", "Problema"],
-  ["dado", "Dado errado ou faltando", "Dado"], ["outro", "Outro assunto", "Outro"],
+  ["sugestao", "Sugestão", "Sugestão", "Uma ideia para o programa",
+    "Qual problema do seu dia a dia isso resolveria? Conte como você faz hoje e o que gostaria que o programa fizesse."],
+  ["problema", "Problema", "Problema", "Algo não funcionou",
+    "O que você estava fazendo, o que esperava ver e o que apareceu. Se houve mensagem, copie o texto dela."],
+  ["dado", "Dado diferente", "Dado", "Não bate com o SIGTAP oficial",
+    "Código do procedimento, competência, qual informação está diferente e onde você conferiu (site do SIGTAP, ZIP oficial...)."],
+  ["outro", "Outro assunto", "Outro", "Dúvida, elogio, crítica",
+    "Escreva do seu jeito."],
 ];
 function infoParaRelato() {
   const i = E.info || {};
@@ -410,14 +422,25 @@ function infoParaRelato() {
   return linhas.join("\n");
 }
 function abrirFeedback() {
+  const LIMITE = 2500;
   const escolha = { tipo: "sugestao" };
-  const texto = el("textarea", { class: "campo area", rows: "4", maxlength: "2500", placeholder: "Conte o que aconteceu ou o que você gostaria que o programa fizesse. Se for um problema, diga o que estava fazendo e o que esperava ver.", "aria-label": "Descrição" });
-  const contato = el("input", { type: "text", class: "campo", maxlength: "120", placeholder: "Seu e-mail ou telefone, se quiser resposta (opcional)", "aria-label": "Contato (opcional)" });
+  const tipo = () => TIPOS_FEEDBACK.find((x) => x[0] === escolha.tipo);
+  const orienta = el("p", { class: "orienta", id: "fb-orienta" });
+  const texto = el("textarea", { class: "campo area", id: "fb-texto", rows: "4", maxlength: String(LIMITE), "aria-describedby": "fb-orienta" });
+  const conta = el("span", { class: "contador", "aria-live": "polite" });
+  const atualizar = () => {
+    orienta.textContent = tipo()[4];
+    conta.textContent = `${texto.value.length} de ${LIMITE}`;
+  };
+  texto.addEventListener("input", atualizar);
+  const contato = el("input", { type: "text", class: "campo", id: "fb-contato", maxlength: "120", placeholder: "e-mail ou telefone", autocomplete: "off" });
   const incluir = el("input", { type: "checkbox", checked: true });
   const previa = el("pre", { class: "notas", text: infoParaRelato() });
-  incluir.addEventListener("change", () => { previa.hidden = !incluir.checked; });
+  incluir.addEventListener("change", () => { previa.classList.toggle("riscada", !incluir.checked); });
+  const aviso = el("p", { class: "erro", hidden: true, role: "alert" });
+  const rotuloCopia = el("span", { class: "copiado", role: "status" });
   const montar = () => {
-    const t = TIPOS_FEEDBACK.find((x) => x[0] === escolha.tipo);
+    const t = tipo();
     const descr = texto.value.trim();
     const titulo = `[${t[2]}] ${descr.split("\n")[0].slice(0, 70) || "sem título"}`;
     const corpo = [`**Tipo:** ${t[1]}`, "", descr || "(sem descrição)",
@@ -425,38 +448,51 @@ function abrirFeedback() {
       incluir.checked ? `\n---\nInformações do programa (sem dados de paciente):\n${infoParaRelato()}` : ""].join("\n");
     return { titulo, corpo };
   };
-  const exigir = () => { if (!texto.value.trim()) { texto.focus(); aviso.textContent = "Escreva uma descrição antes de enviar."; aviso.hidden = false; return false; } aviso.hidden = true; return true; };
-  const aviso = el("p", { class: "aviso", hidden: true, role: "alert" });
-  const rotuloCopia = el("span", { class: "copiado", role: "status" });
-  abrirModal("Sugerir ou relatar um problema", [
-    el("p", { class: "aviso", text: "Não escreva nem cole dados de pacientes (nome, CPF, CNS, prontuário) nem trechos de arquivos de faturamento. Se precisar mostrar um caso, descreva sem identificar a pessoa." }),
-    el("fieldset", { class: "escopo tipos" }, el("legend", {}, el("b", { text: "Assunto" })),
-      TIPOS_FEEDBACK.map(([v, r]) => el("label", { class: "opcao" }, el("input", { type: "radio", name: "tipo-feedback", value: v, checked: v === escolha.tipo, onchange: () => { escolha.tipo = v; } }), el("span", { text: r })))),
-    texto, contato,
-    el("label", { class: "opcao" }, incluir, el("span", {}, "Incluir informações do programa para ajudar a entender o caso")),
-    previa, aviso,
+  const exigir = () => {
+    if (!texto.value.trim()) { aviso.textContent = "Escreva uma descrição antes de enviar."; aviso.hidden = false; texto.focus(); return false; }
+    aviso.hidden = true; return true;
+  };
+  const tipos = el("div", { class: "tipos-fb", role: "radiogroup", "aria-labelledby": "fb-tipo-rotulo" },
+    TIPOS_FEEDBACK.map(([v, r, , dica]) => el("label", { class: "tipo-fb" },
+      el("input", { type: "radio", name: "tipo-feedback", value: v, checked: v === escolha.tipo, onchange: () => { escolha.tipo = v; atualizar(); } }),
+      el("b", { text: r }), el("small", { text: dica }))));
+  abrirModal("Sugerir ou relatar", [
+    el("p", { class: "aviso", text: "Não escreva dados de pacientes (nome, CPF, CNS, prontuário) nem cole trechos de arquivos de faturamento. Para mostrar um caso, descreva sem identificar a pessoa." }),
+    el("div", { class: "fb-campo" }, el("span", { class: "rotulo-fb", id: "fb-tipo-rotulo", text: "Sobre o que é?" }), tipos),
+    el("div", { class: "fb-campo" },
+      el("div", { class: "fb-linha" }, el("label", { class: "rotulo-fb", for: "fb-texto", text: "Conte para a gente" }), conta),
+      orienta, texto),
+    el("div", { class: "fb-campo" },
+      el("label", { class: "rotulo-fb", for: "fb-contato" }, "Contato ", el("span", { class: "quieto", text: "(opcional, só se quiser resposta)" })),
+      contato),
+    el("details", { class: "fb-info" },
+      el("summary", {}, "O que vai junto com o relato"),
+      el("label", { class: "opcao" }, incluir, el("span", {}, "Incluir a versão do programa e do Windows (ajuda a entender o caso)")),
+      previa),
+    aviso,
     el("div", { class: "acoes" },
+      el("span", { class: "url" },
+        el("button", { class: "botao", type: "button", onclick: async () => {
+          if (!exigir()) return;
+          const { titulo, corpo } = montar();
+          try { await navigator.clipboard.writeText(`${titulo}\n\n${corpo}`); rotuloCopia.textContent = "texto copiado"; }
+          catch { rotuloCopia.textContent = "não foi possível copiar"; }
+          setTimeout(() => { rotuloCopia.textContent = ""; }, 2500);
+        } }, "Copiar texto"), rotuloCopia),
       el("div", { class: "espaco" }),
       el("button", { class: "botao", type: "button", onclick: fecharModal }, "Cancelar"),
-      el("button", { class: "botao", type: "button", onclick: async (ev) => {
-        if (!exigir()) return;
-        const { titulo, corpo } = montar();
-        try { await navigator.clipboard.writeText(`${titulo}\n\n${corpo}`); rotuloCopia.textContent = "texto copiado"; }
-        catch { rotuloCopia.textContent = "não foi possível copiar"; }
-        setTimeout(() => { rotuloCopia.textContent = ""; }, 2500);
-      } }, "Copiar texto"),
       APOIO.email ? el("button", { class: "botao", type: "button", onclick: () => {
         if (!exigir()) return;
         const { titulo, corpo } = montar();
         abrirSite(`mailto:${APOIO.email}?subject=${encodeURIComponent(`SIGTAP Aberto: ${titulo}`)}&body=${encodeURIComponent(corpo.slice(0, 1700))}`);
       } }, "Enviar por e-mail") : null,
-      el("button", { class: "botao primario", type: "button", title: "Abre o GitHub no navegador com o texto pronto; é preciso ter uma conta gratuita no GitHub", onclick: () => {
+      el("button", { class: "botao primario", type: "button", onclick: () => {
         if (!exigir()) return;
         const { titulo, corpo } = montar();
         abrirSite(`${urlRepo()}/issues/new?title=${encodeURIComponent(titulo)}&body=${encodeURIComponent(corpo.slice(0, 5000))}`);
-      } }, "Enviar pelo GitHub")),
-    el("p", { class: "quieto pequeno" }, "O envio pelo GitHub abre o navegador com o texto pronto; você confere e confirma lá (é preciso ter uma conta gratuita no GitHub). Nada é enviado sem o seu clique. ", rotuloCopia),
-  ], { larga: true });
+      } }, "Abrir no GitHub")),
+  ], { larga: true, classe: "com-faixa feedback", subtitulo: "O texto abre pronto no GitHub, no seu navegador. Você confere e confirma lá (precisa de uma conta gratuita). Nada é enviado sem o seu clique." });
+  atualizar();
   texto.focus();
 }
 

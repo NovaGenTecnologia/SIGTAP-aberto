@@ -403,7 +403,6 @@ body { grid-template-rows: 48px auto 1fr 26px; }
 .janela .agradece { font-size: 16px; font-weight: 600; margin: 0; }
 .janela p { margin: 0; }
 .janela .acoes { position: static; border-top: 0; padding: 4px 0 18px; }
-.apoio { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--linha); border-radius: 4px; background: var(--papel); align-items: flex-start; }
 .info-versao { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; font-size: 12px; }
 .notas { white-space: pre-wrap; background: var(--papel); border: 1px solid var(--linha); border-radius: 4px; padding: 8px 10px; margin: 6px 0 0; font-family: var(--mono); font-size: 11.5px; max-height: 160px; overflow: auto; }
 .campo.area { width: 100%; resize: vertical; font: inherit; flex: none; }
@@ -432,7 +431,65 @@ body { grid-template-rows: 48px auto 1fr 26px; }
 .janela .campo { flex: none; width: 100%; }
 .rodape > b { flex: none; }
 
-/* QR Code do Pix (Sobre) */
-.qr-bloco { margin-top: 8px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
-.qr-pix { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
-.qr-pix img { width: 220px; height: 220px; border: 1px solid #c9d3ce; border-radius: 6px; background: #fff; }
+/* ===== Sobre e Sugerir ou relatar (01/10/2026) =====
+   As duas janelas abrem com a mesma faixa verde-escura da barra do programa: parecem parte dele, não um alerta. */
+.janela.com-faixa { padding-top: 0; }
+.janela.com-faixa .cab-janela { position: sticky; top: 0; z-index: 2; margin: 0 -24px; padding: 16px 24px 15px; background: var(--verde-esc); color: #fff; align-items: center; }
+.janela.com-faixa .acoes { position: sticky; bottom: 0; z-index: 2; background: var(--sup); border-top: 1px solid var(--linha); padding: 12px 0 16px; margin-top: 4px; }
+.janela.com-faixa .cab-janela h1 { font-size: 19px; font-weight: 700; margin: 0; }
+.janela.com-faixa .subtitulo { margin: 3px 0 0; color: var(--verde-claro); font-size: 12.5px; max-width: 62ch; }
+.janela.com-faixa .fechar { color: var(--verde-claro); }
+.janela.com-faixa .fechar:hover { background: rgba(255,255,255,.12); border-color: transparent; color: #fff; }
+.janela .titulos { min-width: 0; }
+
+/* Sobre: texto à esquerda, apoio à direita */
+.janela.sobre { width: 780px; }
+.sobre-grade { display: grid; grid-template-columns: minmax(0, 1fr) 236px; gap: 28px; padding-top: 8px; }
+.sobre-texto { display: flex; flex-direction: column; gap: 12px; }
+.sobre .agradece { font-size: 17px; font-weight: 700; color: var(--verde-esc); }
+.sobre .missao { font-size: 14px; line-height: 1.55; max-width: 58ch; }
+.promessas { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 9px 16px; margin: 4px 0 0; padding: 12px 0 0; border-top: 1px solid var(--linha); }
+.promessas dt { font-weight: 700; color: var(--verde-esc); }
+.promessas dd { margin: 0; color: var(--tinta2); }
+.sobre-links { display: flex; gap: 18px; flex-wrap: wrap; padding-top: 2px; }
+.apoio-painel { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 14px 14px 12px; background: var(--verde-claro);
+  border-radius: 6px; text-align: center; align-self: start; }
+.apoio-painel h2 { font-size: 15px; margin: 0; color: var(--verde-esc); }
+.apoio-painel .apoio-texto { font-size: 12.5px; line-height: 1.45; }
+.apoio-painel .qr { display: block; width: 140px; height: 140px; background: #fff; border-radius: 4px; padding: 0; margin-top: 4px; }
+.apoio-painel .chave { display: flex; flex-direction: column; gap: 2px; width: 100%; }
+.apoio-painel .chave code { font-size: 11px; overflow-wrap: anywhere; background: var(--sup); border-radius: 3px; padding: 3px 6px; }
+.apoio-botoes { display: flex; flex-direction: column; align-items: stretch; gap: 6px; width: 100%; }
+.apoio-botoes .url { margin: 0; flex-direction: column; align-items: stretch; gap: 2px; }
+.apoio-botoes .botao { justify-content: center; background: var(--sup); }
+.apoio-botoes .copiado { text-align: center; white-space: normal; }
+.apoio-painel > .pequeno:last-child { font-size: 11.5px; }
+
+/* Sugerir ou relatar */
+.janela.feedback { width: 700px; }
+.janela.feedback > .aviso { margin-top: 6px; }
+.fb-campo { display: flex; flex-direction: column; gap: 6px; }
+.fb-linha { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.rotulo-fb { font-weight: 700; }
+.rotulo-fb .quieto { font-weight: 400; }
+.tipos-fb { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.tipo-fb { position: relative; display: flex; flex-direction: column; gap: 2px; padding: 9px 11px 10px; border: 1px solid var(--linha);
+  border-radius: 5px; cursor: pointer; background: var(--sup); }
+.tipo-fb input { position: absolute; opacity: 0; pointer-events: none; }
+.tipo-fb b { font-weight: 700; }
+.tipo-fb small { color: var(--tinta2); font-size: 11.5px; line-height: 1.3; }
+.tipo-fb:hover { border-color: var(--verde); }
+.tipo-fb:has(input:checked) { border-color: var(--verde); background: var(--verde-claro); box-shadow: inset 0 0 0 1px var(--verde); }
+.tipo-fb:has(input:checked) b { color: var(--verde-esc); }
+.tipo-fb:has(input:focus-visible) { outline: 2px solid var(--verde); outline-offset: 2px; }
+.orienta { color: var(--tinta2); font-size: 12.5px; margin: 0; max-width: 80ch; }
+.contador { font-family: var(--mono); font-size: 11px; color: var(--tinta2); }
+.feedback .campo.area { min-height: 88px; }
+.fb-info { border-top: 1px solid var(--linha); padding-top: 8px; }
+.fb-info summary { cursor: pointer; color: var(--verde); font-weight: 500; width: max-content; }
+.fb-info[open] summary { margin-bottom: 6px; }
+.notas.riscada { opacity: .45; text-decoration: line-through; }
+@media (max-width: 760px) {
+  .sobre-grade { grid-template-columns: 1fr; }
+  .tipos-fb { grid-template-columns: 1fr 1fr; }
+}
