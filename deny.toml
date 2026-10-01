@@ -22,6 +22,14 @@ allow = [
   "AGPL-3.0-only",
 ]
 
+# Exceções por pacote, com motivo.
+[[licenses.exceptions]]
+# Lista de certificados raiz da Mozilla (dados, não código), usada pelo verificador de
+# certificados quando o sistema não tem os seus. CDLA-Permissive-2.0 é licença permissiva de
+# dados: só exige manter o texto da licença; não impõe condição sobre o programa.
+crate = "webpki-root-certs"
+allow = ["CDLA-Permissive-2.0"]
+
 [bans]
 multiple-versions = "allow"
 

@@ -30,6 +30,8 @@ Comandos:
   baixar [--ultima | --competencia AAAAMM | --todas]
                                   baixa do FTP oficial para a pasta de ZIPs, com cortesia
   importar --origem PASTA         copia ZIPs válidos de uma pasta (rede sem FTP)
+  territorio [--origem PASTA]     baixa (ou importa de PASTA) municípios do IBGE e regiões de
+                                  saúde do Ministério da Saúde e grava dados\\territorio.db
   ficha <código> [--competencia AAAAMM]
                                   ficha completa do procedimento, em JSON
   buscar <texto> [--competencia AAAAMM]
@@ -160,6 +162,83 @@ fn zips_em(caminhos: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
         );
     }
     Ok(v)
+}
+
+/// Território: download com cortesia (ou importação manual) e gravação do módulo.
+fn cmd_territorio(o: &Opcoes) -> Result<(), String> {
+    use sa_download::territorio as ter;
+    let base = o.banco.parent().map(Path::to_path_buf).unwrap_or_default();
+    let pasta = base.join("territorio");
+    match &o.origem {
+        None => {
+            println!(
+                "Baixando municípios (IBGE) e regiões de saúde (Ministério da Saúde), uma página por vez..."
+            );
+            let http = sa_download::http::Http::novo(Cortesia::default());
+            let cancelar = AtomicBool::new(false);
+            ter::baixar(&http, &pasta, &cancelar, &mut |e| match e {
+                Evento::NovaTentativa {
+                    arquivo,
+                    tentativa,
+                    espera_s,
+                    motivo,
+                } => println!(
+                    "  falha em {arquivo} ({motivo}); tentativa {tentativa} em {espera_s} s"
+                ),
+                Evento::Progresso { arquivo, feito, .. } => println!("  {arquivo}: {feito} itens"),
+                _ => {}
+            })
+            .map_err(|e| e.to_string())?;
+        }
+        Some(origem) => {
+            std::fs::create_dir_all(&pasta)
+                .map_err(|e| format!("não foi possível criar {} ({e})", pasta.display()))?;
+            ter::ler_pasta(origem).map_err(|e| e.to_string())?;
+            for nome in [ter::ARQ_IBGE, ter::ARQ_DEMAS, ter::ARQ_ORIGEM] {
+                let de = origem.join(nome);
+                if de.exists() {
+                    std::fs::copy(&de, pasta.join(nome))
+                        .map_err(|e| format!("não foi possível copiar {} ({e})", de.display()))?;
+                } else if nome == ter::ARQ_ORIGEM {
+                    let _ = std::fs::remove_file(pasta.join(nome));
+                }
+            }
+        }
+    }
+    let t = ter::ler_pasta(&pasta).map_err(|e| e.to_string())?;
+    let conv = |x: &ter::OrigemArquivo| sa_packs::territorio::Origem {
+        url: x.url.clone(),
+        obtido_em: x.obtido_em.clone(),
+        sha256: x.sha256.clone(),
+    };
+    let mut b = sa_packs::territorio::BancoTerritorio::abrir(&base.join("territorio.db"))
+        .map_err(|e| e.to_string())?;
+    let r = b
+        .gravar(
+            &t.ibge,
+            &t.demas,
+            &conv(&t.origem_ibge),
+            &conv(&t.origem_demas),
+        )
+        .map_err(|e| e.to_string())?;
+    println!(
+        "Território gravado: {} municípios (IBGE), {} com região de saúde (Ministério da Saúde), {} UFs, {} regiões de saúde, {} macrorregiões.",
+        r.municipios_ibge, r.municipios_saude, r.ufs, r.regioes_saude, r.macrorregioes_saude
+    );
+    if !r.sem_regiao_saude.is_empty() {
+        println!("Sem região de saúde na fonte: {:?}", r.sem_regiao_saude);
+    }
+    if !r.sem_ibge.is_empty() {
+        println!("No Ministério da Saúde e não no IBGE: {:?}", r.sem_ibge);
+    }
+    if !r.uf_divergente.is_empty() {
+        println!("UF diferente entre as fontes: {:?}", r.uf_divergente);
+    }
+    println!(
+        "Origem: IBGE {} ({}); Ministério da Saúde {} ({})",
+        t.origem_ibge.url, t.origem_ibge.obtido_em, t.origem_demas.url, t.origem_demas.obtido_em
+    );
+    Ok(())
 }
 
 /// Consultas em JSON (mesmas funções usadas pela interface).
@@ -487,6 +566,7 @@ fn main() -> ExitCode {
         "listar-ftp" => cmd_listar_ftp(),
         "baixar" => cmd_baixar(&o),
         "importar" => cmd_importar(&o),
+        "territorio" => cmd_territorio(&o),
         "ficha" | "buscar" | "arvore" | "historico" | "mudou" => cmd_consulta(cmd.as_str(), &o),
         "ajuda" | "--help" | "-h" => {
             print!("{AJUDA}");

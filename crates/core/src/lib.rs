@@ -6,6 +6,7 @@
 
 pub mod competencia;
 pub mod ident;
+pub mod tempo;
 
 pub use competencia::{Competencia, CompetenciaInvalida};
 pub use ident::{Ident, IdentInvalido, safe_ident};
