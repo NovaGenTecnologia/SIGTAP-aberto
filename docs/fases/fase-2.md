@@ -105,6 +105,7 @@ arquivo a cada entrega; a interface do programa segue a versão mais recente.
 |---|---|---|---|
 | v1 | "v1 — 1440×900 (30/09)" | 6406dc9 | 6 telas com dados reais |
 | v2 | "v2 — 1366×768 (01/10)" | fc4a700 | Pior caso de tela (1366×697 úteis); árvore em escada pela numeração com ancestrais fixos e divisor ajustável; ficha compacta (faixa-chave, abas agrupadas, "Para cobrar"); busca agrupada por forma; início com resumo |
+| v2.1 | mesma página da v2 (versão salva "v2.1") | a4f4de1 | Árvore sem recuo: o código inteiro faz a escada; prefixo do pai em cinza claro, pedaço do nível em verde escuro |
 
 ## 3. Fechamento
 
