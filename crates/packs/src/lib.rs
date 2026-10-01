@@ -8,3 +8,4 @@ pub mod cnes;
 pub mod saude;
 pub mod sigtap;
 pub mod territorio;
+pub mod usuario;
