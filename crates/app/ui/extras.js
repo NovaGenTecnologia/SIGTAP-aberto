@@ -207,8 +207,9 @@ function secaoSaude() {
         if (!i.existe) { res.append(el("p", { class: "quieto", text: `${i.nome} (${i.arquivo}): ainda não existe.` })); continue; }
         if (i.ok) res.append(el("p", { class: "ok", text: `${i.nome} (${i.arquivo}, ${F.mb(i.bytes)}): íntegro${completo ? " na verificação completa" : " na verificação rápida"}.` }));
         else {
+          res.append(el("p", { class: "erro", text: `${i.nome} (${i.arquivo}): ${i.danificado ? "danificado" : "não foi possível verificar"}. ${i.mensagens.join(" ")}${i.conserto ? ` ${i.conserto}` : ""}` }));
+          if (i.conserto) continue; // conserto próprio; "Recriar o banco" não se aplica
           algumRuim = true;
-          res.append(el("p", { class: "erro", text: `${i.nome} (${i.arquivo}): ${i.danificado ? "danificado" : "não foi possível verificar"}. ${i.mensagens.join(" ")}` }));
         }
       }
       if (algumRuim) { res.append(el("p", { text: "Use Recriar o banco para refazê-lo a partir dos ZIPs guardados." })); }

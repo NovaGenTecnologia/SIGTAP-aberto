@@ -271,26 +271,49 @@ impl Servico {
 
     /// Verificação pedida pelo usuário em "Módulos e dados".
     pub fn verificar_bancos(&self, completo: bool) -> serde_json::Value {
-        let itens: Vec<serde_json::Value> = [
-            ("Tabela de procedimentos", self.pastas.sigtap_db()),
-            ("Território", self.pastas.territorio_db()),
-        ]
-        .into_iter()
-        .map(|(nome, p)| {
-            let existe = p.exists();
-            let bytes = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
-            let v = existe.then(|| saude::verificar(&p, completo));
-            serde_json::json!({
-                "nome": nome,
-                "arquivo": p.file_name().map(|n| n.to_string_lossy().into_owned()),
-                "existe": existe,
-                "bytes": bytes,
-                "ok": v.as_ref().is_some_and(|v| v.ok),
-                "danificado": v.as_ref().is_some_and(|v| v.danificado),
-                "mensagens": v.map(|v| v.mensagens).unwrap_or_default(),
+        let local = crate::unidade::local(&self.pastas);
+        let mut bancos = vec![
+            (
+                "Tabela de procedimentos".to_string(),
+                self.pastas.sigtap_db(),
+                "",
+            ),
+            ("Território".to_string(), self.pastas.territorio_db(), ""),
+        ];
+        for uf in crate::unidade::ufs_carregadas(&local) {
+            let caminho = crate::unidade::banco_cnes(&local, &uf);
+            bancos.push((
+                format!("CNES de {uf}"),
+                caminho,
+                "Em CNES por UF, use \"atualizar\" nessa UF para baixar e refazer.",
+            ));
+        }
+        let usuario = crate::unidade::banco_usuario(&local);
+        if usuario.exists() {
+            bancos.push((
+                "Favoritos, anotações e unidade escolhida".to_string(),
+                usuario,
+                "Este arquivo só existe neste computador e não pode ser refeito: guarde uma cópia de dados\\usuario.db antes de apagar.",
+            ));
+        }
+        let itens: Vec<serde_json::Value> = bancos
+            .into_iter()
+            .map(|(nome, p, conserto)| {
+                let existe = p.exists();
+                let bytes = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+                let v = existe.then(|| saude::verificar(&p, completo));
+                serde_json::json!({
+                    "nome": nome,
+                    "arquivo": p.file_name().map(|n| n.to_string_lossy().into_owned()),
+                    "existe": existe,
+                    "bytes": bytes,
+                    "ok": v.as_ref().is_some_and(|v| v.ok),
+                    "danificado": v.as_ref().is_some_and(|v| v.danificado),
+                    "mensagens": v.map(|v| v.mensagens).unwrap_or_default(),
+                    "conserto": conserto,
+                })
             })
-        })
-        .collect();
+            .collect();
         serde_json::json!({ "completo": completo, "itens": itens })
     }
 

@@ -375,6 +375,12 @@ pub fn baixar_cnes_de(
         };
         emitir(emissor, &resumo, &msg, (n + parte) / etapas, false);
     };
+    // Mesma competência já guardada, com o cadastro de nomes: não baixa os auxiliares de novo
+    // (é o caso de "baixar os profissionais" depois de escolher a unidade).
+    let auxiliares_em_dia = dl::locais(&destino, uf)
+        .get("ST")
+        .is_some_and(|(c, _)| *c == competencia)
+        && destino.join(format!("CADGER{uf}.dbf")).exists();
     dl::baixar(
         fonte,
         uf,
@@ -391,18 +397,20 @@ pub fn baixar_cnes_de(
         .iter()
         .map(|d| d.arquivo.clone())
         .collect();
-    let aux = dl::baixar_auxiliares(fonte, uf, &cnv, &destino, cancelar, &progresso);
+    let aux = (!auxiliares_em_dia)
+        .then(|| dl::baixar_auxiliares(fonte, uf, &cnv, &destino, cancelar, &progresso));
     let aviso_aux = match aux {
-        Ok(a) if a.cnv_ausentes.is_empty() => String::new(),
-        Ok(a) => format!(
+        None => String::new(),
+        Some(Ok(a)) if a.cnv_ausentes.is_empty() => String::new(),
+        Some(Ok(a)) => format!(
             " Tabelas de nomes ausentes na fonte: {}.",
             a.cnv_ausentes.join(", ")
         ),
-        Err(sa_download::cortesia::ErroDownload::Cancelado) => {
+        Some(Err(sa_download::cortesia::ErroDownload::Cancelado)) => {
             return Err(sa_download::cortesia::ErroDownload::Cancelado.to_string());
         }
         // Sem os auxiliares o CNES ainda serve (códigos sem nome): avisa em vez de falhar.
-        Err(e) => format!(
+        Some(Err(e)) => format!(
             " Os nomes dos estabelecimentos não puderam ser baixados agora ({e}); tente \"Baixar de novo\" mais tarde."
         ),
     };
