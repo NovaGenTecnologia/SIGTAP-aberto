@@ -226,6 +226,40 @@ impl Ftp {
         Ok(total)
     }
 
+    /// Baixa só um trecho de `caminho`: `quantos` bytes a partir de `desde`. A conexão é
+    /// encerrada em seguida (o servidor ainda estaria enviando o resto do arquivo), por isso o
+    /// método consome a conexão: cada trecho usa uma conexão própria, uma por vez.
+    pub fn baixar_trecho(
+        mut self,
+        caminho: &str,
+        desde: u64,
+        quantos: u64,
+        mut progresso: impl FnMut(u64),
+    ) -> Result<Vec<u8>, ErroFtp> {
+        let mut dados = self.abrir_dados()?;
+        if desde > 0 {
+            self.exigir(&format!("REST {desde}"), &[350])?;
+        }
+        self.exigir(&format!("RETR {caminho}"), &[125, 150])?;
+        let alvo = usize::try_from(quantos)
+            .map_err(|_| ErroFtp::Protocolo("trecho grande demais".into()))?;
+        let mut saida = Vec::with_capacity(alvo.min(64 * 1024 * 1024));
+        let mut buf = [0u8; 64 * 1024];
+        while saida.len() < alvo {
+            let falta = (alvo - saida.len()).min(buf.len());
+            let n = dados
+                .read(&mut buf[..falta])
+                .map_err(|e| ErroFtp::Conexao(self.host.clone(), e.to_string()))?;
+            if n == 0 {
+                break; // fim do arquivo antes do fim do trecho: quem chama confere o tamanho
+            }
+            saida.extend_from_slice(&buf[..n]);
+            progresso(saida.len() as u64);
+        }
+        let _ = dados.shutdown(Shutdown::Both);
+        Ok(saida)
+    }
+
     pub fn sair(mut self) {
         let _ = self.comando("QUIT");
     }

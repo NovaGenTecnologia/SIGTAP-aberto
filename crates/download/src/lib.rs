@@ -5,6 +5,7 @@
 //! manual (o usuário coloca os arquivos numa pasta).
 
 pub mod atualizador;
+pub mod cnes;
 pub mod cortesia;
 pub mod ftp;
 pub mod http;
