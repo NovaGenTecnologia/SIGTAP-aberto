@@ -1,0 +1,38 @@
+SIGTAP Aberto para macOS
+========================
+
+Consulta da Tabela de Procedimentos do SUS (SIGTAP) com o histórico de cada competência.
+Gratuito e de código aberto (licença AGPL-3.0, no arquivo LICENSE).
+
+FERRAMENTA NÃO OFICIAL. Sem vínculo com o Ministério da Saúde, o DATASUS ou a ANS.
+Confira no SIGTAP oficial antes de faturar.
+
+
+COMO USAR
+---------
+  1. Arraste a pasta "SIGTAP Aberto" inteira (não só o app) para um lugar seu,
+     por exemplo Documentos. O programa grava os dados dentro dessa pasta.
+  2. Abra o "SIGTAP Aberto.app" de lá.
+
+O programa ainda não tem assinatura da Apple. Na primeira vez, o macOS avisa que não pode
+verificar o desenvolvedor. Para abrir:
+  - Clique com o botão direito (ou Control + clique) no app e escolha "Abrir", e depois
+    "Abrir" de novo; ou
+  - Em Ajustes do Sistema > Privacidade e Segurança, clique em "Abrir Mesmo Assim".
+
+Se o programa disser que foi aberto numa pasta temporária, é porque ele foi aberto direto do
+download: arraste a pasta para Documentos e abra de novo.
+
+Tudo o que o programa grava fica na pasta "SIGTAP Aberto": dados/ e dados_webview/.
+Para desinstalar, apague a pasta.
+
+
+ATUALIZAR
+---------
+O programa avisa quando há versão nova e abre a página para baixar. Baixe, extraia e troque o
+"SIGTAP Aberto.app" dentro da sua pasta; os dados continuam valendo.
+
+
+PROBLEMAS E SUGESTÕES
+---------------------
+Use o botão "Sugerir ou relatar", no rodapé do programa. Nunca envie dados de pacientes.

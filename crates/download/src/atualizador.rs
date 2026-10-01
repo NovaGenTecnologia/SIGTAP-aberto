@@ -99,14 +99,26 @@ fn url_do_github(url: &str, repo: &str) -> bool {
 }
 
 /// Final do nome do pacote desta compilação no lançamento (`SIGTAP-Aberto-vX.Y.Z<sufixo>`).
-/// Cada arquitetura baixa o seu: um .exe ARM64 não troca por um x64, nem o contrário.
-pub const SUFIXO_PACOTE: &str = if cfg!(target_arch = "aarch64") {
+/// Cada sistema e arquitetura procura o seu: um .exe ARM64 não troca por um x64, nem o contrário.
+pub const SUFIXO_PACOTE: &str = if cfg!(target_os = "macos") {
+    "-macos-universal.zip"
+} else if cfg!(target_os = "linux") {
+    if cfg!(target_arch = "aarch64") {
+        "-linux-arm64.AppImage"
+    } else {
+        "-linux-x64.AppImage"
+    }
+} else if cfg!(target_arch = "aarch64") {
     "-windows-arm64.zip"
 } else if cfg!(target_arch = "x86") {
     "-windows-x86.zip"
 } else {
     "-windows-x64.zip"
 };
+
+/// O programa sabe trocar o próprio executável neste sistema (só no Windows, por enquanto).
+/// Nos outros, avisa da versão nova e abre a página do lançamento para baixar.
+pub const TROCA_AUTOMATICA: bool = cfg!(windows);
 
 /// Lê a resposta de `releases/latest`. `Ok(None)`: rascunho, pré-lançamento ou sem o pacote
 /// desta arquitetura ([`SUFIXO_PACOTE`]).
@@ -151,7 +163,8 @@ pub fn interpretar_para(
             })
         })
     };
-    let Some((zip_nome, zip_url, zip_tamanho)) = acha(&|n| n.to_lowercase().ends_with(sufixo))
+    let Some((zip_nome, zip_url, zip_tamanho)) =
+        acha(&|n| n.to_lowercase().ends_with(&sufixo.to_lowercase()))
     else {
         return Ok(None);
     };
@@ -469,7 +482,11 @@ mod testes {
                 .unwrap()
                 .is_none()
         );
-        assert!(SUFIXO_PACOTE.starts_with("-windows-") && SUFIXO_PACOTE.ends_with(".zip"));
+        assert!(
+            SUFIXO_PACOTE.starts_with("-windows-")
+                || SUFIXO_PACOTE.starts_with("-linux-")
+                || SUFIXO_PACOTE.starts_with("-macos-")
+        );
     }
 
     #[test]

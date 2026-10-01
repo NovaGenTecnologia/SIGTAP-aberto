@@ -1,0 +1,148 @@
+# Pacotes prontos para baixar e rodar, em todos os sistemas.
+# Chamado pelo lançamento (release.yml). Também roda sozinho quando este arquivo ou scripts/pacote/
+# mudam, e pelo botão "Run workflow", para conferir os pacotes sem publicar nada.
+#
+# Saída (artefatos "pacote-*"), com <v> = versão do Cargo.toml:
+#   Windows: SIGTAP-Aberto-v<v>-windows-{x64,arm64}.exe   o programa, um arquivo só
+#            SIGTAP-Aberto-v<v>-windows-{x64,arm64}.zip   pasta "SIGTAP Aberto" com .exe, LEIAME e licença
+#                                                          (é o que o atualizador do Windows baixa)
+#   Linux:   SIGTAP-Aberto-v<v>-linux-{x64,arm64}.AppImage
+#   macOS:   SIGTAP-Aberto-v<v>-macos-universal.zip      pasta "SIGTAP Aberto" com o .app (Intel e Apple)
+name: pacotes
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/pacotes.yml"
+      - "scripts/pacote/**"
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows ${{ matrix.arq }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arq: x64, alvo: x86_64-pc-windows-msvc, maquina: "8664" }
+          - { arq: arm64, alvo: aarch64-pc-windows-msvc, maquina: "AA64" }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust e alvo ${{ matrix.alvo }}
+        run: |
+          rustup show
+          rustup target add ${{ matrix.alvo }}
+      - name: Compilar
+        run: cargo build --release --locked -p sa-app --target ${{ matrix.alvo }}
+      - name: Conferir a arquitetura e empacotar
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          $nome = "SIGTAP-Aberto-v$v-windows-${{ matrix.arq }}"
+          $exe = "target\${{ matrix.alvo }}\release\sigtap-aberto.exe"
+          $b = [System.IO.File]::ReadAllBytes($exe)
+          if ($b[0] -ne 0x4D -or $b[1] -ne 0x5A) { throw "não é um executável do Windows" }
+          $maquina = "{0:X4}" -f [BitConverter]::ToUInt16($b, [BitConverter]::ToInt32($b, 0x3C) + 4)
+          if ($maquina -ne "${{ matrix.maquina }}") { throw "arquitetura $maquina, esperada ${{ matrix.maquina }}" }
+          New-Item -ItemType Directory -Path saida, "pacote\SIGTAP Aberto" -Force | Out-Null
+          Copy-Item $exe "saida\$nome.exe"
+          Copy-Item $exe "pacote\SIGTAP Aberto\sigtap-aberto.exe"
+          Copy-Item LICENSE "pacote\SIGTAP Aberto\LICENSE"
+          Copy-Item scripts\pacote\LEIAME.txt "pacote\SIGTAP Aberto\LEIAME.txt"
+          Add-Type -AssemblyName System.IO.Compression
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [System.IO.Compression.ZipFile]::CreateFromDirectory("$PWD\pacote", "$PWD\saida\$nome.zip", [System.IO.Compression.CompressionLevel]::Optimal, $false)
+          $z = [System.IO.Compression.ZipFile]::OpenRead("$PWD\saida\$nome.zip")
+          try { $itens = @($z.Entries | ForEach-Object FullName | Sort-Object) } finally { $z.Dispose() }
+          if (($itens -join "|") -ne "SIGTAP Aberto/LEIAME.txt|SIGTAP Aberto/LICENSE|SIGTAP Aberto/sigtap-aberto.exe") { throw "ZIP com conteúdo inesperado: $($itens -join ', ')" }
+          Get-ChildItem saida | ForEach-Object { "{0}  {1:N1} MB  máquina $maquina" -f $_.Name, ($_.Length / 1MB) }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pacote-windows-${{ matrix.arq }}
+          path: saida/*
+          if-no-files-found: error
+
+  linux:
+    name: Linux ${{ matrix.arq }}
+    # 22.04: o AppImage roda nas distribuições com glibc 2.35 ou mais nova.
+    runs-on: ${{ matrix.maquina }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arq: x64, maquina: ubuntu-22.04, elf: "x86-64" }
+          - { arq: arm64, maquina: ubuntu-22.04-arm, elf: "aarch64" }
+    env:
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependências do WebKitGTK e do AppImage
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev librsvg2-dev patchelf file
+      - name: Rust (versão de rust-toolchain.toml)
+        run: rustup show
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Compilar e montar o AppImage
+        working-directory: crates/app
+        run: npx --yes @tauri-apps/cli@2 build --bundles appimage --config '{"bundle":{"active":true}}'
+      - name: Conferir e renomear
+        run: |
+          v=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          img=$(ls target/release/bundle/appimage/*.AppImage | head -1)
+          [ -n "$img" ] || { echo "AppImage não gerado"; exit 1; }
+          mkdir -p saida
+          dest="saida/SIGTAP-Aberto-v$v-linux-${{ matrix.arq }}.AppImage"
+          cp "$img" "$dest"; chmod +x "$dest"
+          ( cd /tmp && rm -rf squashfs-root && "$GITHUB_WORKSPACE/$dest" --appimage-extract >/dev/null )
+          bin=$(find /tmp/squashfs-root -type f -name sigtap-aberto | head -1)
+          file "$bin" | tee /dev/stderr | grep -q "ELF 64-bit.*${{ matrix.elf }}" || { echo "arquitetura errada"; exit 1; }
+          ls -la saida
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pacote-linux-${{ matrix.arq }}
+          path: saida/*
+          if-no-files-found: error
+
+  macos:
+    name: macOS (Intel e Apple)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust e alvos das duas arquiteturas
+        run: |
+          rustup show
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Compilar e montar o app universal
+        working-directory: crates/app
+        run: npx --yes @tauri-apps/cli@2 build --target universal-apple-darwin --bundles app --config '{"bundle":{"active":true}}'
+      - name: Conferir e empacotar
+        run: |
+          v=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          app=$(ls -d target/universal-apple-darwin/release/bundle/macos/*.app | head -1)
+          [ -n "$app" ] || { echo "app não gerado"; exit 1; }
+          archs=$(lipo -archs "$app/Contents/MacOS/sigtap-aberto")
+          echo "arquiteturas: $archs"
+          case "$archs" in *x86_64*arm64*|*arm64*x86_64*) ;; *) echo "não é universal"; exit 1;; esac
+          mkdir -p "pacote/SIGTAP Aberto" saida
+          cp -R "$app" "pacote/SIGTAP Aberto/SIGTAP Aberto.app"
+          cp LICENSE "pacote/SIGTAP Aberto/LICENSE"
+          cp scripts/pacote/LEIAME-macos.txt "pacote/SIGTAP Aberto/LEIAME.txt"
+          ( cd pacote && ditto -c -k --keepParent "SIGTAP Aberto" "../saida/SIGTAP-Aberto-v$v-macos-universal.zip" )
+          ls -la saida
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pacote-macos-universal
+          path: saida/*
+          if-no-files-found: error

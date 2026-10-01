@@ -192,7 +192,9 @@ fn abrir_site(url: String) -> Result<(), String> {
     let r = std::process::Command::new("rundll32")
         .args(["url.dll,FileProtocolHandler", &url])
         .spawn();
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    let r = std::process::Command::new("open").arg(&url).spawn();
+    #[cfg(all(not(windows), not(target_os = "macos")))]
     let r = std::process::Command::new("xdg-open").arg(&url).spawn();
     r.map(|_| ()).map_err(|e| {
         format!(
@@ -235,7 +237,11 @@ async fn consultar_atualizacao() -> Result<serde_json::Value, String> {
         let l = atualizador::consultar(sa_core::REPOSITORIO, &sem_cancelar)
             .map_err(|e| e.to_string())?;
         let nova = l.filter(|l| atualizador::e_mais_nova(sa_core::VERSAO, &l.versao));
-        Ok(serde_json::json!({ "atual": sa_core::VERSAO, "nova": nova }))
+        Ok(serde_json::json!({
+            "atual": sa_core::VERSAO,
+            "nova": nova,
+            "automatica": atualizador::TROCA_AUTOMATICA,
+        }))
     })
     .await
     .map_err(|e| format!("falha interna na consulta ({e})"))?
@@ -244,6 +250,9 @@ async fn consultar_atualizacao() -> Result<serde_json::Value, String> {
 /// Baixa a versão nova, confere o SHA-256, troca o executável e reabre o programa.
 #[tauri::command]
 fn atualizar_programa(app: AppHandle, s: Estado<'_>) -> Result<(), String> {
+    if !atualizador::TROCA_AUTOMATICA {
+        return Err("neste sistema o programa ainda não se troca sozinho: baixe a versão nova na página do lançamento (botão Ver a versão nova).".into());
+    }
     let s = s.inner().clone();
     if s.ocupado.swap(true, Ordering::SeqCst) {
         return Err(
@@ -401,22 +410,78 @@ async fn escolher_pasta(app: AppHandle) -> Option<String> {
         .map(|p| p.display().to_string())
 }
 
-/// Pasta onde o executável está. Tudo o que o programa grava fica abaixo dela.
+/// Pasta onde o programa guarda tudo o que grava: ao lado do executável (Windows), do arquivo
+/// `.AppImage` (Linux) ou do `SIGTAP Aberto.app` (macOS). Nada vai para pastas do sistema.
 fn pasta_do_programa() -> Result<PathBuf, String> {
     let exe = std::env::current_exe()
         .map_err(|e| format!("Não foi possível localizar o executável ({e}). Copie o programa para uma pasta sua e abra de novo."))?;
+    let appimage = std::env::var_os("APPIMAGE").map(PathBuf::from);
+    pasta_para(&exe, appimage.as_deref())
+}
+
+/// Regra da pasta de dados, separada para testar em qualquer sistema.
+fn pasta_para(
+    exe: &std::path::Path,
+    appimage: Option<&std::path::Path>,
+) -> Result<PathBuf, String> {
+    const MOVER: &str = "Arraste a pasta do SIGTAP Aberto para um lugar seu (por exemplo, Documentos) e abra o programa de lá.";
+    // Linux, AppImage: o executável roda de uma montagem só de leitura; vale a pasta do .AppImage.
+    if let Some(a) = appimage.filter(|a| a.is_absolute()) {
+        return a
+            .parent()
+            .map(|p| p.to_path_buf())
+            .ok_or_else(|| format!("Não foi possível identificar a pasta do AppImage. {MOVER}"));
+    }
+    let texto = exe.to_string_lossy();
+    // macOS: aberto direto do download, o sistema copia o app para uma pasta temporária só de leitura.
+    if texto.contains("/AppTranslocation/") {
+        return Err(format!(
+            "O macOS abriu o programa numa pasta temporária, onde ele não consegue gravar. {MOVER}"
+        ));
+    }
+    // macOS: .../SIGTAP Aberto.app/Contents/MacOS/<exe> -> pasta que contém o .app.
+    let pais: Vec<&std::path::Path> = exe.ancestors().collect();
+    if pais.len() > 3
+        && pais[1].file_name().is_some_and(|n| n == "MacOS")
+        && pais[2].file_name().is_some_and(|n| n == "Contents")
+        && pais[3].extension().is_some_and(|e| e == "app")
+    {
+        return pais[3]
+            .parent()
+            .map(|p| p.to_path_buf())
+            .ok_or_else(|| format!("Não foi possível identificar a pasta do programa. {MOVER}"));
+    }
     exe.parent()
         .map(|p| p.to_path_buf())
         .ok_or_else(|| "Não foi possível identificar a pasta do executável. Copie o programa para uma pasta sua e abra de novo.".to_string())
 }
 
+/// Mostra um erro de abertura antes da janela existir (no macOS e no Linux não há console).
+fn avisar_e_sair(msg: &str) -> ! {
+    eprintln!("{msg}");
+    #[cfg(target_os = "macos")]
+    {
+        let texto = msg.replace('\\', "\\\\").replace('"', "\\\"");
+        let _ = std::process::Command::new("osascript")
+            .args([
+                "-e",
+                &format!("display alert \"SIGTAP Aberto\" message \"{texto}\" as critical"),
+            ])
+            .status();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("zenity")
+            .args(["--error", "--title=SIGTAP Aberto", &format!("--text={msg}")])
+            .status();
+    }
+    std::process::exit(1);
+}
+
 fn main() {
     let pasta = match pasta_do_programa() {
         Ok(p) => p,
-        Err(msg) => {
-            eprintln!("{msg}");
-            std::process::exit(1);
-        }
+        Err(msg) => avisar_e_sair(&msg),
     };
     // Depois de uma atualização, o programa novo espera o antigo fechar e apaga os restos.
     if std::env::args().any(|a| a == "--apos-atualizacao") {
@@ -489,7 +554,44 @@ impl Servico {
 
 #[cfg(test)]
 mod testes {
-    use super::url_permitida;
+    use super::{pasta_para, url_permitida};
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn pasta_de_dados_em_cada_sistema() {
+        // Windows (e qualquer executável solto): a pasta do executável.
+        assert_eq!(
+            pasta_para(Path::new("/d/SIGTAP Aberto/sigtap-aberto.exe"), None).unwrap(),
+            PathBuf::from("/d/SIGTAP Aberto")
+        );
+        // Linux, AppImage: a pasta do .AppImage, não a montagem temporária.
+        assert_eq!(
+            pasta_para(
+                Path::new("/tmp/.mount_SIGTAPx/usr/bin/sigtap-aberto"),
+                Some(Path::new(
+                    "/home/ana/SIGTAP/SIGTAP-Aberto-linux-x64.AppImage"
+                ))
+            )
+            .unwrap(),
+            PathBuf::from("/home/ana/SIGTAP")
+        );
+        // macOS: a pasta que contém o .app.
+        assert_eq!(
+            pasta_para(
+                Path::new("/Users/ana/Documents/SIGTAP Aberto/SIGTAP Aberto.app/Contents/MacOS/sigtap-aberto"),
+                None
+            )
+            .unwrap(),
+            PathBuf::from("/Users/ana/Documents/SIGTAP Aberto")
+        );
+        // macOS aberto direto do download (App Translocation): recusa com orientação.
+        let e = pasta_para(
+            Path::new("/private/var/folders/x/AppTranslocation/ABC/d/SIGTAP Aberto.app/Contents/MacOS/sigtap-aberto"),
+            None,
+        )
+        .unwrap_err();
+        assert!(e.contains("Arraste"), "{e}");
+    }
 
     #[test]
     fn so_abre_enderecos_do_projeto_e_do_sigtap() {

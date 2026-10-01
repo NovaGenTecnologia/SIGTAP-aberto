@@ -5,3 +5,4 @@
 *.png binary
 *.ps1 text eol=crlf
 scripts/pacote/*.txt text eol=crlf
+scripts/pacote/LEIAME-macos.txt text eol=lf

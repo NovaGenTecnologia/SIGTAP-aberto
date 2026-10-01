@@ -1,7 +1,8 @@
-# Lançamento: ao publicar uma tag vX.Y.Z, testa, compila o .exe portátil de Windows para x64 e ARM64
-# e publica um lançamento com um ZIP e um .sha256 por arquitetura. O atualizador do programa
-# (crates/download/src/atualizador.rs) procura o pacote que termina em -windows-<arq>.zip.
-# Notas do lançamento: docs/lancamentos/vX.Y.Z.md (obrigatório).
+# Lançamento: ao publicar uma tag vX.Y.Z, testa, monta os pacotes de todos os sistemas
+# (pacotes.yml) e publica o lançamento com:
+#   - os arquivos prontos para baixar e rodar (.exe, .zip, .AppImage, .zip do macOS);
+#   - SHA256SUMS.txt com o SHA-256 de cada arquivo (o atualizador do programa confere por ele);
+#   - as notas de docs/lancamentos/vX.Y.Z.md, com uma tabela de downloads gerada aqui.
 name: lancamento
 
 on:
@@ -30,83 +31,59 @@ jobs:
       - name: Testes
         run: cargo test --workspace --locked
 
-  compilar:
-    name: Compilar Windows ${{ matrix.arq }}
+  pacotes:
     needs: conferir
-    runs-on: windows-latest
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - arq: x64
-            alvo: x86_64-pc-windows-msvc
-            maquina: "8664"
-          - arq: arm64
-            alvo: aarch64-pc-windows-msvc
-            maquina: "AA64"
-    steps:
-      - uses: actions/checkout@v4
-      - name: Rust e alvo ${{ matrix.alvo }}
-        run: |
-          rustup show
-          rustup target add ${{ matrix.alvo }}
-      - name: Compilar
-        run: cargo build --release --locked -p sa-app --target ${{ matrix.alvo }}
-      - name: Conferir a arquitetura do executável
-        shell: pwsh
-        run: |
-          $exe = "target\${{ matrix.alvo }}\release\sigtap-aberto.exe"
-          $b = [System.IO.File]::ReadAllBytes($exe)
-          if ($b[0] -ne 0x4D -or $b[1] -ne 0x5A) { throw "não é um executável do Windows" }
-          $pe = [BitConverter]::ToInt32($b, 0x3C)
-          $maquina = "{0:X4}" -f [BitConverter]::ToUInt16($b, $pe + 4)
-          if ($maquina -ne "${{ matrix.maquina }}") { throw "arquitetura $maquina, esperada ${{ matrix.maquina }}" }
-          "sigtap-aberto.exe: máquina $maquina, $([math]::Round($b.Length / 1MB, 1)) MB"
-      - name: Empacotar e calcular o SHA-256
-        shell: pwsh
-        run: |
-          $nome = "SIGTAP-Aberto-${env:GITHUB_REF_NAME}-windows-${{ matrix.arq }}"
-          $dentro = "pacote\SIGTAP Aberto"
-          New-Item -ItemType Directory -Path $dentro -Force | Out-Null
-          Copy-Item "target\${{ matrix.alvo }}\release\sigtap-aberto.exe" "$dentro\sigtap-aberto.exe"
-          Copy-Item LICENSE "$dentro\LICENSE"
-          Copy-Item scripts\pacote\LEIAME.txt "$dentro\LEIAME.txt"
-          Add-Type -AssemblyName System.IO.Compression
-          Add-Type -AssemblyName System.IO.Compression.FileSystem
-          [System.IO.Compression.ZipFile]::CreateFromDirectory("$PWD\pacote", "$PWD\$nome.zip", [System.IO.Compression.CompressionLevel]::Optimal, $false)
-          $z = [System.IO.Compression.ZipFile]::OpenRead("$PWD\$nome.zip")
-          try { $itens = @($z.Entries | ForEach-Object FullName | Sort-Object) } finally { $z.Dispose() }
-          if (($itens -join "|") -ne "SIGTAP Aberto/LEIAME.txt|SIGTAP Aberto/LICENSE|SIGTAP Aberto/sigtap-aberto.exe") { throw "conteúdo inesperado: $($itens -join ', ')" }
-          $h = (Get-FileHash "$nome.zip" -Algorithm SHA256).Hash.ToLower()
-          [System.IO.File]::WriteAllText("$PWD\$nome.zip.sha256", "$h  $nome.zip`n", [System.Text.Encoding]::ASCII)
-          "$nome.zip  $h"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: pacote-${{ matrix.arq }}
-          path: |
-            SIGTAP-Aberto-*.zip
-            SIGTAP-Aberto-*.zip.sha256
-          if-no-files-found: error
+    uses: ./.github/workflows/pacotes.yml
 
   publicar:
     name: Publicar o lançamento
-    needs: compilar
+    needs: pacotes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
+          pattern: pacote-*
           path: pacotes
           merge-multiple: true
-      - name: Conferir os hashes antes de publicar
+      - name: SHA256SUMS.txt e tabela de downloads
+        env:
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
         run: |
           cd pacotes
           ls -la
-          sha256sum -c *.sha256
+          for esperado in windows-x64.exe windows-arm64.exe windows-x64.zip windows-arm64.zip \
+                          linux-x64.AppImage linux-arm64.AppImage macos-universal.zip; do
+            [ -f "SIGTAP-Aberto-${TAG}-${esperado}" ] || { echo "Falta o pacote ${esperado}"; exit 1; }
+          done
+          sha256sum SIGTAP-Aberto-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          base="https://github.com/${REPO}/releases/download/${TAG}"
+          linha() { echo "| $1 | [$2](${base}/$2) | $(du -m "$2" | cut -f1) MB |"; }
+          {
+            echo "## Baixe e rode"
+            echo
+            echo "| Sistema | Arquivo | Tamanho |"
+            echo "|---|---|---|"
+            linha "Windows (Intel/AMD, a maioria)" "SIGTAP-Aberto-${TAG}-windows-x64.exe"
+            linha "Windows ARM (Snapdragon)" "SIGTAP-Aberto-${TAG}-windows-arm64.exe"
+            linha "Linux (Intel/AMD)" "SIGTAP-Aberto-${TAG}-linux-x64.AppImage"
+            linha "Linux ARM" "SIGTAP-Aberto-${TAG}-linux-arm64.AppImage"
+            linha "macOS (Intel e Apple)" "SIGTAP-Aberto-${TAG}-macos-universal.zip"
+            echo
+            echo "- **Windows:** baixe o \`.exe\`, ponha numa pasta sua (ex.: \`D:\\SIGTAP Aberto\`) e abra. Se aparecer o aviso azul do Windows: *Mais informações* → *Executar assim mesmo* (o programa ainda não tem assinatura digital). Prefere com instruções? Baixe o \`.zip\` do mesmo sistema: ele traz o LEIAME."
+            echo "- **Linux:** baixe o \`.AppImage\`, ponha numa pasta sua, marque como executável (\`chmod +x\`) e abra. Em distribuições sem FUSE 2, instale \`libfuse2\` ou rode com \`--appimage-extract-and-run\`."
+            echo "- **macOS:** extraia o \`.zip\`, arraste a pasta *SIGTAP Aberto* para Documentos e abra o app com botão direito → *Abrir* (o programa ainda não tem assinatura da Apple)."
+            echo
+            echo "O programa grava os dados ao lado de si mesmo, nunca em pastas do sistema. Confira o download pelo \`SHA256SUMS.txt\`."
+            echo
+            cat "../docs/lancamentos/${TAG}.md"
+          } > ../notas.md
       - name: Publicar
         uses: softprops/action-gh-release@v2
         with:
-          body_path: docs/lancamentos/${{ github.ref_name }}.md
+          body_path: notas.md
           files: |
-            pacotes/*.zip
-            pacotes/*.zip.sha256
+            pacotes/SIGTAP-Aberto-*
+            pacotes/SHA256SUMS.txt

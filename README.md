@@ -37,11 +37,20 @@ Você digita um código, um nome, um CID ou um CBO. O programa responde na hora:
 
 ## Como usar
 
-Ainda não há versão publicada para baixar. Por enquanto, compile (próxima seção). Quando houver, será um ZIP com um único `.exe`:
+Baixe a versão mais recente na página de [lançamentos](../../releases/latest). Cada lançamento traz o programa pronto para rodar, sem instalar:
 
-1. Extraia numa pasta sua (por exemplo, `D:\SIGTAP`).
-2. Abra o `sigtap-aberto.exe`. Na primeira vez ele baixa a Tabela Unificada vigente e o território (IBGE e regiões de saúde).
+| Sistema | Arquivo |
+|---|---|
+| Windows (Intel/AMD) | `SIGTAP-Aberto-v…-windows-x64.exe` (ou o `.zip`, com instruções) |
+| Windows ARM | `SIGTAP-Aberto-v…-windows-arm64.exe` |
+| Linux | `SIGTAP-Aberto-v…-linux-x64.AppImage` ou `-linux-arm64.AppImage` |
+| macOS (Intel e Apple) | `SIGTAP-Aberto-v…-macos-universal.zip` |
+
+1. Ponha o arquivo numa pasta sua (por exemplo, `D:\SIGTAP Aberto`). O programa grava os dados ao lado dele.
+2. Abra. Na primeira vez ele baixa a Tabela Unificada vigente e o território (IBGE e regiões de saúde).
 3. Se a rede do hospital bloquear o download, a tela **Módulos e dados** tem o passo a passo para baixar os arquivos à mão e importar.
+
+O programa ainda não tem assinatura digital: o Windows e o macOS mostram um aviso na primeira abertura. A página do lançamento explica como abrir em cada sistema. No Windows, o programa se atualiza sozinho; no Linux e no macOS, ele avisa e abre a página para baixar.
 
 Para outras competências, use **Módulos e dados**: histórico completo, últimos 6, 12 ou 24 meses, ou só as que você escolher.
 

@@ -2790,7 +2790,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "sa-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rusqlite",
  "sa-core",
@@ -2807,7 +2807,7 @@ dependencies = [
 
 [[package]]
 name = "sa-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "sa-core",
  "sa-download",
@@ -2820,11 +2820,11 @@ dependencies = [
 
 [[package]]
 name = "sa-core"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "sa-download"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "sa-core",
  "sa-sources",
@@ -2837,11 +2837,11 @@ dependencies = [
 
 [[package]]
 name = "sa-guarda"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "sa-packs"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rusqlite",
  "sa-core",
@@ -2853,7 +2853,7 @@ dependencies = [
 
 [[package]]
 name = "sa-query"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rusqlite",
  "sa-core",
@@ -2866,7 +2866,7 @@ dependencies = [
 
 [[package]]
 name = "sa-sources"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "sa-core",
  "serde",
@@ -2877,7 +2877,7 @@ dependencies = [
 
 [[package]]
 name = "sa-validate"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "same-file"

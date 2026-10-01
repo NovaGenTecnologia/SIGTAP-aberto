@@ -110,7 +110,10 @@ async function conferirVersao(manual) {
     mostrarAviso("versao", {
       nivel: "info",
       texto: `Nova versão do programa: ${n.versao} (você usa a ${Vigia.versao.atual}).`,
-      acoes: [{ rotulo: "Atualizar agora", primaria: true, fn: () => confirmarAtualizacao(n) }, { rotulo: "Ver novidades", fn: () => abrirSite(n.pagina) }],
+      // Fora do Windows o programa ainda não se troca sozinho: leva à página para baixar.
+      acoes: Vigia.versao.automatica === false
+        ? [{ rotulo: "Ver a versão nova", primaria: true, fn: () => abrirSite(n.pagina) }]
+        : [{ rotulo: "Atualizar agora", primaria: true, fn: () => confirmarAtualizacao(n) }, { rotulo: "Ver novidades", fn: () => abrirSite(n.pagina) }],
     });
   } else tirarAviso("versao");
   atualizarSecaoAtualizacoes();
@@ -169,7 +172,9 @@ function conteudoAtualizacoes() {
     el("div", { class: "linha-atu" },
       el("div", {}, el("b", { text: `Programa, versão ${(E.info && E.info.versao) || ""}` }), el("br"), el("span", { class: "quieto", text: textoStatusVersao() })),
       el("div", { class: "acoes" },
-        nova ? el("button", { class: "botao primario", type: "button", onclick: () => confirmarAtualizacao(nova) }, `Atualizar para ${nova.versao}`) : null,
+        nova ? (Vigia.versao.automatica === false
+          ? el("button", { class: "botao primario", type: "button", onclick: () => abrirSite(nova.pagina) }, `Baixar a versão ${nova.versao}`)
+          : el("button", { class: "botao primario", type: "button", onclick: () => confirmarAtualizacao(nova) }, `Atualizar para ${nova.versao}`)) : null,
         el("button", { class: "botao", type: "button", disabled: Vigia.ocupadoVersao, onclick: () => conferirVersao(true) }, "Procurar nova versão"))),
   ];
 }
