@@ -1,0 +1,237 @@
+# CNES de disseminação (arquivos .dbc do FTP do DATASUS): o que o programa carrega, o que descarta
+# por privacidade, como decodifica os códigos e como liga leitos do CNES aos tipos de leito do SIGTAP.
+# Tudo aqui é dado: o código não tem nome de campo nem posição fixa (o esquema vem do próprio .dbc).
+#
+# Origens:
+#   - Informe Técnico "IT_CNES_1706.pdf" (DATASUS, 06/2017), em
+#     ftp.datasus.gov.br/dissemin/publicos/CNES/200508_/doc/: campos de cada arquivo.
+#   - TAB_CNES.zip (15/09/2026), em .../CNES/200508_/Auxiliar/: arquivos .def (qual tabela decodifica
+#     cada campo), CNV\*.cnv (as tabelas) e DBF\CADGER<UF>.dbf (nome dos estabelecimentos).
+#   - Arquivos reais de MS de 200801, 201201, 201601, 202001, 202401 e 202608: os campos mudam com
+#     o tempo (NAT_JUR entra em 2016; sete campos APxxCV07 em ST entram depois de 2020).
+
+origem = "IT_CNES_1706.pdf e TAB_CNES.zip de 15/09/2026 (FTP do DATASUS); conferido nos .dbc de MS de 2008 a 2026"
+
+# ---- Arquivos ----
+# `chave`: campos que têm de existir (sem eles o arquivo é recusado).
+# `indices`: consultas do programa. `so_cnes_escolhidos`: só entra o que for dos CNES do usuário.
+
+[[tipo]]
+codigo = "ST"
+nome = "Estabelecimentos"
+chave = ["CNES", "CODUFMUN", "COMPETEN"]
+indices = [["CNES"], ["CODUFMUN"]]
+
+[[tipo]]
+codigo = "HB"
+nome = "Habilitações"
+chave = ["CNES", "CODUFMUN", "SGRUPHAB", "CMPT_INI", "CMPT_FIM", "COMPETEN"]
+indices = [["CNES"], ["SGRUPHAB"]]
+
+[[tipo]]
+codigo = "SR"
+nome = "Serviços especializados"
+chave = ["CNES", "CODUFMUN", "SERV_ESP", "CLASS_SR", "COMPETEN"]
+indices = [["CNES"], ["SERV_ESP", "CLASS_SR"]]
+
+[[tipo]]
+codigo = "LT"
+nome = "Leitos"
+chave = ["CNES", "CODUFMUN", "TP_LEITO", "CODLEITO", "QT_EXIST", "QT_SUS", "COMPETEN"]
+indices = [["CNES"], ["CODLEITO"]]
+
+[[tipo]]
+codigo = "EQ"
+nome = "Equipamentos"
+chave = ["CNES", "CODUFMUN", "TIPEQUIP", "CODEQUIP", "QT_EXIST", "COMPETEN"]
+indices = [["CNES"]]
+
+[[tipo]]
+codigo = "PF"
+nome = "Profissionais"
+chave = ["CNES", "CODUFMUN", "CBO", "COMPETEN"]
+indices = [["CNES"], ["CBO"]]
+so_cnes_escolhidos = true
+
+# ---- Privacidade ----
+# `sempre = true`: o campo nem vira coluna. Com `quando_campo`/`quando_valor`: o valor é apagado
+# naquele registro. PF_PJ = "1" é pessoa física (IT_CNES_1706, campo PF_PJ: "1-Física 3-Jurídica").
+# Tipo "CAD" é o cadastro de nomes (CADGER<UF>.dbf); a regra dele usa o PF_PJ do arquivo ST.
+
+[[privacidade]]
+tipos = ["ST", "HB", "SR", "LT", "EQ", "PF"]
+campos = ["CPF_CNPJ"]
+quando_campo = "PF_PJ"
+quando_valor = "1"
+motivo = "CPF do titular de estabelecimento pessoa física"
+
+[[privacidade]]
+tipos = ["ST"]
+campos = ["CO_BANCO", "CO_AGENC", "C_CORREN"]
+quando_campo = "PF_PJ"
+quando_valor = "1"
+motivo = "conta bancária de pessoa física"
+
+[[privacidade]]
+tipos = ["PF"]
+campos = ["CPF_PROF", "CNS_PROF"]
+sempre = true
+motivo = "identificadores pessoais do profissional"
+
+[[privacidade]]
+tipos = ["CAD"]
+campos = ["CPF_CNPJ", "RAZ_SOCI", "RSOC_MAN", "TELEFONE", "FAX", "EMAIL"]
+quando_campo = "PF_PJ"
+quando_valor = "1"
+motivo = "dados pessoais do titular de estabelecimento pessoa física"
+
+# ---- Decodificadores ----
+# Campo -> arquivo CNV de TAB_CNES.zip, como os .def oficiais indicam. `campos` com dois nomes:
+# o código é a junção dos dois (equipamento = TIPEQUIP + CODEQUIP, como em Equip_Tp.cnv).
+
+[[decodificador]]
+campos = ["TP_UNID"]
+arquivo = "TP_ESTAB.CNV"
+fonte = "Estabelecimento.def: Tipo de Estabelecimento"
+
+[[decodificador]]
+campos = ["TPGESTAO"]
+arquivo = "TPGESTAO.CNV"
+fonte = "Estabelecimento.def: Tipo de Gestão"
+
+[[decodificador]]
+campos = ["PF_PJ"]
+arquivo = "TP_PFPJ.CNV"
+fonte = "Estabelecimento.def: Pessoa Física/Jurídica"
+
+[[decodificador]]
+campos = ["ESFERA_A"]
+arquivo = "EsferAdm.CNV"
+fonte = "Estabelecimento.def: Esfera Administrativa"
+
+[[decodificador]]
+campos = ["NATUREZA"]
+arquivo = "NATUREZA.CNV"
+fonte = "Estabelecimento.def: Natureza da Organização"
+
+[[decodificador]]
+campos = ["NAT_JUR"]
+arquivo = "NATJUR.CNV"
+fonte = "Estabelecimento.def: Natureza Jurídica"
+
+[[decodificador]]
+campos = ["NIV_HIER"]
+arquivo = "NIV_HIER.CNV"
+fonte = "Estabelecimento.def: Nível Hierarquia"
+
+[[decodificador]]
+campos = ["TURNO_AT"]
+arquivo = "TurnosAt.CNV"
+fonte = "Estabelecimento.def: Turno Atendimento"
+
+[[decodificador]]
+campos = ["VINC_SUS"]
+arquivo = "Vinc_SUS.cnv"
+fonte = "Estabelecimento.def: Vínculos com SUS"
+
+[[decodificador]]
+campos = ["TP_LEITO"]
+arquivo = "tip1leit.cnv"
+fonte = "Leitos_Especialidade.def: Tipo/Especialidade"
+
+[[decodificador]]
+campos = ["CODLEITO"]
+arquivo = "Esp_leit.CNV"
+fonte = "Leitos_Especialidade.def: Especialidade"
+
+# Equipamentos: a tabela mudou em 08/2025 (Equipamento.def: "Equipam a partir 202508"). Medido em
+# EQMS2608: os 196 pares TIPEQUIP+CODEQUIP estão em equipam2508.cnv (em Equip_Tp.cnv, só 93).
+# Para competências até 07/2025 não há decodificador conferido: o programa mostra só o código.
+[[decodificador]]
+campos = ["TIPEQUIP", "CODEQUIP"]
+arquivo = "equipam2508.cnv"
+desde = "202508"
+fonte = "Equipamento.def: Equipam a partir 202508 (código = TIPEQUIP + CODEQUIP)"
+
+[[decodificador]]
+campos = ["VINCULAC"]
+arquivo = "Vinculo.cnv"
+fonte = "Profissional.def: Vínculo Empregatício"
+
+# ---- Leito do CNES x tipo de leito do SIGTAP ----
+# REGRA NÃO CONFIRMADA. O SIGTAP exige "tipo de leito" (tb_tipo_leito) e o CNES registra tipo
+# (TP_LEITO) e especialidade (CODLEITO). Não achamos documento oficial com a correspondência.
+# A tabela abaixo liga os dois pelo NOME igual nas duas fontes oficiais (tb_tipo_leito do SIGTAP
+# 202609 x tip1leit.cnv e Esp_leit.CNV do TAB_CNES de 09/2026). O programa mostra o resultado
+# sempre com o aviso de regra não confirmada.
+# Sem linha aqui: vale o código igual (leitos complementares, 74 a 96, têm o mesmo código nas duas).
+
+[[leito]]
+sigtap = "01"
+tp_leito = ["1"]
+base = "Cirúrgico = TP_LEITO 1-Cirúrgico"
+
+[[leito]]
+sigtap = "02"
+tp_leito = ["4"]
+base = "Obstétricos = TP_LEITO 4-Obstétrico"
+
+[[leito]]
+sigtap = "03"
+tp_leito = ["2"]
+base = "Clínico = TP_LEITO 2-Clínico"
+
+[[leito]]
+sigtap = "07"
+tp_leito = ["5"]
+base = "Pediátricos = TP_LEITO 5-Pediátrico"
+
+[[leito]]
+sigtap = "04"
+codleito = ["34"]
+base = "Crônicos = CODLEITO 34 CRONICOS"
+
+[[leito]]
+sigtap = "05"
+codleito = ["47"]
+base = "Psiquiatria = CODLEITO 47 PSIQUIATRIA"
+
+[[leito]]
+sigtap = "06"
+codleito = ["49"]
+base = "Pneumologia Sanitária = CODLEITO 49 PNEUMOLOGIA SANITARIA"
+
+[[leito]]
+sigtap = "08"
+codleito = ["48"]
+base = "Reabilitação = CODLEITO 48 REABILITACAO"
+
+[[leito]]
+sigtap = "09"
+codleito = ["07"]
+base = "Leito Dia / Cirúrgicos = CODLEITO 07 CIRURGICO/DIAGNOSTICO/TERAPEUTICO (TP_LEITO 7-Hospital/DIA)"
+
+[[leito]]
+sigtap = "10"
+codleito = ["69"]
+base = "Leito Dia / Aids = CODLEITO 69 AIDS (Hospital/DIA)"
+
+[[leito]]
+sigtap = "11"
+codleito = ["70"]
+base = "Leito Dia / Fibrose Cística = CODLEITO 70 FIBROSE CISTICA"
+
+[[leito]]
+sigtap = "12"
+codleito = ["71"]
+base = "Leito Dia / Intercorrência Pós-Transplante = CODLEITO 71"
+
+[[leito]]
+sigtap = "13"
+codleito = ["72"]
+base = "Leito Dia / Geriatria = CODLEITO 72 GERIATRIA (Hospital/DIA)"
+
+[[leito]]
+sigtap = "14"
+codleito = ["73"]
+base = "Leito Dia / Saúde Mental = CODLEITO 73 SAUDE MENTAL (Hospital/DIA)"
