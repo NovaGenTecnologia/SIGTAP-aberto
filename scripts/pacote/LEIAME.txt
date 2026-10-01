@@ -1,0 +1,49 @@
+﻿SIGTAP Aberto
+=============
+
+Consulta da Tabela de Procedimentos do SUS (SIGTAP) com o histórico de cada competência.
+Gratuito e de código aberto (licença AGPL-3.0, no arquivo LICENSE).
+
+FERRAMENTA NÃO OFICIAL. Sem vínculo com o Ministério da Saúde, o DATASUS ou a ANS.
+Confira no SIGTAP oficial antes de faturar.
+
+
+ANTES DE ABRIR: DESBLOQUEIE O ZIP (uma vez por versão)
+-----------------------------------------------------
+O programa ainda não tem assinatura digital. Por isso o Windows mostra um aviso azul
+("O Windows protegeu o computador") em arquivos baixados da internet. Para evitar o aviso:
+
+  1. Clique com o botão direito no ZIP que você baixou e escolha "Propriedades".
+  2. Na aba "Geral", lá embaixo, marque "Desbloquear" e clique em "OK".
+     (Se a opção não aparecer, o arquivo já está liberado.)
+  3. Só agora extraia o ZIP.
+
+Se você já extraiu e o aviso apareceu: clique em "Mais informações" e depois em
+"Executar assim mesmo". Confira antes que o arquivo veio do endereço oficial do projeto.
+
+
+COMO USAR
+---------
+  1. Extraia a pasta "SIGTAP Aberto" num lugar seu, por exemplo D:\SIGTAP Aberto.
+     Evite a pasta Downloads e pastas sincronizadas (OneDrive, Google Drive).
+  2. Abra o sigtap-aberto.exe. Não precisa instalar nem ser administrador.
+  3. Na primeira vez, o programa baixa a Tabela Unificada vigente e o território
+     (IBGE e regiões de saúde). Se a rede bloquear, a tela "Módulos e dados" ensina a
+     baixar os arquivos à mão.
+
+Tudo o que o programa grava fica dentro dessa pasta: dados\ (tabelas e ZIPs oficiais) e
+dados_webview\ (configuração da tela). Para levar para outro computador, copie a pasta
+inteira. Para desinstalar, apague a pasta.
+
+
+ATUALIZAR
+---------
+O programa avisa quando há versão nova e se atualiza sozinho (Módulos e dados >
+Procurar atualizações). Ao trocar de versão, os dados que você já baixou continuam valendo;
+se a versão nova organizar os dados de outro jeito, ela os refaz a partir dos ZIPs
+guardados, sem baixar de novo.
+
+
+PROBLEMAS E SUGESTÕES
+---------------------
+Use o botão "Sugerir ou relatar", no rodapé do programa. Nunca envie dados de pacientes.

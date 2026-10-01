@@ -3,8 +3,8 @@
 
   Gera, numa pasta "saida" ao lado do repositório:
     saida\SIGTAP-Aberto\                          programa pronto para usar (sigtap-aberto.exe e a linha de comando)
-    saida\SIGTAP-Aberto-v<versão>-windows-x64.zip  o mesmo pacote que o lançamento do GitHub publica
-    saida\SIGTAP-Aberto-v<versão>-windows-x64.zip.sha256
+    saida\SIGTAP-Aberto-v<versão>-windows-<arq>.zip o mesmo pacote que o lançamento do GitHub publica
+    saida\SIGTAP-Aberto-v<versão>-windows-<arq>.zip.sha256
 
   Uso (dois cliques em compilar.bat, ou no terminal):
     compilar.bat               confere o ambiente, roda os testes, compila e empacota
@@ -181,19 +181,20 @@ try {
   Falhar "não consegui copiar o programa para $Pasta." "Feche o SIGTAP Aberto se ele estiver aberto a partir dessa pasta e rode de novo."
 }
 Copy-Item (Join-Path $Raiz "LICENSE") (Join-Path $Pasta "LICENSE") -Force
-Copy-Item (Join-Path $Raiz "README.md") (Join-Path $Pasta "LEIAME.md") -Force
+Copy-Item (Join-Path $Raiz "scripts\pacote\LEIAME.txt") (Join-Path $Pasta "LEIAME.txt") -Force
 Ok "pasta portátil: $Pasta"
 
 # O ZIP segue o formato do lançamento no GitHub (.github/workflows/release.yml), que o atualizador do programa espera:
-# uma pasta "SIGTAP Aberto" com o .exe, a licença e o LEIAME.
-$Nome = "SIGTAP-Aberto-v$Versao-windows-x64"
+# uma pasta "SIGTAP Aberto" com o .exe, a licença e o LEIAME.txt. Arquitetura: a deste computador.
+$Arq = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
+$Nome = "SIGTAP-Aberto-v$Versao-windows-$Arq"
 $Temp = Join-Path $Saida "pacote"
 $Dentro = Join-Path $Temp "SIGTAP Aberto"
 if (Test-Path $Temp) { Remove-Item $Temp -Recurse -Force }
 New-Item -ItemType Directory -Path $Dentro -Force | Out-Null
 Copy-Item $Exe (Join-Path $Dentro "sigtap-aberto.exe")
 Copy-Item (Join-Path $Raiz "LICENSE") (Join-Path $Dentro "LICENSE")
-Copy-Item (Join-Path $Raiz "README.md") (Join-Path $Dentro "LEIAME.md")
+Copy-Item (Join-Path $Raiz "scripts\pacote\LEIAME.txt") (Join-Path $Dentro "LEIAME.txt")
 $Zip = Join-Path $Saida "$Nome.zip"
 if (Test-Path $Zip) { Remove-Item $Zip -Force }
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -207,7 +208,7 @@ Ok "pacote: $Zip ($(Tamanho (Get-Item $Zip).Length))"
 Etapa 6 "Conferindo o resultado"
 $z = [System.IO.Compression.ZipFile]::OpenRead($Zip)
 try { $itens = @($z.Entries | ForEach-Object { $_.FullName.Replace('\', '/') } | Where-Object { -not $_.EndsWith('/') } | Sort-Object) } finally { $z.Dispose() }
-$esperado = @("SIGTAP Aberto/LEIAME.md", "SIGTAP Aberto/LICENSE", "SIGTAP Aberto/sigtap-aberto.exe")
+$esperado = @("SIGTAP Aberto/LEIAME.txt", "SIGTAP Aberto/LICENSE", "SIGTAP Aberto/sigtap-aberto.exe")
 if (($itens -join "|") -ne ($esperado -join "|")) { Falhar "o ZIP não ficou com o conteúdo esperado: $($itens -join ', ')." "Me mande o $Log." }
 Ok "ZIP com $($itens.Count) arquivos, no formato que o atualizador espera"
 if ((Get-FileHash $Zip -Algorithm SHA256).Hash.ToLower() -ne $HashZip) { Falhar "o SHA-256 do ZIP mudou depois de gravado." "Rode de novo." }

@@ -98,9 +98,28 @@ fn url_do_github(url: &str, repo: &str) -> bool {
     url.starts_with(&format!("https://github.com/{repo}/releases/download/"))
 }
 
-/// Lê a resposta de `releases/latest`. `Ok(None)`: rascunho, pré-lançamento ou sem o ZIP
-/// de Windows esperado (`*-windows-x64.zip`).
+/// Final do nome do pacote desta compilação no lançamento (`SIGTAP-Aberto-vX.Y.Z<sufixo>`).
+/// Cada arquitetura baixa o seu: um .exe ARM64 não troca por um x64, nem o contrário.
+pub const SUFIXO_PACOTE: &str = if cfg!(target_arch = "aarch64") {
+    "-windows-arm64.zip"
+} else if cfg!(target_arch = "x86") {
+    "-windows-x86.zip"
+} else {
+    "-windows-x64.zip"
+};
+
+/// Lê a resposta de `releases/latest`. `Ok(None)`: rascunho, pré-lançamento ou sem o pacote
+/// desta arquitetura ([`SUFIXO_PACOTE`]).
 pub fn interpretar(json: &[u8], repo: &str) -> Result<Option<Lancamento>, ErroAtualizacao> {
+    interpretar_para(json, repo, SUFIXO_PACOTE)
+}
+
+/// Como [`interpretar`], escolhendo o pacote cujo nome termina em `sufixo`.
+pub fn interpretar_para(
+    json: &[u8],
+    repo: &str,
+    sufixo: &str,
+) -> Result<Option<Lancamento>, ErroAtualizacao> {
     let v: serde_json::Value = serde_json::from_slice(json)
         .map_err(|e| ErroAtualizacao::Formato(format!("a resposta do GitHub não é JSON ({e})")))?;
     let texto =
@@ -132,8 +151,7 @@ pub fn interpretar(json: &[u8], repo: &str) -> Result<Option<Lancamento>, ErroAt
             })
         })
     };
-    let Some((zip_nome, zip_url, zip_tamanho)) =
-        acha(&|n| n.to_lowercase().ends_with("-windows-x64.zip"))
+    let Some((zip_nome, zip_url, zip_tamanho)) = acha(&|n| n.to_lowercase().ends_with(sufixo))
     else {
         return Ok(None);
     };
@@ -411,6 +429,38 @@ mod testes {
             Err(ErroAtualizacao::Seguranca(_))
         ));
         assert!(interpretar(b"nao e json", REPO).is_err());
+    }
+
+    #[test]
+    fn cada_arquitetura_escolhe_o_seu_pacote() {
+        let tag = "v0.2.0";
+        let base = format!("https://github.com/{REPO}/releases/download/{tag}");
+        let ativo = |arq: &str| {
+            format!(
+                r#"{{"name":"SIGTAP-Aberto-{tag}-windows-{arq}.zip","browser_download_url":"{base}/SIGTAP-Aberto-{tag}-windows-{arq}.zip","size":1}},
+                   {{"name":"SIGTAP-Aberto-{tag}-windows-{arq}.zip.sha256","browser_download_url":"{base}/SIGTAP-Aberto-{tag}-windows-{arq}.zip.sha256","size":1}}"#
+            )
+        };
+        let j = format!(
+            r#"{{"tag_name":"{tag}","html_url":"x","body":"","draft":false,"prerelease":false,"assets":[{},{}]}}"#,
+            ativo("x64"),
+            ativo("arm64")
+        );
+        for arq in ["x64", "arm64"] {
+            let l = interpretar_para(j.as_bytes(), REPO, &format!("-windows-{arq}.zip"))
+                .unwrap()
+                .unwrap();
+            assert_eq!(l.zip_nome, format!("SIGTAP-Aberto-{tag}-windows-{arq}.zip"));
+            assert!(l.soma_url.ends_with(&format!("-windows-{arq}.zip.sha256")));
+        }
+        // Lançamento sem o pacote desta arquitetura: não oferece atualização.
+        let so_x64 = json(tag, "");
+        assert!(
+            interpretar_para(so_x64.as_bytes(), REPO, "-windows-arm64.zip")
+                .unwrap()
+                .is_none()
+        );
+        assert!(SUFIXO_PACOTE.starts_with("-windows-") && SUFIXO_PACOTE.ends_with(".zip"));
     }
 
     #[test]

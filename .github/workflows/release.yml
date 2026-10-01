@@ -1,7 +1,7 @@
-# Lançamento: ao publicar uma tag vX.Y.Z, compila o .exe portátil de Windows e anexa ao lançamento
-# o ZIP e o arquivo .sha256 que o atualizador do programa procura (crates/download/src/atualizador.rs).
-# O nome do ZIP precisa terminar em "-windows-x64.zip".
-# NÃO TESTADO: este fluxo ainda não rodou (o repositório é novo). Confira o primeiro lançamento à mão.
+# Lançamento: ao publicar uma tag vX.Y.Z, testa, compila o .exe portátil de Windows para x64 e ARM64
+# e publica um lançamento com um ZIP e um .sha256 por arquitetura. O atualizador do programa
+# (crates/download/src/atualizador.rs) procura o pacote que termina em -windows-<arq>.zip.
+# Notas do lançamento: docs/lancamentos/vX.Y.Z.md (obrigatório).
 name: lancamento
 
 on:
@@ -12,37 +12,101 @@ permissions:
   contents: write
 
 jobs:
-  windows:
+  conferir:
+    name: Conferir versão e testar
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - name: Rust (versão de rust-toolchain.toml)
         run: rustup show
-      - name: A tag tem de ser a versão do programa
+      - name: A tag tem de ser a versão do programa, e as notas têm de existir
         shell: bash
         run: |
           versao=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          tauri=$(grep -m1 '"version"' crates/app/tauri.conf.json | sed 's/.*"\([0-9][^"]*\)".*/\1/')
           [ "v$versao" = "${GITHUB_REF_NAME}" ] || { echo "Tag ${GITHUB_REF_NAME} diferente da versão $versao do Cargo.toml"; exit 1; }
+          [ "$versao" = "$tauri" ] || { echo "tauri.conf.json ($tauri) diferente do Cargo.toml ($versao)"; exit 1; }
+          [ -f "docs/lancamentos/${GITHUB_REF_NAME}.md" ] || { echo "Faltam as notas docs/lancamentos/${GITHUB_REF_NAME}.md"; exit 1; }
       - name: Testes
         run: cargo test --workspace --locked
+
+  compilar:
+    name: Compilar Windows ${{ matrix.arq }}
+    needs: conferir
+    runs-on: windows-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arq: x64
+            alvo: x86_64-pc-windows-msvc
+            maquina: "8664"
+          - arq: arm64
+            alvo: aarch64-pc-windows-msvc
+            maquina: "AA64"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust e alvo ${{ matrix.alvo }}
+        run: |
+          rustup show
+          rustup target add ${{ matrix.alvo }}
       - name: Compilar
-        run: cargo build --release --locked -p sa-app
+        run: cargo build --release --locked -p sa-app --target ${{ matrix.alvo }}
+      - name: Conferir a arquitetura do executável
+        shell: pwsh
+        run: |
+          $exe = "target\${{ matrix.alvo }}\release\sigtap-aberto.exe"
+          $b = [System.IO.File]::ReadAllBytes($exe)
+          if ($b[0] -ne 0x4D -or $b[1] -ne 0x5A) { throw "não é um executável do Windows" }
+          $pe = [BitConverter]::ToInt32($b, 0x3C)
+          $maquina = "{0:X4}" -f [BitConverter]::ToUInt16($b, $pe + 4)
+          if ($maquina -ne "${{ matrix.maquina }}") { throw "arquitetura $maquina, esperada ${{ matrix.maquina }}" }
+          "sigtap-aberto.exe: máquina $maquina, $([math]::Round($b.Length / 1MB, 1)) MB"
       - name: Empacotar e calcular o SHA-256
         shell: pwsh
         run: |
-          $nome = "SIGTAP-Aberto-${env:GITHUB_REF_NAME}-windows-x64"
-          New-Item -ItemType Directory -Path "pacote\SIGTAP Aberto" -Force | Out-Null
-          Copy-Item target\release\sigtap-aberto.exe "pacote\SIGTAP Aberto\sigtap-aberto.exe"
-          Copy-Item LICENSE "pacote\SIGTAP Aberto\LICENSE"
-          Copy-Item README.md "pacote\SIGTAP Aberto\LEIAME.md"
-          Compress-Archive -Path "pacote\SIGTAP Aberto" -DestinationPath "$nome.zip"
+          $nome = "SIGTAP-Aberto-${env:GITHUB_REF_NAME}-windows-${{ matrix.arq }}"
+          $dentro = "pacote\SIGTAP Aberto"
+          New-Item -ItemType Directory -Path $dentro -Force | Out-Null
+          Copy-Item "target\${{ matrix.alvo }}\release\sigtap-aberto.exe" "$dentro\sigtap-aberto.exe"
+          Copy-Item LICENSE "$dentro\LICENSE"
+          Copy-Item scripts\pacote\LEIAME.txt "$dentro\LEIAME.txt"
+          Add-Type -AssemblyName System.IO.Compression
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [System.IO.Compression.ZipFile]::CreateFromDirectory("$PWD\pacote", "$PWD\$nome.zip", [System.IO.Compression.CompressionLevel]::Optimal, $false)
+          $z = [System.IO.Compression.ZipFile]::OpenRead("$PWD\$nome.zip")
+          try { $itens = @($z.Entries | ForEach-Object FullName | Sort-Object) } finally { $z.Dispose() }
+          if (($itens -join "|") -ne "SIGTAP Aberto/LEIAME.txt|SIGTAP Aberto/LICENSE|SIGTAP Aberto/sigtap-aberto.exe") { throw "conteúdo inesperado: $($itens -join ', ')" }
           $h = (Get-FileHash "$nome.zip" -Algorithm SHA256).Hash.ToLower()
-          "$h  $nome.zip" | Out-File -Encoding ascii "$nome.zip.sha256"
-          "NOME=$nome" | Out-File -Append -Encoding ascii $env:GITHUB_ENV
+          [System.IO.File]::WriteAllText("$PWD\$nome.zip.sha256", "$h  $nome.zip`n", [System.Text.Encoding]::ASCII)
+          "$nome.zip  $h"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pacote-${{ matrix.arq }}
+          path: |
+            SIGTAP-Aberto-*.zip
+            SIGTAP-Aberto-*.zip.sha256
+          if-no-files-found: error
+
+  publicar:
+    name: Publicar o lançamento
+    needs: compilar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: pacotes
+          merge-multiple: true
+      - name: Conferir os hashes antes de publicar
+        run: |
+          cd pacotes
+          ls -la
+          sha256sum -c *.sha256
       - name: Publicar
         uses: softprops/action-gh-release@v2
         with:
+          body_path: docs/lancamentos/${{ github.ref_name }}.md
           files: |
-            ${{ env.NOME }}.zip
-            ${{ env.NOME }}.zip.sha256
-          generate_release_notes: true
+            pacotes/*.zip
+            pacotes/*.zip.sha256
