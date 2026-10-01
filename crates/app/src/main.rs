@@ -415,7 +415,14 @@ async fn escolher_pasta(app: AppHandle) -> Option<String> {
 fn pasta_do_programa() -> Result<PathBuf, String> {
     let exe = std::env::current_exe()
         .map_err(|e| format!("Não foi possível localizar o executável ({e}). Copie o programa para uma pasta sua e abra de novo."))?;
-    let appimage = std::env::var_os("APPIMAGE").map(PathBuf::from);
+    // Só o Linux tem AppImage; em outro sistema a variável é ignorada.
+    let appimage = if cfg!(target_os = "linux") {
+        std::env::var_os("APPIMAGE")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+    } else {
+        None
+    };
     pasta_para(&exe, appimage.as_deref())
 }
 
@@ -426,7 +433,7 @@ fn pasta_para(
 ) -> Result<PathBuf, String> {
     const MOVER: &str = "Arraste a pasta do SIGTAP Aberto para um lugar seu (por exemplo, Documentos) e abra o programa de lá.";
     // Linux, AppImage: o executável roda de uma montagem só de leitura; vale a pasta do .AppImage.
-    if let Some(a) = appimage.filter(|a| a.is_absolute()) {
+    if let Some(a) = appimage {
         return a
             .parent()
             .map(|p| p.to_path_buf())
