@@ -266,3 +266,13 @@ body { grid-template-rows: 48px 1fr 26px; }
 .caixa { font-size: 9.5px; }
 .arvore { padding-top: 0; }
 .arvore-cab { padding-top: 10px; }
+/* v2.1: árvore sem recuo; o código faz a escada. Prefixo do pai em cinza claro, nível em verde escuro. */
+.no, .no.folha { padding: 3px 10px 3px 8px; gap: 4px; align-items: baseline; }
+.no .texto-no { flex: 1; min-width: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.no .nome { display: inline; -webkit-line-clamp: unset; }
+.no .cod { font-family: var(--mono); font-size: 12px; white-space: nowrap; margin-right: 2px; }
+.no .cod .pai { color: var(--tinta2); opacity: .55; font-weight: 400; }
+.no .cod .seg { color: var(--verde-esc); font-weight: 600; }
+.no.selecionado .cod .seg { color: var(--verde); }
+.no .seta { width: 10px; flex: none; }
+.arvore li.aberto > .no .texto-no { -webkit-line-clamp: 1; }

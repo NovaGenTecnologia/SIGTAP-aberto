@@ -144,18 +144,21 @@ async function preencherArvore(ul, pai) {
   const nivel = pai ? pai.length / 2 : 0;
   for (const no of nos) {
     const folha = no.nivel === "procedimento";
-    // A numeração é a tabulação: cada nível mostra só o seu pedaço do código (04, 06, 01,
-    // 057-9), em escada; o código inteiro fica na dica e na ficha.
-    const segmento = folha ? `${no.codigo.slice(6, 9)}-${no.codigo.slice(9)}` : no.codigo.slice(-2);
+    // Sem recuo: o próprio código cria a escada (04, 04.06, 04.06.01, 04.06.01.054-4).
+    // O prefixo do pai fica cinza claro e o pedaço deste nível em verde escuro.
+    const completo = folha ? no.codigo_mascarado : pontuar(no.codigo);
+    const corte = folha ? 9 : completo.length - 2;
     const btn = el("button", {
       class: "no" + (folha ? " folha" : "") + (folha && no.codigo === E.selecionado ? " selecionado" : ""),
       type: "button", role: "treeitem", "data-codigo": no.codigo, "aria-level": String(nivel + 1),
-      title: `${no.codigo_mascarado} ${no.nome || ""}`.trim(),
+      title: `${completo} ${no.nome || ""}`.trim(),
     },
-      folha ? null : el("span", { class: "seta", text: "▸" }),
-      el("span", { class: "cod", text: segmento }),
-      no.nome ? el("span", { class: "nome", text: folha ? capitalizar(no.nome) : no.nome })
-              : el("span", { class: "nome sem-nome", text: "sem nome na tabela de estrutura" }),
+      el("span", { class: "seta", text: folha ? "" : "▸" }),
+      el("span", { class: "texto-no" },
+        el("span", { class: "cod" }, el("span", { class: "pai", text: completo.slice(0, corte) }), el("span", { class: "seg", text: completo.slice(corte) })),
+        " ",
+        no.nome ? el("span", { class: "nome", text: folha ? capitalizar(no.nome) : no.nome })
+                : el("span", { class: "nome sem-nome", text: "sem nome na tabela de estrutura" })),
     );
     btn.style.setProperty("--nivel", String(Math.min(nivel, 3)));
     const li = el("li", {}, btn);
