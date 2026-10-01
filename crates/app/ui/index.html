@@ -27,9 +27,18 @@
     <button class="link-barra" id="ir-modulos" type="button">Módulos e dados</button>
   </header>
 
+  <div id="avisos" class="avisos" role="region" aria-label="Avisos"></div>
+
   <div class="corpo">
-    <nav class="arvore" id="arvore" aria-label="Tabela de procedimentos">
-      <div class="arvore-cab"><b>Tabela de procedimentos</b> <span id="arvore-total"></span></div>
+    <nav class="arvore" id="arvore" aria-label="Navegação em árvore">
+      <div class="arvore-cab">
+        <div class="abas-arvore" role="tablist" aria-label="O que navegar">
+          <button type="button" role="tab" id="aba-proc" aria-selected="true" aria-controls="arvore-raiz">Procedimentos</button>
+          <button type="button" role="tab" id="aba-cid" aria-selected="false" aria-controls="arvore-raiz">CIDs</button>
+        </div>
+        <span id="arvore-total"></span>
+        <button type="button" class="icone" id="arvore-tudo" aria-label="Expandir tudo" title="Expandir tudo"></button>
+      </div>
       <ul id="arvore-raiz" role="tree"></ul>
     </nav>
     <div class="divisor" id="divisor" role="separator" aria-orientation="vertical" aria-label="Largura da árvore (setas para ajustar)" tabindex="0"></div>
@@ -44,7 +53,13 @@
       <span class="trilho"><span class="barra-prog"></span></span>
       <span class="msg"></span>
     </button>
+    <button type="button" class="link-rodape" id="ir-feedback" title="Enviar uma sugestão ou relatar um problema">Sugerir ou relatar</button>
+    <button type="button" class="link-rodape" id="ir-sobre" title="Sobre o SIGTAP Aberto">Sobre</button>
   </footer>
+
+  <div class="sobreposicao modal" id="modal" hidden>
+    <section class="janela" id="modal-janela" role="dialog" aria-modal="true" aria-labelledby="modal-titulo" tabindex="-1"></section>
+  </div>
 
   <div class="sobreposicao" id="primeira" hidden>
     <section class="janela" role="dialog" aria-modal="true" aria-labelledby="primeira-titulo">
@@ -80,6 +95,8 @@
   </div>
 
   <script src="formatos.js"></script>
+  <script src="apoio.js"></script>
+  <script src="extras.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

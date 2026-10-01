@@ -1,0 +1,48 @@
+# Lançamento: ao publicar uma tag vX.Y.Z, compila o .exe portátil de Windows e anexa ao lançamento
+# o ZIP e o arquivo .sha256 que o atualizador do programa procura (crates/download/src/atualizador.rs).
+# O nome do ZIP precisa terminar em "-windows-x64.zip".
+# NÃO TESTADO: este fluxo ainda não rodou (o repositório é novo). Confira o primeiro lançamento à mão.
+name: lancamento
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust (versão de rust-toolchain.toml)
+        run: rustup show
+      - name: A tag tem de ser a versão do programa
+        shell: bash
+        run: |
+          versao=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          [ "v$versao" = "${GITHUB_REF_NAME}" ] || { echo "Tag ${GITHUB_REF_NAME} diferente da versão $versao do Cargo.toml"; exit 1; }
+      - name: Testes
+        run: cargo test --workspace --locked
+      - name: Compilar
+        run: cargo build --release --locked -p sa-app
+      - name: Empacotar e calcular o SHA-256
+        shell: pwsh
+        run: |
+          $nome = "SIGTAP-Aberto-${env:GITHUB_REF_NAME}-windows-x64"
+          New-Item -ItemType Directory -Path "pacote\SIGTAP Aberto" -Force | Out-Null
+          Copy-Item target\release\sigtap-aberto.exe "pacote\SIGTAP Aberto\sigtap-aberto.exe"
+          Copy-Item LICENSE "pacote\SIGTAP Aberto\LICENSE"
+          Copy-Item README.md "pacote\SIGTAP Aberto\LEIAME.md"
+          Compress-Archive -Path "pacote\SIGTAP Aberto" -DestinationPath "$nome.zip"
+          $h = (Get-FileHash "$nome.zip" -Algorithm SHA256).Hash.ToLower()
+          "$h  $nome.zip" | Out-File -Encoding ascii "$nome.zip.sha256"
+          "NOME=$nome" | Out-File -Append -Encoding ascii $env:GITHUB_ENV
+      - name: Publicar
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ env.NOME }}.zip
+            ${{ env.NOME }}.zip.sha256
+          generate_release_notes: true

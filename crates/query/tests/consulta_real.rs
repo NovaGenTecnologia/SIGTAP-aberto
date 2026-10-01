@@ -497,3 +497,79 @@ fn referencias_cobrem_o_banco() {
         pares.len()
     );
 }
+
+#[test]
+fn arvore_de_cids_bate_com_sql_independente() {
+    let Some(p) = preparado() else { return };
+    let q = Consulta::abrir(&p).unwrap();
+    let con = Connection::open(&p).unwrap();
+    for comp in ["201001", "202609"] {
+        let seq = c(comp).seq();
+        let total: i64 = con
+            .query_row(
+                "SELECT count(*) FROM tb_cid c, tb_cid__vig v WHERE v.sa_id = c.sa_id AND ?1 BETWEEN v.vig_ini AND v.vig_fim AND length(c.co_cid) >= 3",
+                [seq],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let letras = q.arvore_cid(c(comp), None).unwrap();
+        assert_eq!(
+            letras.iter().map(|l| l.codigos).sum::<i64>(),
+            total,
+            "{comp}"
+        );
+        let (mut cats, mut subs) = (0i64, 0i64);
+        for l in &letras {
+            for cat in q.arvore_cid(c(comp), Some(&l.codigo)).unwrap() {
+                cats += 1;
+                let filhos = q.arvore_cid(c(comp), Some(&cat.codigo)).unwrap();
+                // codigos da categoria = ela mesma (se existe) + subcategorias.
+                subs += filhos.len() as i64;
+                assert!(
+                    filhos
+                        .iter()
+                        .all(|f| f.nivel == "subcategoria" && f.nome.is_some()),
+                    "{}",
+                    cat.codigo
+                );
+                // procedimentos ligados da categoria nunca são menos que os de uma subcategoria.
+                assert!(
+                    filhos.iter().all(|f| f.procedimentos <= cat.procedimentos),
+                    "{}",
+                    cat.codigo
+                );
+            }
+        }
+        // Categorias = prefixos distintos de 3 caracteres (em 2010 só existem códigos de 4);
+        // subcategorias = códigos de 4 caracteres.
+        let (cats_sql, subs_sql): (i64, i64) = con
+            .query_row(
+                "SELECT count(DISTINCT substr(c.co_cid, 1, 3)), sum(length(c.co_cid) = 4) FROM tb_cid c, tb_cid__vig v
+                 WHERE v.sa_id = c.sa_id AND ?1 BETWEEN v.vig_ini AND v.vig_fim AND length(c.co_cid) >= 3",
+                [seq],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((cats, subs), (cats_sql, subs_sql), "{comp}");
+        eprintln!(
+            "PROVA árvore de CIDs {comp}: {} letras, {cats} categorias, {subs} subcategorias (SQL igual); {total} códigos",
+            letras.len()
+        );
+    }
+    // Caso do usuário: T742 tem 5 procedimentos ligados; a contagem do nó bate com o SQL.
+    let seq = c("202609").seq();
+    let sql: i64 = con
+        .query_row(
+            "SELECT count(DISTINCT r.co_procedimento) FROM rl_procedimento_cid r, rl_procedimento_cid__vig v
+             WHERE v.sa_id = r.sa_id AND ?1 BETWEEN v.vig_ini AND v.vig_fim AND r.co_cid = 'T742'",
+            [seq],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let t74 = q.arvore_cid(c("202609"), Some("T74")).unwrap();
+    let t742 = t74.iter().find(|n| n.codigo == "T742").unwrap();
+    assert_eq!(t742.procedimentos, sql);
+    assert_eq!(t742.codigo_mascarado, "T74.2");
+    assert_eq!(t742.nome.as_deref(), Some("Abuso sexual"));
+    eprintln!("PROVA T74.2: {} procedimento(s) ligados (SQL igual)", sql);
+}

@@ -14,6 +14,13 @@ pub use ident::{Ident, IdentInvalido, safe_ident};
 /// Versão do programa, igual à do workspace.
 pub const VERSAO: &str = env!("CARGO_PKG_VERSION");
 
+/// Repositório do projeto no GitHub (`dono/nome`). Confirme quando o repositório for criado:
+/// o atualizador, o botão de feedback e o link de apoio usam este valor.
+pub const REPOSITORIO: &str = "NovaGenTecnologia/sigtap-aberto";
+
+/// Site oficial do SIGTAP (DATASUS).
+pub const SITE_SIGTAP: &str = "http://sigtap.datasus.gov.br/tabela-unificada/app/sec/inicio.jsp";
+
 #[cfg(test)]
 mod testes {
     #[test]

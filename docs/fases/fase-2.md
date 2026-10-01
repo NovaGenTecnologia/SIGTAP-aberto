@@ -108,6 +108,8 @@ arquivo a cada entrega; a interface do programa segue a versão mais recente.
 | v2.1 | mesma página da v2 (versão salva "v2.1") | a4f4de1 | Árvore sem recuo: o código inteiro faz a escada; prefixo do pai em cinza claro, pedaço do nível em verde escuro |
 | v2.2 | página "v2.2 — 1366×768 (01/10)" (pendente: aba do Penpot suspensa) | 388c65d | Busca com sugestões ao digitar; Voltar e "Procedimentos" na barra; barra de progresso única com "Fazendo download X de N"; progresso no rodapé ao sair da tela; downloads parciais (6/12/24 meses) com tamanho real; apagar ZIPs; Procurar pasta e instruções de download manual; "ver mais" no O que mudou; cópia com Ctrl+clique e do nome; mês do histórico pisca; seta da árvore maior |
 
+| v2.3 | (pendente: Penpot) | (este commit) | Aviso de dados novos e de versão nova do programa; atualizador do próprio programa; CIDs em árvore (aba); expandir/recolher tudo; opções de download já feitas em cinza; link do SIGTAP no rodapé; Sobre; Sugerir ou relatar; saúde do banco (verificar, recriar, recuperação automática); passo a passo manual reescrito; correção do bug dos "ligados" repetidos |
+
 ### 2.1 Entrega v2.2 (01/10/2026): o que foi provado e onde
 
 Provado no Linux (contêiner), com dados reais:
@@ -135,6 +137,37 @@ Dependência nova conferida com `cargo deny check licenses`.
 
 Achado: o banco não tinha `busy_timeout`; consulta e carga simultâneas poderiam falhar com "database is
 locked". Agora 30 s.
+
+### 2.2 Entrega v2.3 (01/10/2026): o que foi provado e onde
+
+Pedido do cliente em 01/10, 14 itens. Estado de cada um:
+
+| Item | Estado | Prova |
+|---|---|---|
+| Bug: clicar de novo num CID repetia os procedimentos ligados | Corrigido | A seção "ligados" agora é substituída. Na ponte de desenvolvimento, 4 cliques seguidos em T742 deixam 1 seção com 5 linhas (antes cada clique acrescentava outra) |
+| Aviso de dados novos | Feito | `Servico::verificar_dados` compara a lista do servidor com o banco: competência mais nova que a última carregada = "nova"; versão do ZIP mais nova que a carregada = "republicada". Teste com FTP local e ZIPs reais: 1 nova, 1 republicada, depois "tudo em dia"; não baixa nada. A interface confere 20 s depois de abrir e a cada 6 h, nunca durante um download (uma conexão por servidor) |
+| Opções já baixadas em cinza | Feito | Uma opção fica cinza e desabilitada quando todas as competências dela estão no banco na versão do servidor; a seleção pula para a primeira opção livre. Na ponte: vigente e 6 meses cinza, 12 meses marcado |
+| "SIGTAP" no rodapé abre o site | Feito | Comando `abrir_site` com lista de endereços permitidos (site do SIGTAP e repositório); teste de unidade com endereços aceitos e recusados. Site conferido por WebFetch em 01/10 (abre; título "SIGTAP - Sistema de Gerenciamento da Tabela de Procedimentos, Medicamentos e OPM do SUS") |
+| CIDs em árvore | Feito | Aba "CIDs" na árvore da esquerda: letra → categoria (3) → subcategoria (4), com a contagem de procedimentos ligados. Estudo dos dados: `tb_cid` traz categorias e subcategorias com nome (14.246 códigos em 09/2026: 2.045 de 3 caracteres e 12.201 de 4); **capítulos e blocos da CID-10 não vêm no SIGTAP e não foram inventados** (módulo futuro, de fonte oficial). Prova: `arvore_de_cids_bate_com_sql_independente` em 2010-01 e 2026-09 (categorias e subcategorias iguais ao SQL; T74.2 = 5 procedimentos, igual ao SQL). Achado: em 2010-01 só existem códigos de 4 caracteres (2.044 categorias só como prefixo) |
+| Recolher/expandir tudo | Feito | Um ícone no alto da árvore. Expandir abre todos os níveis menos a lista final (procedimentos ou subcategorias): árvore de procedimentos 9→502 linhas; CIDs 26→2.074 |
+| Linha do nível mais marcada | Feito | 2 px em tom mais escuro dentro da própria linha (a sombra de 1 px ficava escondida pelo nível seguinte) |
+| Atualizador do programa | Feito, não testado de ponta a ponta | `sa-download::atualizador`: consulta o último lançamento do GitHub, compara versões, baixa o ZIP, confere o SHA-256 publicado, extrai o .exe (confere o cabeçalho MZ), renomeia o atual para `.antigo.exe`, põe o novo e reabre. 5 testes: versões, leitura do lançamento (recusa rascunho, pré-lançamento e endereço fora do repositório), hash, extração, troca com desfazer. **Não testado:** download real (o repositório ainda não existe), a troca do .exe em uso no Windows, o fluxo `.github/workflows/release.yml`. Limite: o SHA-256 vem do mesmo lançamento; o .exe não é assinado |
+| Gramática e clareza do download manual | Feito | Reescrito em 5 passos numerados, frases curtas, com dicas (extensões ocultas, FileZilla, não usar Chrome/Edge para ftp). Não testado: o "Salvar como" do Edge/Chrome para as páginas JSON |
+| Sobre | Feito | Agradecimento, missão, gratuito/AGPL, doação opcional. Chave Pix e GitHub Sponsors vêm de `crates/app/ui/apoio.js` (vazio: aparece "em breve") |
+| Sugerir ou relatar | Feito | Abre uma Issue do GitHub com título e texto prontos (versão, Windows, WebView2, competência, tela; nada de paciente), ou e-mail (se `apoio.js` tiver e-mail), ou copia o texto. Aviso fixo contra dados de paciente. Limite: precisa de conta no GitHub; Issues de repositório privado só aparecem para quem tem acesso |
+| Verificar/recriar o banco + recuperação automática | Feito | `sa-packs::saude` (`quick_check`/`integrity_check` só leitura; quarentena em `dados\banco_com_problema_N` com LEIAME, nunca apaga). Na abertura o programa confere os dois bancos; achando dano, guarda e refaz do que há em `dados` (ZIPs e JSON do território). Teste com ZIPs reais: 64 páginas estragadas no meio do arquivo → achado na abertura, quarentena, refeito com as mesmas 3 competências e os mesmos SHA-256. Competência sem ZIP guardado é listada e precisa de novo download |
+| GitHub privado + upload | **Pendente do cliente** | A API da sessão bloqueia a criação de repositório (`POST /user/repos`) e a lista de repositórios vem vazia. Falta o repositório existir; o histórico local está limpo (103 arquivos, o maior com 122 KB; nenhum zip, banco, pdf ou arquivo de paciente) |
+
+Provado no Linux: `cargo test --workspace --release` com ZIPs reais e o banco de 225 competências, sem falhas;
+`cargo clippy -D warnings`, `cargo fmt`, `cargo deny check licenses` (nova dependência direta `zip` em
+`sa-download`, MIT). Interface (Playwright, ponte de desenvolvimento): sem erros no console; sem rolagem
+horizontal em 1024, 1100 e 1366 px; primeira execução cabe em 1366×697.
+
+Achado de interface: o corpo da página era uma grade de 3 linhas; um aviso no alto fazia o corpo cair
+para a linha errada. Agora são 4 linhas (barra, avisos, corpo, rodapé) e a linha de avisos fica com
+altura zero quando vazia.
+
+Não testado: tudo isto no Windows; o FTP real; `rundll32` abrindo o navegador; WebView2.
 
 ## 3. Fechamento
 

@@ -99,13 +99,20 @@ const E = {
 function compInfo(c) { return E.comps.find((x) => x.competencia === c); }
 
 function rodape() {
+  const alvo = limpar($("rodape-fonte"));
   const i = compInfo(E.comp);
-  $("rodape-fonte").textContent = i
-    ? `Fonte: DATASUS, ${i.arquivo}${i.publicado_em ? `, publicado em ${i.publicado_em.replace(" ", " às ")}` : ""}`
-    : "Sem tabela carregada";
+  if (!i) { alvo.textContent = "Sem tabela carregada"; return; }
+  alvo.append("Fonte: ",
+    el("button", { class: "link-rodape", type: "button", title: "Abrir o site oficial do SIGTAP no navegador", onclick: abrirSigtap }, "SIGTAP"),
+    ` (DATASUS), ${i.arquivo}${i.publicado_em ? `, publicado em ${i.publicado_em.replace(" ", " às ")}` : ""}`);
 }
 
-function erro(msg) { return el("p", { class: "erro", text: String(msg) }); }
+function erro(msg) {
+  const p = el("p", { class: "erro", text: String(msg) });
+  if (typeof pareceBancoDanificado === "function" && pareceBancoDanificado(msg))
+    p.append(" ", el("button", { class: "link", type: "button", onclick: () => ir({ tipo: "modulos" }) }, "Verificar e refazer o banco"));
+  return p;
+}
 function carregando(txt) { return el("p", { class: "carregando", text: txt || "Carregando…" }); }
 
 // ---------- navegação ----------
@@ -215,13 +222,14 @@ function iniciarSugestoes() {
 // ---------- árvore ----------
 async function abrirNo(li, no) {
   const filhos = li.querySelector("ul");
-  if (filhos) { filhos.remove(); li.classList.remove("aberto"); E.abertos.delete(no.codigo); li.querySelector(".seta").textContent = "▸"; return; }
+  if (filhos) { filhos.remove(); li.classList.remove("aberto"); E.abertos.delete(no.codigo); li.querySelector(".seta").textContent = "▸"; atualizarBotaoTudo(); return; }
   E.abertos.add(no.codigo);
   li.classList.add("aberto");
   li.querySelector(".seta").textContent = "▾";
   const ul = el("ul", { role: "group" });
   li.append(ul);
   await preencherArvore(ul, no.codigo);
+  atualizarBotaoTudo();
 }
 
 async function preencherArvore(ul, pai) {
@@ -252,7 +260,8 @@ async function preencherArvore(ul, pai) {
     const li = el("li", {}, btn);
     btn.addEventListener("click", () => folha ? ir({ tipo: "ficha", codigo: no.codigo }) : abrirNo(li, no));
     ul.append(li);
-    if (!folha && E.abertos.has(no.codigo)) { E.abertos.delete(no.codigo); await abrirNo(li, no); }
+    // "Expandir tudo" abre grupos e subgrupos (a lista final de procedimentos fica fechada).
+    if (!folha && (E.abertos.has(no.codigo) || (E.expandir && no.codigo.length <= 4))) { E.abertos.delete(no.codigo); await abrirNo(li, no); }
   }
 }
 
@@ -264,14 +273,17 @@ function capitalizar(s) {
 }
 
 async function desenharArvore() {
+  if (E.arvore === "cid") return desenharArvoreCid();
   const raiz = limpar($("arvore-raiz"));
   if (!E.comp) { $("arvore-total").textContent = ""; return; }
   await preencherArvore(raiz, null);
   const total = [...raiz.querySelectorAll(":scope > li > .no")].length;
   $("arvore-total").textContent = total ? "" : "vazia";
+  atualizarBotaoTudo();
 }
 
 async function revelarNaArvore(codigo) {
+  if (E.arvore !== "proc") return; // quem está olhando os CIDs não perde a árvore de lugar
   for (const p of [codigo.slice(0, 2), codigo.slice(0, 4), codigo.slice(0, 6)]) E.abertos.add(p);
   await desenharArvore();
   const b = document.querySelector(`.no[data-codigo="${codigo}"]`);
@@ -395,6 +407,9 @@ async function ligados(pg, a) {
     el("td", { class: "cod", text: p.codigo_mascarado }), el("td", { text: p.nome }),
     el("td", { class: "curta", text: p.instrumentos.join("; ") }), el("td", { class: "num", text: F.moeda(p.valor_total_centavos) })));
   sec.append(el("table", { class: "tabela" }, t));
+  // Um único bloco de "ligados" por tela: clicar de novo substitui, não acrescenta.
+  pg.querySelectorAll("section.ligados").forEach((s) => s.remove());
+  sec.classList.add("ligados");
   pg.append(sec);
   sec.scrollIntoView({ block: "start" });
 }
@@ -839,12 +854,18 @@ function telaModulos(c) {
     el("thead", {}, el("tr", {}, ["Módulo", "Situação", "Competências", "Origem e frescor"].map((h) => el("th", { text: h })))),
     el("tbody", {}, linhas.map((l) => el("tr", {}, el("td", {}, el("b", { text: l[0] })), l.slice(1).map((x) => el("td", { text: x })))))));
 
+  pg.append(secaoAtualizacoes());
+
   // Baixar: escopo, apagar depois, progresso.
   const escolha = { escopo: "vigente" };
   const apagar = el("input", { type: "checkbox" });
   const apagarTxt = el("span");
   const apagarRotulo = el("label", { class: "apagar-zips" }, apagar, apagarTxt);
-  const atualizarApagar = () => textoApagar(escolha.escopo, apagarRotulo, apagarTxt);
+  let botaoBaixar = null;
+  const atualizarApagar = () => {
+    textoApagar(escolha.escopo, apagarRotulo, apagarTxt);
+    if (botaoBaixar) botaoBaixar.disabled = !escolha.escopo;
+  };
   const escopos = el("fieldset", { class: "escopo" }, el("legend", {}, el("b", { text: "O que baixar da tabela" })));
   opcoesEscopo(escopos, "escopo-modulos", escolha, atualizarApagar);
   atualizarApagar();
@@ -854,7 +875,7 @@ function telaModulos(c) {
       el("small", { text: "um arquivo por vez; enquanto um baixa, o anterior já entra no banco" })),
     escopos, apagarRotulo,
     el("div", { class: "acoes" },
-      el("button", { class: "botao primario", type: "button", onclick: () => baixar({ sigtap: escolha.escopo, territorio: false, apagar_zips: apagar.checked }) }, "Baixar"),
+      botaoBaixar = el("button", { class: "botao primario", type: "button", onclick: () => escolha.escopo && baixar({ sigtap: escolha.escopo, territorio: false, apagar_zips: apagar.checked }) }, "Baixar"),
       el("button", { class: "botao", type: "button", title: "Competência mais recente e território", onclick: () => baixar({ sigtap: "vigente", territorio: true, apagar_zips: false }) }, "Procurar atualizações"),
       el("button", { class: "botao", type: "button", onclick: () => invoke("cancelar") }, "Cancelar o que está em andamento")),
     painelProgresso()));
@@ -886,6 +907,8 @@ function telaModulos(c) {
       } }, "Procurar pasta…"),
       el("button", { class: "botao primario", type: "button", onclick: () => caminho.value.trim() ? importar(caminho.value.trim()) : caminho.focus() }, "Importar")),
     instrucoesManuais()));
+
+  pg.append(secaoSaude());
 }
 
 /** Passo a passo para baixar à mão (rede que bloqueia FTP ou computador sem internet). */
@@ -895,19 +918,38 @@ function instrucoesManuais() {
     el("code", { text: u }), el("span", { class: "copiado", role: "status" }));
   const IBGE = "https://servicodados.ibge.gov.br/api/v1/localidades/municipios?view=nivelado";
   const DEMAS = "https://apidadosabertos.saude.gov.br/macrorregiao-e-regiao-de-saude/municipio";
+  const FTP = "ftp://ftp2.datasus.gov.br/pub/sistemas/tup/downloads/";
   const paginas = [0, 860, 1720, 2580, 3440, 4300, 5160];
+  const passo = (titulo, ...corpo) => el("li", {}, el("div", { class: "passo-titulo", text: titulo }), el("div", { class: "passo-corpo" }, ...corpo));
+  const dica = (...t) => el("p", { class: "dica" }, el("b", { text: "Dica: " }), ...t);
   return el("details", { class: "manual" },
     el("summary", { text: "Como baixar os arquivos à mão" }),
-    el("ol", {},
-      el("li", {}, el("b", { text: "Tabela de procedimentos (SIGTAP). " }),
-        "Abra o endereço abaixo no Explorador de Arquivos do Windows (cole na barra de endereço) ou num programa de FTP, como o FileZilla:", url("ftp://ftp2.datasus.gov.br/pub/sistemas/tup/downloads/"),
-        "Copie os arquivos ", el("code", { text: "TabelaUnificada_AAAAMM_vXXXXXXXXXX.zip" }), " das competências que quiser. Se a mesma competência tiver mais de um arquivo, use o de versão (vXXXXXXXXXX) maior: é a republicação."),
-      el("li", {}, el("b", { text: "Municípios do IBGE. " }), "Abra no navegador e salve a página (Ctrl+S) como ", el("code", { text: "ibge_municipios.json" }), ":", url(IBGE)),
-      el("li", {}, el("b", { text: "Regiões de saúde (Ministério da Saúde). " }),
-        "A lista vem em páginas. Abra cada endereço e salve como ", el("code", { text: "demas_1.json" }), ", ", el("code", { text: "demas_2.json" }), " e assim por diante:",
-        el("div", { class: "urls" }, paginas.map((o) => url(`${DEMAS}?limit=1000&offset=${o}`))),
-        "Hoje o servidor devolve até 860 municípios por página; se uma página trouxer outro número, some esse número ao offset da próxima. Pare quando a página vier vazia. O programa junta as páginas e recusa município repetido."),
-      el("li", {}, el("b", { text: "Importe. " }), "Ponha todos os arquivos na mesma pasta, clique em Procurar pasta… e depois em Importar.")));
+    el("p", { class: "quieto", text: "Use este passo a passo quando o programa não conseguir baixar sozinho, por exemplo se a rede do hospital bloqueia os servidores do DATASUS. Você baixa os arquivos (pode ser em outro computador ou em outra rede), junta tudo numa pasta e pede ao programa que importe essa pasta." }),
+    el("ol", { class: "passos" },
+      passo("Crie uma pasta para os arquivos",
+        el("p", { text: "Abra o Explorador de Arquivos (tecla Windows + E). Num lugar fácil de achar, como a Área de Trabalho, clique com o botão direito, escolha Novo e depois Pasta. Dê a ela o nome Arquivos SIGTAP." })),
+      passo("Baixe a Tabela de Procedimentos (SIGTAP)",
+        el("p", { text: "1. Copie este endereço:" }), url(FTP),
+        el("p", { text: "2. No Explorador de Arquivos, clique na barra de endereço (no alto da janela), cole o endereço com Ctrl+V e tecle Enter. Use o Explorador: o Chrome e o Edge não abrem endereços que começam com ftp." }),
+        el("p", { text: "3. Vai aparecer uma lista de arquivos. Procure os que começam com TabelaUnificada_ seguido do ano e do mês. Por exemplo, TabelaUnificada_202609_v2609171117.zip é a tabela de setembro de 2026." }),
+        el("p", { text: "4. Clique no arquivo, tecle Ctrl+C, abra a pasta Arquivos SIGTAP e tecle Ctrl+V. Copie o mês mais recente e, se quiser consultar o histórico, os meses anteriores." }),
+        dica("se houver dois arquivos do mesmo mês, copie o que tem o número maior depois da letra v: é a versão republicada, a mais nova."),
+        dica("se o Explorador não abrir o endereço, use um programa gratuito de FTP, como o FileZilla: servidor ftp2.datasus.gov.br, usuário anonymous, pasta /pub/sistemas/tup/downloads.")),
+      passo("Baixe a lista de municípios do IBGE",
+        el("p", { text: "1. Copie este endereço:" }), url(IBGE),
+        el("p", { text: "2. Abra o Edge ou o Chrome, cole o endereço na barra e tecle Enter. Vai aparecer um texto longo e sem enfeites; isso é normal." }),
+        el("p", { text: "3. Tecle Ctrl+S. Em Nome do arquivo, escreva ibge_municipios.json, escolha a pasta Arquivos SIGTAP e clique em Salvar." }),
+        dica("se o navegador perguntar o tipo do arquivo, escolha Todos os arquivos ou Somente HTML. Não escolha Página da Web, completa.")),
+      passo("Baixe as regiões de saúde do Ministério da Saúde",
+        el("p", { text: "A lista é grande e vem em 7 partes. Para cada parte: copie o endereço, abra no navegador, tecle Ctrl+S e salve na pasta Arquivos SIGTAP com o nome indicado." }),
+        el("div", { class: "urls" }, paginas.map((o, k) => el("div", { class: "parte" },
+          el("b", { text: `Parte ${k + 1}: salvar como demas_${k + 1}.json` }), url(`${DEMAS}?limit=1000&offset=${o}`)))),
+        el("p", { text: "Para conferir que não faltou nada, abra também este endereço. Não precisa salvar: a lista deve vir vazia. Se vierem municípios, o servidor mudou; avise o projeto pelo botão Sugerir ou relatar." }),
+        url(`${DEMAS}?limit=1000&offset=6020`)),
+      passo("Importe a pasta no programa",
+        el("p", { text: "Volte a esta tela, clique em Procurar pasta…, escolha a pasta Arquivos SIGTAP e clique em Importar. Espere a barra de progresso chegar a Concluído." }),
+        el("p", { text: "O programa confere cada arquivo antes de usar. Se recusar algum, ele diz qual e por quê; nesse caso confira o nome e baixe o arquivo de novo." }),
+        dica("para ver o final dos nomes (.zip, .json), clique em Exibir no Explorador e marque Extensões de nomes de arquivos (no Windows 11, fica em Exibir, Mostrar). Assim você confere que o nome ficou ibge_municipios.json e não ibge_municipios.json.txt."))));
 }
 
 function avisoTopo(msg) {
@@ -941,17 +983,37 @@ function textoEscopo(n) {
   const faixa = k.n > 1 ? `${k.n} competências, ${F.competencia(k.de)} a ${F.competencia(k.ate)}` : F.competencia(k.ate);
   return `${faixa}; ${k.nBaixar ? `${k.nBaixar} a baixar, ${F.mb(k.bytes)}` : "já guardada(s)"}`;
 }
+/** Todas as competências do escopo já estão no banco, na versão do servidor. */
+function escopoCompleto(n) {
+  const cs = E.ofertas && E.ofertas.competencias;
+  if (!cs || !cs.length) return false;
+  return cs.slice(-Math.min(n, cs.length)).every((c) => c.carregado);
+}
 function opcoesEscopo(caixa, nome, escolha, aoMudar, rotulos) {
-  const spans = [];
+  const itens = [];
   for (const [v, rotulo0, n] of ESCOPOS) {
     const rotulo = (rotulos && rotulos[v]) || rotulo0;
     const sp = el("small", { text: textoEscopo(n) });
-    spans.push([sp, n]);
-    caixa.append(el("label", { class: "opcao" },
-      el("input", { type: "radio", name: nome, value: v, checked: v === escolha.escopo, onchange: () => { escolha.escopo = v; aoMudar && aoMudar(); } }),
-      el("span", {}, rotulo, " ", sp)));
+    const radio = el("input", { type: "radio", name: nome, value: v, checked: v === escolha.escopo, onchange: () => { escolha.escopo = v; aoMudar && aoMudar(); } });
+    const rot = el("label", { class: "opcao" }, radio, el("span", {}, rotulo, " ", sp));
+    itens.push({ v, n, sp, radio, rot });
+    caixa.append(rot);
   }
-  caixa._atualizar = () => spans.forEach(([sp, n]) => { sp.textContent = textoEscopo(n); });
+  caixa._atualizar = () => {
+    for (const x of itens) {
+      const feito = escopoCompleto(x.n);
+      x.rot.classList.toggle("feito", feito);
+      x.radio.disabled = feito;
+      x.sp.textContent = feito ? "já baixado e importado" : textoEscopo(x.n);
+    }
+    // A escolha não pode ficar numa opção cinza: vai para a primeira ainda possível.
+    const atual = itens.find((x) => x.v === escolha.escopo);
+    if (!atual || atual.radio.disabled) {
+      const livre = itens.find((x) => !x.radio.disabled);
+      escolha.escopo = livre ? livre.v : null;
+      for (const x of itens) x.radio.checked = x.v === escolha.escopo;
+    }
+  };
   carregarOfertas().then(() => { caixa._atualizar(); aoMudar && aoMudar(); });
 }
 let ofertasPromessa = null;
@@ -960,6 +1022,7 @@ function carregarOfertas() {
   return ofertasPromessa;
 }
 function textoApagar(escopo, rotulo, txt) {
+  if (!escopo) { rotulo.hidden = true; return; }
   const n = (ESCOPOS.find((x) => x[0] === escopo) || [])[2] || 1;
   rotulo.hidden = n === 1;
   const k = calcEscopo(n);
@@ -1008,6 +1071,7 @@ function atualizarRodapeProgresso() {
   if (mostrar) { desenharProgresso(r, E.tarefa.ultimo); r.title = `${E.tarefa.ultimo.resumo || ""}\n${E.tarefa.ultimo.mensagem || ""}\nClique para ver em Módulos e dados`.trim(); }
 }
 function iniciarTarefa(msg) {
+  tirarAviso("falha");
   E.tarefa = { ativa: true, ultimo: null, falhou: false, ate: 0 };
   $("primeira-cortesia").hidden = true;
   $("primeira").classList.add("rodando");
@@ -1034,6 +1098,7 @@ function mostrarFalha(e) {
 }
 async function fimTarefa(f) {
   const antes = E.tarefa.ultimo || { fracao: 0 };
+  E.recuperando = false;
   E.tarefa.ativa = false;
   E.tarefa.falhou = !f.ok;
   E.tarefa.ate = Date.now() + 10000;
@@ -1049,6 +1114,8 @@ async function fimTarefa(f) {
   if (!f.ok && !$("primeira").hidden) { $("primeira-erro").hidden = false; $("primeira-erro").textContent = f.mensagem; }
   if (E.rota.tipo === "modulos" || E.rota.tipo === "inicio") desenhar();
   carregarOfertasDeNovo();
+  aposTarefa(f);
+  if (f.ok) tirarAviso("recuperacao");
   setTimeout(atualizarRodapeProgresso, 10100);
 }
 function carregarOfertasDeNovo() { ofertasPromessa = null; if (E.ofertas && E.ofertas !== "falhou") carregarOfertas(); }
@@ -1073,7 +1140,8 @@ async function atualizarSituacao() {
   rodape();
   // A janela da primeira execução abre quando falta o obrigatório; durante um download ela
   // só fecha quando a pessoa escolhe continuar.
-  if (E.situacao.primeira_execucao) $("primeira").hidden = false;
+  if (E.situacao.primeira_execucao && !E.recuperando) $("primeira").hidden = false;
+  else if (E.recuperando) $("primeira").hidden = true;
   else if (!E.tarefa.ativa) $("primeira").hidden = true;
   atualizarRodapeProgresso();
 }
@@ -1129,6 +1197,7 @@ const CONTEUDO_MIN = 730; // medido: a tabela mais larga (compatíveis) pede ~71
 function limiteArvore() { return Math.max(220, Math.min(560, window.innerWidth - CONTEUDO_MIN)); }
 
 async function iniciar() {
+  await iniciarExtras();
   divisorArvore();
   iniciarSugestoes();
   $("form-busca").addEventListener("submit", (ev) => {
@@ -1162,6 +1231,8 @@ async function iniciar() {
   desenhar();
   $("arvore-raiz").append(el("li", {}, carregando("Carregando a árvore…")));
   desenharArvore().catch((e) => limpar($("arvore-raiz")).append(el("li", {}, erro(e))));
+  tratarRecuperacao();
+  iniciarVigia();
 }
 
 iniciar();

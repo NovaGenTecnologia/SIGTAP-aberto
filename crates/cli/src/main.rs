@@ -37,6 +37,8 @@ Comandos:
   buscar <texto> [--competencia AAAAMM]
                                   busca por código, nome, CID, CBO, habilitação..., em JSON
   arvore [nó] [--competencia AAAAMM]
+  arvore-cid [letra|categoria] [--competencia AAAAMM]
+  ligados <tabela> <código> [--competencia AAAAMM]   (ex.: ligados tb_cid T742)
                                   grupos, ou filhos do nó (2, 4 ou 6 dígitos), em JSON
   historico <código>              linha do tempo do procedimento, em JSON
   mudou [TABELA] [--de AAAAMM] [--competencia AAAAMM] [--desde N]
@@ -297,6 +299,21 @@ fn cmd_consulta(cmd: &str, o: &Opcoes) -> Result<(), String> {
         "arvore" => {
             let pai = if livre.is_empty() { None } else { Some(livre.as_str()) };
             serde_json::to_string_pretty(&q.arvore(comp, pai).map_err(|e| e.to_string())?)
+        }
+        "ligados" => {
+            // ligados <tabela> <código> (ex.: ligados tb_cid T742)
+            let partes: Vec<&str> = livre.split_whitespace().collect();
+            if partes.len() < 2 {
+                return Err("informe a tabela e o código. Ex.: ligados tb_cid T742".into());
+            }
+            serde_json::to_string_pretty(
+                &q.procedimentos_ligados(comp, partes[0], &partes[1..])
+                    .map_err(|e| e.to_string())?,
+            )
+        }
+        "arvore-cid" => {
+            let pai = if livre.is_empty() { None } else { Some(livre.as_str()) };
+            serde_json::to_string_pretty(&q.arvore_cid(comp, pai).map_err(|e| e.to_string())?)
         }
         "historico" => {
             exigir("o código do procedimento")?;
@@ -577,7 +594,9 @@ fn main() -> ExitCode {
         "baixar" => cmd_baixar(&o),
         "importar" => cmd_importar(&o),
         "territorio" => cmd_territorio(&o),
-        "ficha" | "buscar" | "arvore" | "historico" | "mudou" => cmd_consulta(cmd.as_str(), &o),
+        "ficha" | "buscar" | "arvore" | "arvore-cid" | "ligados" | "historico" | "mudou" => {
+            cmd_consulta(cmd.as_str(), &o)
+        }
         "ajuda" | "--help" | "-h" => {
             print!("{AJUDA}");
             Ok(())

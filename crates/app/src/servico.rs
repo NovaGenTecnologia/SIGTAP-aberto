@@ -9,6 +9,7 @@ use sa_download::cortesia::{Cortesia, Evento};
 use sa_download::http::Http;
 use sa_download::sigtap as dl;
 use sa_download::territorio as ter;
+use sa_packs::saude;
 use sa_packs::sigtap::BancoSigtap;
 use sa_packs::territorio::{BancoTerritorio, Origem};
 use sa_query::Consulta;
@@ -107,6 +108,8 @@ pub struct Servico {
     servidor: Mutex<Option<Vec<dl::Disponivel>>>,
     pub cancelar: Arc<AtomicBool>,
     pub ocupado: Arc<AtomicBool>,
+    /// Banco danificado achado na abertura (já guardado em quarentena), à espera de refazer.
+    recuperacao: Mutex<Option<serde_json::Value>>,
 }
 
 impl Servico {
@@ -117,7 +120,241 @@ impl Servico {
             servidor: Mutex::new(None),
             cancelar: Arc::new(AtomicBool::new(false)),
             ocupado: Arc::new(AtomicBool::new(false)),
+            recuperacao: Mutex::new(None),
         }
+    }
+
+    /// Abertura do programa: confere os bancos (verificação rápida) e, se algum estiver
+    /// danificado, guarda-o em quarentena para o programa abrir e refazê-lo. Depois abre a consulta.
+    pub fn iniciar(&self) {
+        let mut achados: Vec<String> = Vec::new();
+        let mut pastas_q: Vec<String> = Vec::new();
+        let antes = carregadas(&self.pastas).ok();
+        for (nome, caminho) in [
+            ("tabela de procedimentos", self.pastas.sigtap_db()),
+            ("território", self.pastas.territorio_db()),
+        ] {
+            if caminho.exists() {
+                self.conferir_ou_guardar(nome, &caminho, false, &mut achados, &mut pastas_q);
+            }
+        }
+        if let Err(e) = self.reabrir() {
+            eprintln!("Aviso: {e}");
+            // A abertura falhou: confere a fundo antes de decidir.
+            let p = self.pastas.sigtap_db();
+            if p.exists() {
+                self.conferir_ou_guardar(
+                    "tabela de procedimentos",
+                    &p,
+                    true,
+                    &mut achados,
+                    &mut pastas_q,
+                );
+            }
+        }
+        if !achados.is_empty() {
+            let zips = dl::locais(&self.pastas.zips()).len();
+            let territorio_json = self.pastas.territorio().join(ter::ARQ_IBGE).exists();
+            if let Ok(mut g) = self.recuperacao.lock() {
+                *g = Some(serde_json::json!({
+                    "bancos": achados,
+                    "pastas": pastas_q,
+                    "zips": zips,
+                    "territorio_local": territorio_json,
+                    "competencias_antes": antes.map(|m| m.keys().map(|c| texto_comp(*c)).collect::<Vec<_>>()),
+                }));
+            }
+        }
+    }
+
+    fn conferir_ou_guardar(
+        &self,
+        nome: &str,
+        caminho: &Path,
+        completo: bool,
+        achados: &mut Vec<String>,
+        pastas_q: &mut Vec<String>,
+    ) {
+        let v = saude::verificar(caminho, completo);
+        if !v.danificado {
+            return;
+        }
+        // Solta a consulta aberta sobre o arquivo antes de movê-lo.
+        if let Ok(mut g) = self.consulta.lock() {
+            *g = None;
+        }
+        let motivo = format!(
+            "{nome}: {}",
+            v.mensagens.first().cloned().unwrap_or_default()
+        );
+        match saude::por_em_quarentena(caminho, &self.pastas.dados, &motivo) {
+            Ok(q) => {
+                achados.push(nome.to_string());
+                pastas_q.push(q.display().to_string());
+            }
+            Err(e) => eprintln!("Aviso: {e}"),
+        }
+    }
+
+    /// Verificação pedida pelo usuário em "Módulos e dados".
+    pub fn verificar_bancos(&self, completo: bool) -> serde_json::Value {
+        let itens: Vec<serde_json::Value> = [
+            ("Tabela de procedimentos", self.pastas.sigtap_db()),
+            ("Território", self.pastas.territorio_db()),
+        ]
+        .into_iter()
+        .map(|(nome, p)| {
+            let existe = p.exists();
+            let bytes = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+            let v = existe.then(|| saude::verificar(&p, completo));
+            serde_json::json!({
+                "nome": nome,
+                "arquivo": p.file_name().map(|n| n.to_string_lossy().into_owned()),
+                "existe": existe,
+                "bytes": bytes,
+                "ok": v.as_ref().is_some_and(|v| v.ok),
+                "danificado": v.as_ref().is_some_and(|v| v.danificado),
+                "mensagens": v.map(|v| v.mensagens).unwrap_or_default(),
+            })
+        })
+        .collect();
+        serde_json::json!({ "completo": completo, "itens": itens })
+    }
+
+    /// Refaz os bancos a partir do que está guardado em `dados`: o banco da tabela, dos ZIPs;
+    /// o território, dos JSON baixados antes. O banco atual vai para uma pasta de segurança
+    /// (nunca é apagado).
+    ///
+    /// `forcar = true` (pedido do usuário): guarda e refaz mesmo bancos que parecem íntegros.
+    /// `forcar = false` (recuperação automática): só refaz o que está faltando, porque o banco
+    /// danificado já foi guardado na abertura e os íntegros não devem ser tocados.
+    pub fn recriar(
+        &self,
+        emissor: &Emissor,
+        ao_dados: AoDados<'_>,
+        forcar: bool,
+    ) -> Result<String, String> {
+        let ac = Acompanhamento::novo(emissor.clone());
+        ac.mudar(|p| {
+            p.indeterminado = true;
+            p.mensagem = "Guardando o banco atual numa pasta de segurança".into();
+        });
+        let antes: BTreeSet<Competencia> = carregadas(&self.pastas)
+            .map(|m| m.keys().copied().collect())
+            .unwrap_or_default();
+        if let Ok(mut g) = self.consulta.lock() {
+            *g = None;
+        }
+        let mut guardados = Vec::new();
+        if forcar && self.pastas.sigtap_db().exists() {
+            let q = saude::por_em_quarentena(
+                &self.pastas.sigtap_db(),
+                &self.pastas.dados,
+                "refeito a pedido do usuário",
+            )?;
+            guardados.push(q.display().to_string());
+        }
+        let json_ok = self.pastas.territorio().join(ter::ARQ_IBGE).exists()
+            && self.pastas.territorio().join(ter::ARQ_DEMAS).exists();
+        if forcar && json_ok && self.pastas.territorio_db().exists() {
+            let q = saude::por_em_quarentena(
+                &self.pastas.territorio_db(),
+                &self.pastas.dados,
+                "refeito a pedido do usuário",
+            )?;
+            guardados.push(q.display().to_string());
+        }
+        *self
+            .recuperacao
+            .lock()
+            .map_err(|_| "estado interno travado".to_string())? = None;
+        ac.mudar(|p| p.indeterminado = false);
+        let mut partes = Vec::new();
+        let n = carregar_zips(&self.pastas, &self.cancelar, &ac)?;
+        partes.push(format!(
+            "{n} competência(s) do SIGTAP refeitas a partir dos ZIPs guardados"
+        ));
+        if json_ok && !self.pastas.territorio_db().exists() {
+            ac.mudar(|p| {
+                p.territorio = 1;
+                p.mensagem = "Território: refazendo o banco".into();
+            });
+            gravar_territorio(&self.pastas.territorio(), &self.pastas.territorio_db())?;
+            ac.mudar(|p| p.territorio_feito = 1);
+            partes.push("território refeito".into());
+        }
+        ao_dados(true);
+        let agora: BTreeSet<Competencia> = carregadas(&self.pastas)
+            .map(|m| m.keys().copied().collect())
+            .unwrap_or_default();
+        let faltam: Vec<String> = antes.difference(&agora).map(|c| mes_ano(*c)).collect();
+        if !faltam.is_empty() {
+            let mostra: Vec<&str> = faltam.iter().take(8).map(String::as_str).collect();
+            partes.push(format!(
+                "faltam {} competência(s) que estavam no banco e não têm ZIP guardado ({}{}). Baixe-as em Baixar do DATASUS",
+                faltam.len(),
+                mostra.join(", "),
+                if faltam.len() > 8 { ", …" } else { "" }
+            ));
+        }
+        if n == 0 && !self.pastas.sigtap_db().exists() {
+            partes.push("não há ZIPs guardados: baixe a tabela em Baixar do DATASUS".into());
+        }
+        if !guardados.is_empty() {
+            partes.push(format!(
+                "o banco anterior ficou em {}",
+                guardados.join(" e ")
+            ));
+        }
+        Ok(partes.join("; "))
+    }
+
+    /// Há competência nova no servidor ou republicação de uma já carregada? Consulta a lista
+    /// do servidor (um único pedido) e compara com o banco. Não baixa nada.
+    pub fn verificar_dados(&self) -> Result<serde_json::Value, String> {
+        self.verificar_dados_de(&Fonte::oficial())
+    }
+
+    fn verificar_dados_de(&self, fonte: &Fonte) -> Result<serde_json::Value, String> {
+        let disp = dl::listar_de(&fonte.servidor, &fonte.pasta, &fonte.cortesia).map_err(|e| {
+            format!(
+                "não foi possível consultar {}{} ({e})",
+                fonte.servidor, fonte.pasta
+            )
+        })?;
+        let mut g = self
+            .servidor
+            .lock()
+            .map_err(|_| "estado interno travado".to_string())?;
+        *g = Some(disp.clone());
+        drop(g);
+        let ja = carregadas(&self.pastas)?;
+        let ultima = ja.keys().next_back().copied();
+        let mut novos = Vec::new();
+        let mut menor: Option<Competencia> = None;
+        for d in &disp {
+            let motivo = match ja.get(&d.competencia) {
+                None if ultima.is_some_and(|u| d.competencia > u) => Some("nova"),
+                Some(v) if d.versao > *v => Some("republicada"),
+                _ => None,
+            };
+            if let Some(m) = motivo {
+                menor = Some(menor.map_or(d.competencia, |x| x.min(d.competencia)));
+                novos.push(serde_json::json!({
+                    "competencia": texto_comp(d.competencia),
+                    "motivo": m,
+                    "tamanho": d.tamanho,
+                }));
+            }
+        }
+        // Para baixar só o que falta: as N competências mais recentes do servidor que
+        // chegam até a mais antiga com novidade.
+        let escopo = menor.map(|m| disp.iter().filter(|d| d.competencia >= m).count());
+        Ok(serde_json::json!({
+            "novos": novos,
+            "escopo": escopo.map(|n| n.to_string()),
+            "bytes": novos.iter().map(|x| x["tamanho"].as_u64().unwrap_or(0)).sum::<u64>(),
+        }))
     }
 
     /// (Re)abre a consulta a partir do banco, se existir e tiver competência. A nova consulta
@@ -170,9 +407,14 @@ impl Servico {
             .com_consulta(|q| q.competencias().map_err(|e| e.to_string()))
             .unwrap_or_default();
         let territorio = if self.pastas.territorio_db().exists() {
-            let b =
-                BancoTerritorio::abrir(&self.pastas.territorio_db()).map_err(|e| e.to_string())?;
-            let r = b.resumo().map_err(|e| e.to_string())?;
+            let b = BancoTerritorio::abrir(&self.pastas.territorio_db());
+            let r = b.as_ref().ok().and_then(|b| b.resumo().ok());
+            let (Some(b), Some(r)) = (b.ok(), r) else {
+                return Err(format!(
+                    "não foi possível ler {}. Use Verificar o banco em Módulos e dados",
+                    self.pastas.territorio_db().display()
+                ));
+            };
             if r.municipios_ibge > 0 {
                 Some(
                     serde_json::json!({ "resumo": r, "fontes": b.fontes().map_err(|e| e.to_string())? }),
@@ -190,6 +432,7 @@ impl Servico {
             "zips": self.zips_guardados()?,
             "pasta_dados": self.pastas.dados.display().to_string(),
             "ocupado": self.ocupado.load(Ordering::Relaxed),
+            "recuperacao": self.recuperacao.lock().ok().and_then(|g| g.clone()),
         }))
     }
 
@@ -1091,5 +1334,188 @@ mod testes {
         }
         assert!(carregadas(&ps).unwrap().len() < 3);
         let _ = std::fs::remove_dir_all(&ps.dados);
+    }
+
+    #[test]
+    fn banco_danificado_vai_para_quarentena_e_e_refeito_dos_zips() {
+        let Some(zips) = zips_reais(3) else { return };
+        let p = pastas("saude");
+        std::fs::create_dir_all(p.zips()).unwrap();
+        for (_, z) in &zips {
+            std::fs::copy(z, p.zips().join(z.file_name().unwrap())).unwrap();
+        }
+        let (em, _) = emissor();
+        // Banco inicial: refeito dos ZIPs guardados (não há banco ainda).
+        let sv = Servico::novo(p.clone());
+        let msg = sv.recriar(&em, &|_| {}, true).unwrap();
+        assert!(msg.contains("3 competência(s)"), "{msg}");
+        sv.iniciar();
+        let antes = sv
+            .com_consulta(|q| q.competencias().map_err(|e| e.to_string()))
+            .unwrap();
+        assert_eq!(antes.len(), 3);
+        assert!(sv.situacao().unwrap()["recuperacao"].is_null());
+        assert!(
+            sv.verificar_bancos(true)["itens"][0]["ok"]
+                .as_bool()
+                .unwrap()
+        );
+        drop(sv);
+
+        // Estraga 64 páginas inteiras no meio do arquivo.
+        let db = p.sigtap_db();
+        let mut b = std::fs::read(&db).unwrap();
+        let ini = (b.len() / 2 / 4096) * 4096;
+        for x in &mut b[ini..ini + 64 * 4096] {
+            *x = 0xFF;
+        }
+        std::fs::write(&db, &b).unwrap();
+
+        // Abertura seguinte: acha, guarda em quarentena e avisa; o programa abre sem banco.
+        let sv = Servico::novo(p.clone());
+        sv.iniciar();
+        let rec = sv.situacao().unwrap()["recuperacao"].clone();
+        assert!(!rec.is_null(), "o banco estragado devia ser achado");
+        assert_eq!(rec["bancos"][0], "tabela de procedimentos");
+        assert_eq!(rec["zips"], 3);
+        assert!(!db.exists());
+        assert!(
+            p.dados
+                .join("banco_com_problema_1")
+                .join("sigtap.db")
+                .exists()
+        );
+        assert!(
+            p.dados
+                .join("banco_com_problema_1")
+                .join("LEIAME.txt")
+                .exists()
+        );
+        assert!(sv.com_consulta(|_| Ok(())).is_err());
+
+        // Refazer (caminho automático): volta com as mesmas 3 competências e o aviso some.
+        sv.recriar(&em, &|_| {}, false).unwrap();
+        sv.reabrir().unwrap();
+        let depois = sv
+            .com_consulta(|q| q.competencias().map_err(|e| e.to_string()))
+            .unwrap();
+        assert_eq!(
+            depois
+                .iter()
+                .map(|c| (&c.competencia, &c.sha256))
+                .collect::<Vec<_>>(),
+            antes
+                .iter()
+                .map(|c| (&c.competencia, &c.sha256))
+                .collect::<Vec<_>>()
+        );
+        assert!(sv.situacao().unwrap()["recuperacao"].is_null());
+        assert!(
+            sv.verificar_bancos(true)["itens"][0]["ok"]
+                .as_bool()
+                .unwrap()
+        );
+        eprintln!(
+            "PROVA saúde: banco com 64 páginas estragadas achado na abertura, guardado em quarentena e refeito de 3 ZIPs reais com as mesmas competências e SHA-256"
+        );
+        let _ = std::fs::remove_dir_all(&p.dados);
+    }
+
+    #[test]
+    fn recriar_avisa_quais_competencias_nao_tem_zip() {
+        let Some(zips) = zips_reais(3) else { return };
+        let p = pastas("faltam");
+        std::fs::create_dir_all(p.zips()).unwrap();
+        let (em, _) = emissor();
+        // Banco com 3 competências, mas só 1 ZIP guardado.
+        for (_, z) in &zips {
+            std::fs::copy(z, p.zips().join(z.file_name().unwrap())).unwrap();
+        }
+        let sv = Servico::novo(p.clone());
+        sv.recriar(&em, &|_| {}, true).unwrap();
+        for (_, z) in &zips[..2] {
+            std::fs::remove_file(p.zips().join(z.file_name().unwrap())).unwrap();
+        }
+        let msg = sv.recriar(&em, &|_| {}, true).unwrap();
+        assert!(
+            msg.contains("1 competência(s)") && msg.contains("faltam 2 competência(s)"),
+            "{msg}"
+        );
+        assert!(msg.contains("banco_com_problema_1"), "{msg}");
+        let _ = std::fs::remove_dir_all(&p.dados);
+    }
+
+    #[test]
+    fn avisa_competencia_nova_e_republicacao_sem_baixar_nada() {
+        let Some(zips) = zips_reais(4) else { return };
+        let p = pastas("avisos");
+        std::fs::create_dir_all(p.zips()).unwrap();
+        let (em, _) = emissor();
+        // O banco tem as 3 mais antigas; o servidor tem as 4.
+        for (_, z) in &zips[..3] {
+            std::fs::copy(z, p.zips().join(z.file_name().unwrap())).unwrap();
+        }
+        let sv = Servico::novo(p.clone());
+        sv.recriar(&em, &|_| {}, true).unwrap();
+        let guardados_antes = dl::locais(&p.zips()).len();
+        let f = fonte(&zips);
+        let r = sv.verificar_dados_de(&f).unwrap();
+        let novos = r["novos"].as_array().unwrap();
+        assert_eq!(novos.len(), 1, "{r}");
+        assert_eq!(novos[0]["motivo"], "nova");
+        assert_eq!(novos[0]["competencia"], zips[3].0.to_string());
+        assert_eq!(r["escopo"], "1");
+        assert_eq!(
+            dl::locais(&p.zips()).len(),
+            guardados_antes,
+            "não pode baixar nada"
+        );
+
+        // Republicação: o servidor passa a ter uma versão mais nova da 2ª competência.
+        let (c2, z2) = &zips[1];
+        let nome = z2.file_name().unwrap().to_string_lossy().into_owned();
+        let versao = nome
+            .rsplit("_v")
+            .next()
+            .unwrap()
+            .trim_end_matches(".zip")
+            .to_string();
+        let nova = format!("{:010}", versao.parse::<u64>().unwrap() + 1);
+        let nome_novo = nome.replace(&versao, &nova);
+        let pasta_f = p.dados.join("falso");
+        std::fs::create_dir_all(&pasta_f).unwrap();
+        std::fs::copy(z2, pasta_f.join(&nome_novo)).unwrap();
+        let mut com_rep = zips.clone();
+        com_rep.push((*c2, pasta_f.join(&nome_novo)));
+        let r = sv.verificar_dados_de(&fonte(&com_rep)).unwrap();
+        let motivos: Vec<(String, String)> = r["novos"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| {
+                (
+                    x["competencia"].as_str().unwrap().into(),
+                    x["motivo"].as_str().unwrap().into(),
+                )
+            })
+            .collect();
+        assert!(
+            motivos.contains(&(c2.to_string(), "republicada".into())),
+            "{motivos:?}"
+        );
+        assert!(
+            motivos.contains(&(zips[3].0.to_string(), "nova".into())),
+            "{motivos:?}"
+        );
+        // O escopo cobre da mais antiga com novidade até a mais recente do servidor.
+        assert_eq!(r["escopo"], "3", "{r}");
+
+        // Tudo em dia: nada a avisar.
+        std::fs::copy(&zips[3].1, p.zips().join(zips[3].1.file_name().unwrap())).unwrap();
+        sv.recriar(&em, &|_| {}, true).unwrap();
+        let r = sv.verificar_dados_de(&fonte(&zips)).unwrap();
+        assert!(r["novos"].as_array().unwrap().is_empty(), "{r}");
+        assert!(r["escopo"].is_null());
+        let _ = std::fs::remove_dir_all(&p.dados);
     }
 }

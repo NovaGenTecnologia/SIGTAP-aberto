@@ -9,6 +9,7 @@
 mod servico;
 
 use sa_core::Competencia;
+use sa_download::atualizador;
 use servico::{Emissor, FimTarefa, Pastas, PedidoDownload, Servico};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -124,6 +125,189 @@ async fn ligados(
     })
 }
 
+#[tauri::command]
+async fn arvore_cid(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    pai: Option<String>,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|q| {
+        let c = s.competencia(q, competencia.as_deref())?;
+        json(q.arvore_cid(c, pai.as_deref()).map_err(|e| e.to_string())?)
+    })
+}
+
+/// Confere a integridade dos bancos (rápida ou completa).
+#[tauri::command]
+async fn verificar_bancos(s: Estado<'_>, completo: bool) -> Result<serde_json::Value, String> {
+    let s = s.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || s.verificar_bancos(completo))
+        .await
+        .map_err(|e| format!("falha interna na verificação ({e})"))
+}
+
+/// Refaz os bancos a partir dos ZIPs e arquivos guardados.
+#[tauri::command]
+fn recriar_banco(app: AppHandle, s: Estado<'_>, forcar: Option<bool>) -> Result<(), String> {
+    let s = s.inner().clone();
+    let forcar = forcar.unwrap_or(true);
+    em_segundo_plano(app, s, move |sv, emissor, ao_dados| {
+        sv.recriar(emissor, ao_dados, forcar)
+    })
+}
+
+/// Há dados novos no servidor oficial? (não baixa nada)
+#[tauri::command]
+async fn verificar_dados(s: Estado<'_>) -> Result<serde_json::Value, String> {
+    let s = s.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || s.verificar_dados())
+        .await
+        .map_err(|e| format!("falha interna na verificação ({e})"))?
+}
+
+/// Endereços que o programa abre no navegador: o site do SIGTAP e o repositório do projeto
+/// (feedback, lançamentos, apoio). A interface não abre endereço qualquer.
+fn url_permitida(u: &str) -> bool {
+    let limpo = !u
+        .chars()
+        .any(|c| c.is_control() || c.is_whitespace() || c == '"' || c == '<' || c == '>');
+    let repo = format!("https://github.com/{}", sa_core::REPOSITORIO);
+    limpo
+        && u.len() <= 7000
+        && (u == sa_core::SITE_SIGTAP
+            || u.starts_with("http://sigtap.datasus.gov.br/")
+            || u == repo
+            || u.starts_with(&format!("{repo}/"))
+            || u.starts_with(&format!("{repo}?"))
+            || u.starts_with("https://github.com/sponsors/")
+            || u.starts_with("mailto:"))
+}
+
+#[tauri::command]
+fn abrir_site(url: String) -> Result<(), String> {
+    if !url_permitida(&url) {
+        return Err("endereço não permitido".into());
+    }
+    #[cfg(windows)]
+    let r = std::process::Command::new("rundll32")
+        .args(["url.dll,FileProtocolHandler", &url])
+        .spawn();
+    #[cfg(not(windows))]
+    let r = std::process::Command::new("xdg-open").arg(&url).spawn();
+    r.map(|_| ()).map_err(|e| {
+        format!(
+            "não foi possível abrir o navegador ({e}). Copie o endereço e cole no navegador: {url}"
+        )
+    })
+}
+
+/// Versão, repositório e dados do computador para o "Sobre" e o feedback. Nada de paciente.
+#[tauri::command]
+fn info_programa() -> serde_json::Value {
+    #[cfg(windows)]
+    let windows = {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd")
+            .args(["/C", "ver"])
+            .creation_flags(0x0800_0000)
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    };
+    #[cfg(not(windows))]
+    let windows: Option<String> = None;
+    serde_json::json!({
+        "versao": sa_core::VERSAO,
+        "repositorio": sa_core::REPOSITORIO,
+        "site_sigtap": sa_core::SITE_SIGTAP,
+        "so": std::env::consts::OS,
+        "arquitetura": std::env::consts::ARCH,
+        "windows": windows,
+        "webview2": tauri::webview_version().ok(),
+    })
+}
+
+/// Consulta o último lançamento do programa no GitHub.
+#[tauri::command]
+async fn consultar_atualizacao() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let sem_cancelar = std::sync::atomic::AtomicBool::new(false);
+        let l = atualizador::consultar(sa_core::REPOSITORIO, &sem_cancelar)
+            .map_err(|e| e.to_string())?;
+        let nova = l.filter(|l| atualizador::e_mais_nova(sa_core::VERSAO, &l.versao));
+        Ok(serde_json::json!({ "atual": sa_core::VERSAO, "nova": nova }))
+    })
+    .await
+    .map_err(|e| format!("falha interna na consulta ({e})"))?
+}
+
+/// Baixa a versão nova, confere o SHA-256, troca o executável e reabre o programa.
+#[tauri::command]
+fn atualizar_programa(app: AppHandle, s: Estado<'_>) -> Result<(), String> {
+    let s = s.inner().clone();
+    if s.ocupado.swap(true, Ordering::SeqCst) {
+        return Err(
+            "há uma tarefa em andamento. Espere terminar ou cancele, e atualize depois.".into(),
+        );
+    }
+    s.cancelar.store(false, Ordering::SeqCst);
+    std::thread::spawn(move || {
+        let avisar = |msg: &str, frac: f64| {
+            let _ = app.emit(
+                "progresso",
+                servico::Progresso {
+                    resumo: "Atualizando o programa".into(),
+                    mensagem: msg.into(),
+                    fracao: frac,
+                    indeterminado: false,
+                },
+            );
+        };
+        let r = (|| -> Result<String, String> {
+            let exe = std::env::current_exe()
+                .map_err(|e| format!("não foi possível localizar o executável ({e})"))?;
+            avisar("Consultando a versão mais recente", 0.05);
+            let l = atualizador::consultar(sa_core::REPOSITORIO, &s.cancelar)
+                .map_err(|e| e.to_string())?
+                .filter(|l| atualizador::e_mais_nova(sa_core::VERSAO, &l.versao))
+                .ok_or("não há versão nova para instalar")?;
+            avisar(
+                &format!("Baixando a versão {} e conferindo o SHA-256", l.versao),
+                0.2,
+            );
+            let novo = atualizador::baixar_e_preparar(
+                &l,
+                sa_core::REPOSITORIO,
+                &s.pastas.dados.join("atualizacao"),
+                &s.cancelar,
+            )
+            .map_err(|e| e.to_string())?;
+            avisar("Trocando o programa", 0.9);
+            atualizador::trocar(&exe, &novo).map_err(|e| e.to_string())?;
+            std::process::Command::new(&exe)
+                .arg("--apos-atualizacao")
+                .spawn()
+                .map_err(|e| format!("a versão {} foi instalada, mas não abriu sozinha ({e}). Abra o programa de novo", l.versao))?;
+            Ok(l.versao)
+        })();
+        match r {
+            Ok(_) => app.exit(0),
+            Err(e) => {
+                s.ocupado.store(false, Ordering::SeqCst);
+                let _ = app.emit(
+                    "tarefa_fim",
+                    FimTarefa {
+                        ok: false,
+                        cancelada: false,
+                        mensagem: e,
+                    },
+                );
+            }
+        }
+    });
+    Ok(())
+}
+
 /// Roda uma tarefa longa em segundo plano, uma por vez, com eventos `progresso`,
 /// `dados_atualizados` (dados novos no meio da tarefa) e `tarefa_fim`.
 fn em_segundo_plano(
@@ -234,6 +418,13 @@ fn main() {
             std::process::exit(1);
         }
     };
+    // Depois de uma atualização, o programa novo espera o antigo fechar e apaga os restos.
+    if std::env::args().any(|a| a == "--apos-atualizacao") {
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        atualizador::limpar_restos(&exe, &pasta.join("dados"));
+    }
     let dados_webview = pasta.join("dados_webview");
     let servico = Arc::new(Servico::new_ou_sair(Pastas {
         dados: pasta.join("dados"),
@@ -245,6 +436,14 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             situacao,
             arvore,
+            arvore_cid,
+            verificar_bancos,
+            recriar_banco,
+            verificar_dados,
+            abrir_site,
+            info_programa,
+            consultar_atualizacao,
+            atualizar_programa,
             buscar,
             ficha,
             historico,
@@ -283,9 +482,37 @@ impl Servico {
     /// interface mostra o erro em Módulos e dados.
     fn new_ou_sair(pastas: Pastas) -> Self {
         let s = Servico::novo(pastas);
-        if let Err(e) = s.reabrir() {
-            eprintln!("Aviso: {e}");
-        }
+        s.iniciar();
         s
+    }
+}
+
+#[cfg(test)]
+mod testes {
+    use super::url_permitida;
+
+    #[test]
+    fn so_abre_enderecos_do_projeto_e_do_sigtap() {
+        let repo = format!("https://github.com/{}", sa_core::REPOSITORIO);
+        for ok in [
+            sa_core::SITE_SIGTAP.to_string(),
+            format!("{repo}/issues/new?title=a%20b&body=c%0Ad&labels=bug"),
+            repo.clone(),
+            "https://github.com/sponsors/alguem".to_string(),
+            "mailto:contato@exemplo.com.br?subject=Oi%20mundo".to_string(),
+        ] {
+            assert!(url_permitida(&ok), "{ok}");
+        }
+        for ruim in [
+            "https://exemplo.com/".to_string(),
+            "file:///C:/Windows/System32/calc.exe".to_string(),
+            "javascript:alert(1)".to_string(),
+            format!("{repo}x/outro"),
+            format!("{repo}/issues/new?title=a b"),
+            "https://github.com/outro/repo".to_string(),
+            format!("{repo}/\"\n"),
+        ] {
+            assert!(!url_permitida(&ruim), "{ruim:?}");
+        }
     }
 }

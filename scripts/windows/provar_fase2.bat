@@ -69,6 +69,14 @@ echo 5. O que mudou e Modulos e dados: confira o botao Voltar e o "Ver mais".
 echo 6. Modulos e dados: Procurar pasta... abre a janela do Windows; "Como baixar os arquivos a mao".
 echo 7. Diminua a janela ate o minimo: nao pode aparecer barra de rolagem horizontal.
 echo 8. Feche o programa e confira que so ha dados, dados_webview e o .exe na pasta.
+echo 9. Rodape: clique em SIGTAP; o site oficial deve abrir no navegador. Abra Sobre e Sugerir ou relatar (Esc fecha).
+echo    Em Sugerir ou relatar, escreva algo e clique em Copiar texto; confira que nao ha dado de paciente no texto.
+echo 10. Aba CIDs na esquerda: abra uma letra, uma categoria (ex.: T74) e clique em T74.2: devem aparecer 5 procedimentos, e
+echo    clicar de novo na linha do CID NAO pode repetir a lista. Teste o icone de expandir e recolher tudo nas duas abas.
+echo 11. Modulos e dados, Baixar do DATASUS: opcoes ja baixadas ficam em cinza. Em Atualizacoes, clique em Verificar agora
+echo    (com internet no FTP do DATASUS) e em Procurar nova versao (sem repositorio publico deve dizer que nao ha versao nova).
+echo 12. Modulos e dados, Saude dos dados: Verificar o banco e Verificacao completa devem dizer "integro".
+echo    NAO clique em Recriar o banco na pasta de dados de verdade sem ter os ZIPs guardados.
 explorer "%PROVA%\portatil"
 pause
 exit /b 0
