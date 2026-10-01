@@ -145,12 +145,11 @@ fn carga_de_ms_agosto_de_2026_com_privacidade() {
     );
     // Nenhuma coluna de texto do banco guarda algo com cara de CPF de 11 dígitos de pessoa física
     // nas tabelas de estabelecimento pessoa física.
-    assert_eq!(
+    assert!(
         um(
             &b,
             "SELECT count(*) FROM cnes_st WHERE pf_pj = '3' AND cpf_cnpj <> ''"
-        ) > 0,
-        true
+        ) > 0
     );
 
     // Filtro de município: só o município do estabelecimento escolhido.

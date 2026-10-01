@@ -130,14 +130,14 @@ function irProcedimentos() {
 }
 function botaoVoltar() {
   const anterior = E.pilha[E.pilha.length - 1];
-  const destino = !anterior ? "início" : anterior.tipo === "ficha" ? F.mascara(anterior.codigo) : anterior.tipo === "busca" ? "busca" : anterior.tipo === "mudou" ? "O que mudou" : anterior.tipo === "modulos" ? "Módulos e dados" : "início";
+  const destino = !anterior ? "início" : anterior.tipo === "ficha" ? F.mascara(anterior.codigo) : anterior.tipo === "busca" ? "busca" : anterior.tipo === "mudou" ? "O que mudou" : anterior.tipo === "modulos" ? "Módulos e dados" : anterior.tipo === "unidade" ? "Minha unidade" : "início";
   return el("button", { class: "link voltar", type: "button", onclick: voltar, title: "Alt+seta para a esquerda" }, `← Voltar para ${destino}`);
 }
 
 async function desenhar() {
   const c = limpar($("conteudo"));
   c.scrollTop = 0;
-  for (const b of ["ir-inicio", "ir-mudou", "ir-modulos"]) $(b).removeAttribute("aria-current");
+  for (const b of ["ir-inicio", "ir-mudou", "ir-unidade", "ir-modulos"]) $(b).removeAttribute("aria-current");
   if (CONSULTA.has(E.rota.tipo)) $("ir-inicio").setAttribute("aria-current", "page");
   atualizarRodapeProgresso();
   try {
@@ -145,6 +145,7 @@ async function desenhar() {
       case "busca": await telaBusca(c, E.rota.texto); break;
       case "ficha": await telaFicha(c, E.rota.codigo, E.rota.aba || "Resumo"); break;
       case "mudou": $("ir-mudou").setAttribute("aria-current", "page"); await telaMudou(c); break;
+      case "unidade": $("ir-unidade").setAttribute("aria-current", "page"); await telaUnidade(c, E.rota.aba || "Habilitações"); break;
       case "modulos": $("ir-modulos").setAttribute("aria-current", "page"); telaModulos(c); break;
       default: telaInicio(c);
     }
@@ -274,6 +275,7 @@ function capitalizar(s) {
 
 async function desenharArvore() {
   if (E.arvore === "cid") return desenharArvoreCid();
+  if (E.arvore === "fav") return desenharFavoritos();
   const raiz = limpar($("arvore-raiz"));
   if (!E.comp) { $("arvore-total").textContent = ""; return; }
   await preencherArvore(raiz, null);
@@ -283,6 +285,7 @@ async function desenharArvore() {
 }
 
 async function revelarNaArvore(codigo) {
+  if (E.arvore === "fav") { for (const b of document.querySelectorAll(".no.fav")) b.classList.toggle("selecionado", b.dataset.codigo === codigo); return; }
   if (E.arvore !== "proc") return; // quem está olhando os CIDs não perde a árvore de lugar
   for (const p of [codigo.slice(0, 2), codigo.slice(0, 4), codigo.slice(0, 6)]) E.abertos.add(p);
   await desenharArvore();
@@ -337,7 +340,11 @@ async function telaBusca(c, texto) {
     ? `${F.inteiro(r.total_procedimentos)} procedimento(s) com código começando em “${r.consulta}”`
     : `${F.inteiro(r.total_procedimentos)} procedimento(s) com “${r.consulta}” no nome`;
   pg.append(el("div", { class: "cab-linha" }, el("h1", { text: titulo }),
-    el("span", { class: "quieto", text: `em ${F.competencia(r.competencia)}; a busca ignora acentos e maiúsculas` })));
+    el("span", { class: "quieto", text: `em ${F.competencia(r.competencia)}; a busca ignora acentos e maiúsculas` }),
+    el("div", { class: "espaco" }),
+    r.procedimentos.length ? botaoExportar("Exportar", async () => [`SIGTAP busca ${r.consulta}`, `Busca por "${r.consulta}", competência ${F.competencia(r.competencia)}`,
+      [{ nome: "Procedimentos", colunas: ["Código", "Nome", "Instrumentos", "Complexidade", "Valor total (R$)"],
+        linhas: r.procedimentos.map((p) => [p.codigo, p.nome, p.instrumentos.join("; "), p.complexidade || p.tp_complexidade, p.valor_total_centavos / 100]) }]]) : null));
   if (r.procedimentos.length) {
     const instr = {};
     for (const p of r.procedimentos) for (const i of p.instrumentos) instr[i] = (instr[i] || 0) + 1;
@@ -487,6 +494,7 @@ async function telaFicha(c, codigo, aba) {
     el("div", {}, el("dt", { text: "Financiamento" }), el("dd", { text: nomeDe(p, "co_financiamento") || campoDe(p, "co_financiamento")?.valor || "—" })));
   if (f.procedimento.length > 1) chave.append(el("div", {}, el("dt", { text: "Atenção" }), el("dd", { class: "ambar", text: `${f.procedimento.length} linhas para este código no arquivo oficial` })));
   topo.append(chave);
+  marcasDaFicha(topo, codigo);
   // Abas agrupadas; as vazias ficam escondidas atrás de um botão.
   const abas = el("div", { class: "abas", role: "tablist" });
   const aba_ = (nome, r) => el("button", {
@@ -560,6 +568,7 @@ function resumo(corpo, f, p, rel, codigo) {
     const b = el("button", { class: "link pequeno", type: "button", onclick: () => { d.classList.toggle("recolhida"); b.textContent = d.classList.contains("recolhida") ? "mostrar inteira" : "recolher"; } }, "mostrar inteira");
     corpo.append(el("div", { class: "desc-bloco" }, el("span", { class: "rotulo", text: "Descrição oficial" }), d, b));
   }
+  corpo.append(el("div", { class: "apt-secao" }, blocoAptidao(codigo)));
   const cols = el("div", { class: "colunas" });
   corpo.append(cols);
   const A = el("div", { class: "coluna" }), B = el("div", { class: "coluna" });
@@ -662,7 +671,10 @@ function tabelaRelacao(corpo, r) {
   sec.append(el("table", { class: "tabela" },
     el("thead", {}, el("tr", {}, cols.map((c) => el("th", { text: nomeColuna(c) })), temQtd ? el("th", { text: "Repetições no arquivo" }) : null)),
     corpoT));
-  sec.append(el("p", { class: "quieto pequeno", text: `Tabela oficial ${r.tabela.toUpperCase()}: ${r.linhas.length} linha(s) em ${F.competencia(E.comp)}.` }));
+  sec.append(el("div", { class: "filtros" },
+    el("span", { class: "quieto pequeno", text: `Tabela oficial ${r.tabela.toUpperCase()}: ${r.linhas.length} linha(s) em ${F.competencia(E.comp)}.` }),
+    el("div", { class: "espaco" }),
+    botaoExportar("Exportar esta tabela", async () => [`SIGTAP ${E.selecionado} ${nomeRel(r)}`, `${nomeRel(r)} de ${F.mascara(E.selecionado)}, competência ${F.competencia(E.comp)}`, [abaDaRelacao(r)]])));
 }
 
 // ---------- histórico ----------
@@ -846,7 +858,7 @@ function telaModulos(c) {
       ter ? `IBGE: ${F.inteiro(ter.resumo.municipios_ibge)} municípios. Ministério da Saúde: ${F.inteiro(ter.resumo.municipios_saude)}, ${ter.resumo.regioes_saude} regiões de saúde.` +
         (ter.resumo.sem_regiao_saude.length ? ` Sem região de saúde na fonte: ${ter.resumo.sem_regiao_saude.join(", ")}.` : "") +
         ter.fontes.map((f) => ` ${f.fonte === "ibge" ? "IBGE" : "Ministério da Saúde"} obtido em ${f.origem.obtido_em}.`).join("") : "IBGE e Ministério da Saúde"],
-    ["Estabelecimentos (CNES)", "próxima fase", "—", "por UF ou município; chega na fase 3"],
+    linhaModuloCnes(),
     ["Produção ambulatorial e hospitalar (SIA, SIH)", "próxima fase", "—", "por UF e competência; chega na fase 4"],
     ["TUSS e TISS (ANS)", "próxima fase", "—", "correlação com o SIGTAP como apoio, sempre com a data da fonte"],
   ];
@@ -879,6 +891,8 @@ function telaModulos(c) {
       el("button", { class: "botao", type: "button", title: "Competência mais recente e território", onclick: () => baixar({ sigtap: "vigente", territorio: true, apagar_zips: false }) }, "Procurar atualizações"),
       el("button", { class: "botao", type: "button", onclick: () => invoke("cancelar") }, "Cancelar o que está em andamento")),
     painelProgresso()));
+
+  pg.append(secaoCnes());
 
   // Espaço em disco: apagar ZIPs já carregados.
   const conf = el("div", { class: "aviso", hidden: true },
@@ -1065,7 +1079,7 @@ function mostrarProgresso(p) {
 /** Barra no rodapé, à direita, quando a tela atual não mostra o progresso. */
 function atualizarRodapeProgresso() {
   const r = $("rodape-progresso");
-  const visivelNaTela = !$("primeira").hidden || E.rota.tipo === "modulos";
+  const visivelNaTela = !$("primeira").hidden || E.rota.tipo === "modulos" || !!$("conteudo").querySelector("[data-tarefa]");
   const mostrar = !!E.tarefa.ultimo && (E.tarefa.ativa || E.tarefa.falhou || Date.now() < E.tarefa.ate) && !visivelNaTela;
   r.hidden = !mostrar;
   if (mostrar) { desenharProgresso(r, E.tarefa.ultimo); r.title = `${E.tarefa.ultimo.resumo || ""}\n${E.tarefa.ultimo.mensagem || ""}\nClique para ver em Módulos e dados`.trim(); }
@@ -1106,13 +1120,14 @@ async function fimTarefa(f) {
   $("primeira-baixar").disabled = false;
   $("primeira-continuar").hidden = true;
   await atualizarSituacao();
+  await atualizarCnes();
   if (!$("arvore-raiz").querySelector(".no")) await desenharArvore();
   mostrarProgresso({
     resumo: f.ok ? "Concluído." : f.cancelada ? "Cancelado." : "Não concluído.",
     mensagem: f.mensagem, fracao: f.ok ? 1 : antes.fracao, indeterminado: false, falhou: !f.ok,
   });
   if (!f.ok && !$("primeira").hidden) { $("primeira-erro").hidden = false; $("primeira-erro").textContent = f.mensagem; }
-  if (E.rota.tipo === "modulos" || E.rota.tipo === "inicio") desenhar();
+  if (E.rota.tipo === "modulos" || E.rota.tipo === "inicio" || E.rota.tipo === "unidade") desenhar();
   carregarOfertasDeNovo();
   aposTarefa(f);
   if (f.ok) tirarAviso("recuperacao");
@@ -1212,11 +1227,12 @@ async function iniciar() {
   });
   document.addEventListener("mouseup", (ev) => { if (ev.button === 3 && E.pilha.length) { ev.preventDefault(); voltar(); } });
   $("competencia").addEventListener("change", async (ev) => {
-    E.comp = ev.target.value; rodape(); await desenharArvore(); desenhar();
+    E.comp = ev.target.value; rodape(); desenharAvisoCnes(); await desenharArvore(); desenhar();
   });
   $("ir-inicio").addEventListener("click", irProcedimentos);
   $("ir-mudou").addEventListener("click", () => ir({ tipo: "mudou" }));
   $("ir-modulos").addEventListener("click", () => ir({ tipo: "modulos" }));
+  iniciarUnidade();
   $("rodape-progresso").addEventListener("click", () => ir({ tipo: "modulos" }));
   primeiraExecucao();
   await tauri.event.listen("progresso", (ev) => { if (E.tarefa.ativa) mostrarProgresso(ev.payload); });
@@ -1228,6 +1244,7 @@ async function iniciar() {
     $("conteudo").append(el("div", { class: "pagina" }, erro(e)));
     return;
   }
+  await atualizarCnes();
   desenhar();
   $("arvore-raiz").append(el("li", {}, carregando("Carregando a árvore…")));
   desenharArvore().catch((e) => limpar($("arvore-raiz")).append(el("li", {}, erro(e))));

@@ -1,39 +1,25 @@
 [package]
-name = "sa-app"
-description = "Aplicativo desktop do SIGTAP Aberto (Tauri 2, portátil)"
+name = "sa-unidade"
+description = "Módulo CNES do usuário: baixar e carregar por UF, minha unidade, aptidão, rede, favoritos e exportação"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
-[[bin]]
-name = "sigtap-aberto"
-path = "src/main.rs"
-
-[build-dependencies]
-tauri-build = { version = "=2.7.0", features = [] }
-
 [dependencies]
-tauri = { version = "=2.12.0", features = [] }
-tauri-plugin-dialog = "=2.8.1"
 sa-core = { path = "../core" }
 sa-sources = { path = "../sources" }
 sa-packs = { path = "../packs" }
 sa-download = { path = "../download" }
 sa-query = { path = "../query" }
-sa-unidade = { path = "../unidade" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [dev-dependencies]
 sa-download = { path = "../download", features = ["servidor-falso"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
-
-[features]
-# Serve a interface embutida no executável (sem servidor de desenvolvimento).
-default = ["custom-protocol"]
-custom-protocol = ["tauri/custom-protocol"]
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [lints]
 workspace = true

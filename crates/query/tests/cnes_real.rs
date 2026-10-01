@@ -11,7 +11,7 @@ use sa_query::cnes::ConsultaCnes;
 use sa_sources::cnes::{Manifesto, ler_cnv};
 use sa_sources::{dbc, latin1};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn preparado() -> Option<(PathBuf, PathBuf)> {
     let sig = PathBuf::from(std::env::var("SA_SIGTAP_BANCO_CONSULTA").ok()?);
@@ -21,7 +21,7 @@ fn preparado() -> Option<(PathBuf, PathBuf)> {
 
 /// Monta o banco do CNES de MS (08/2026) com tudo: tabelas, nomes, decodificadores e os
 /// profissionais do estabelecimento com mais habilitações.
-fn montar(pasta: &PathBuf) -> (PathBuf, String) {
+fn montar(pasta: &Path) -> (PathBuf, String) {
     let m = Manifesto::carregar();
     let arq = std::env::temp_dir().join(format!("sa_q_cnes_{}.db", std::process::id()));
     let _ = std::fs::remove_file(&arq);

@@ -17,6 +17,7 @@ sa-sources = { path = "../sources" }
 sa-packs = { path = "../packs" }
 sa-download = { path = "../download" }
 sa-query = { path = "../query" }
+sa-unidade = { path = "../unidade" }
 serde_json = "1"
 sha2 = "0.11"
 

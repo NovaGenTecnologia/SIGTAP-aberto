@@ -399,20 +399,24 @@ async fn apagar_zips(s: Estado<'_>) -> Result<String, String> {
     s.apagar_zips()
 }
 
-
 // ---- Fase 3: CNES, minha unidade, favoritos, anotações e exportação ----
 
 /// Situação do módulo CNES: UFs carregadas, competência de cada uma e a unidade escolhida.
 #[tauri::command]
 async fn cnes_situacao(s: Estado<'_>) -> Result<serde_json::Value, String> {
-    Ok(unidade::situacao(&s.pastas))
+    Ok(unidade::situacao(&unidade::local(&s.pastas)))
 }
 
 #[tauri::command]
 fn cnes_baixar(app: AppHandle, s: Estado<'_>, pedido: unidade::PedidoCnes) -> Result<(), String> {
     let s = s.inner().clone();
     em_segundo_plano(app, s, move |sv, emissor, _| {
-        unidade::baixar_cnes(&sv.pastas, &pedido, &sv.cancelar, emissor)
+        unidade::baixar_cnes(
+            &unidade::local(&sv.pastas),
+            &pedido,
+            &sv.cancelar,
+            &unidade::repassar(emissor),
+        )
     })
 }
 
@@ -420,7 +424,12 @@ fn cnes_baixar(app: AppHandle, s: Estado<'_>, pedido: unidade::PedidoCnes) -> Re
 fn cnes_importar(app: AppHandle, s: Estado<'_>, pasta: String, uf: String) -> Result<(), String> {
     let s = s.inner().clone();
     em_segundo_plano(app, s, move |sv, emissor, _| {
-        unidade::importar_cnes(&sv.pastas, &PathBuf::from(pasta), &uf, emissor)
+        unidade::importar_cnes(
+            &unidade::local(&sv.pastas),
+            &PathBuf::from(pasta),
+            &uf,
+            &unidade::repassar(emissor),
+        )
     })
 }
 
@@ -437,32 +446,45 @@ async fn cnes_apagar(s: Estado<'_>, uf: String) -> Result<String, String> {
     if s.ocupado.load(Ordering::SeqCst) {
         return Err("há uma tarefa em andamento. Espere terminar ou cancele.".into());
     }
-    unidade::apagar_uf(&s.pastas, &uf)
+    unidade::apagar_uf(&unidade::local(&s.pastas), &uf)
 }
 
 #[tauri::command]
-async fn cnes_buscar(s: Estado<'_>, uf: String, texto: String) -> Result<serde_json::Value, String> {
-    unidade::buscar_estabelecimentos(&s.pastas, &uf, &texto)
+async fn cnes_buscar(
+    s: Estado<'_>,
+    uf: String,
+    texto: String,
+) -> Result<serde_json::Value, String> {
+    unidade::buscar_estabelecimentos(&unidade::local(&s.pastas), &uf, &texto)
 }
 
 #[tauri::command]
-async fn unidade_definir(s: Estado<'_>, uf: String, cnes: String) -> Result<serde_json::Value, String> {
+async fn unidade_definir(
+    s: Estado<'_>,
+    uf: String,
+    cnes: String,
+) -> Result<serde_json::Value, String> {
     if s.ocupado.load(Ordering::SeqCst) {
-        return Err("há uma tarefa em andamento. Espere terminar e escolha a unidade de novo.".into());
+        return Err(
+            "há uma tarefa em andamento. Espere terminar e escolha a unidade de novo.".into(),
+        );
     }
-    unidade::definir_minha(&s.pastas, &uf, &cnes)
+    unidade::definir_minha(&unidade::local(&s.pastas), &uf, &cnes)
 }
 
 #[tauri::command]
 async fn unidade_limpar(s: Estado<'_>) -> Result<(), String> {
-    unidade::limpar_minha(&s.pastas)
+    unidade::limpar_minha(&unidade::local(&s.pastas))
 }
 
 #[tauri::command]
-async fn unidade_ver(s: Estado<'_>, competencia: Option<String>) -> Result<serde_json::Value, String> {
+async fn unidade_ver(
+    s: Estado<'_>,
+    competencia: Option<String>,
+) -> Result<serde_json::Value, String> {
     s.com_consulta(|q| {
         let c = s.competencia(q, competencia.as_deref())?;
-        unidade::unidade(&s.pastas, q, c)
+        unidade::unidade(&unidade::local(&s.pastas), q, c)
     })
 }
 
@@ -475,7 +497,7 @@ async fn aptidao(
 ) -> Result<serde_json::Value, String> {
     s.com_consulta(|q| {
         let c = s.competencia(q, competencia.as_deref())?;
-        unidade::aptidao(&s.pastas, q, c, &codigo)
+        unidade::aptidao(&unidade::local(&s.pastas), q, c, &codigo)
     })
 }
 
@@ -489,7 +511,13 @@ async fn rede(
 ) -> Result<serde_json::Value, String> {
     s.com_consulta(|q| {
         let c = s.competencia(q, competencia.as_deref())?;
-        unidade::rede(&s.pastas, q, c, &codigo, escopo.as_deref().unwrap_or("municipio"))
+        unidade::rede(
+            &unidade::local(&s.pastas),
+            q,
+            c,
+            &codigo,
+            escopo.as_deref().unwrap_or("municipio"),
+        )
     })
 }
 
@@ -500,8 +528,9 @@ async fn marcar_favorito(
     codigo: String,
     favorito: bool,
 ) -> Result<serde_json::Value, String> {
-    let u = unidade::usuario(&s.pastas)?;
-    u.favoritar(&tipo, &codigo, favorito).map_err(|e| e.to_string())?;
+    let u = unidade::usuario(&unidade::local(&s.pastas))?;
+    u.favoritar(&tipo, &codigo, favorito)
+        .map_err(|e| e.to_string())?;
     json(u.marcado(&tipo, &codigo).map_err(|e| e.to_string())?)
 }
 
@@ -512,14 +541,19 @@ async fn anotar(
     codigo: String,
     texto: String,
 ) -> Result<serde_json::Value, String> {
-    let u = unidade::usuario(&s.pastas)?;
-    u.anotar(&tipo, &codigo, &texto).map_err(|e| e.to_string())?;
+    let u = unidade::usuario(&unidade::local(&s.pastas))?;
+    u.anotar(&tipo, &codigo, &texto)
+        .map_err(|e| e.to_string())?;
     json(u.marcado(&tipo, &codigo).map_err(|e| e.to_string())?)
 }
 
 #[tauri::command]
 async fn marcado(s: Estado<'_>, tipo: String, codigo: String) -> Result<serde_json::Value, String> {
-    json(unidade::usuario(&s.pastas)?.marcado(&tipo, &codigo).map_err(|e| e.to_string())?)
+    json(
+        unidade::usuario(&unidade::local(&s.pastas))?
+            .marcado(&tipo, &codigo)
+            .map_err(|e| e.to_string())?,
+    )
 }
 
 /// Favoritos e anotações do tipo, com o nome de cada procedimento na competência pedida.
@@ -529,7 +563,9 @@ async fn marcados(
     tipo: String,
     competencia: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    let itens = unidade::usuario(&s.pastas)?.marcados(&tipo).map_err(|e| e.to_string())?;
+    let itens = unidade::usuario(&unidade::local(&s.pastas))?
+        .marcados(&tipo)
+        .map_err(|e| e.to_string())?;
     s.com_consulta(|q| {
         let c = s.competencia(q, competencia.as_deref())?;
         unidade::marcados_com_nome(q, c, &itens)
@@ -549,7 +585,13 @@ async fn exportar(
     planilha.validar()?;
     let limpo: String = nome
         .chars()
-        .map(|c| if c.is_alphanumeric() || "-_ .".contains(c) { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || "-_ .".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
         .take(80)
         .collect();
     let Some(destino) = app

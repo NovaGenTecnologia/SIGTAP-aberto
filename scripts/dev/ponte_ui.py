@@ -38,6 +38,8 @@ def main():
     ap.add_argument("--recuperacao", action="store_true", help="simula banco danificado achado na abertura")
     ap.add_argument("--versao-anterior", action="store_true", help="simula dados gravados por versão anterior do programa")
     ap.add_argument("--bloqueio", action="store_true", help="simula dados gravados por versão mais nova do programa")
+    ap.add_argument("--dados", help="pasta de dados para CNES, unidade e favoritos (comandos reais do CLI)")
+    ap.add_argument("--cnes-origem", help="pasta com .dbc do CNES: 'baixar' na ponte simula o progresso e importa daqui")
     a = ap.parse_args()
     eventos, trava = [], threading.Lock()
     estado = {"primeira": a.primeira, "ocupado": False, "cancelar": False}
@@ -84,6 +86,31 @@ def main():
         if p.returncode != 0:
             raise RuntimeError(p.stderr.strip().removeprefix("ERRO: "))
         return json.loads(p.stdout)
+
+    def cli_d(*args, entrada=None, texto=False):
+        if not a.dados: raise RuntimeError("ponte sem --dados: comandos do CNES indisponíveis")
+        p = subprocess.run([a.cli, *args, "--banco", a.banco, "--dados", a.dados], capture_output=True, text=True, input=entrada)
+        if p.returncode != 0:
+            raise RuntimeError(p.stderr.strip().split("ERRO: ")[-1])
+        return p.stdout.strip() if texto else (json.loads(p.stdout) if p.stdout.strip() else None)
+
+    def simular_cnes(uf):
+        estado["ocupado"] = True; estado["cancelar"] = False
+        resumo = f"Baixando o CNES de {uf}"
+        emitir("progresso", {"resumo": resumo, "mensagem": "Consultando o servidor do DATASUS (simulado)", "fracao": 0, "indeterminado": True})
+        time.sleep(0.8)
+        nomes = ["ST", "HB", "SR", "LT", "EQ"]
+        for i, t in enumerate(nomes):
+            if estado["cancelar"]: break
+            emitir("progresso", {"resumo": resumo, "mensagem": f"Baixando {t}{uf}2608.dbc", "fracao": i / 9, "indeterminado": False}); time.sleep(0.3)
+        ok, msg = True, ""
+        if not estado["cancelar"]:
+            emitir("progresso", {"resumo": resumo, "mensagem": "Carregando no banco", "fracao": 8 / 9, "indeterminado": False})
+            try: msg = cli_d("cnes-importar", uf, "--origem", a.cnes_origem or "", texto=True).splitlines()[-1] + " (ponte: importado da pasta local)"
+            except Exception as e: ok, msg = False, str(e)
+        estado["ocupado"] = False
+        if estado["cancelar"]: emitir("tarefa_fim", {"ok": False, "cancelada": True, "mensagem": "cancelado (simulação)"})
+        else: emitir("tarefa_fim", {"ok": ok, "cancelada": False, "mensagem": msg})
 
     def situacao():
         c = sqlite3.connect(a.banco)
@@ -146,6 +173,28 @@ def main():
         if cmd in ("baixar", "importar"):
             if estado["ocupado"]: raise RuntimeError("já existe uma tarefa em andamento. Espere terminar ou cancele.")
             threading.Thread(target=simular, args=(args.get("pedido") or {"sigtap": "vigente"},), daemon=True).start(); return None
+        # ---- Fase 3: comandos reais do CLI sobre --dados ----
+        if cmd == "cnes_situacao": return cli_d("cnes-situacao")
+        if cmd in ("cnes_baixar", "cnes_importar"):
+            if estado["ocupado"]: raise RuntimeError("já existe uma tarefa em andamento. Espere terminar ou cancele.")
+            uf = (args.get("pedido") or {}).get("uf") or args.get("uf")
+            threading.Thread(target=simular_cnes, args=(uf,), daemon=True).start(); return None
+        if cmd == "cnes_competencias": time.sleep(0.5); return [{"competencia": c, "bytes": 310_000} for c in ("202608", "202607", "202606", "202605")]
+        if cmd == "cnes_apagar": return cli_d("cnes-apagar", args["uf"], texto=True)
+        if cmd == "cnes_buscar": return cli_d("cnes-buscar", args["uf"], args["texto"])
+        if cmd == "unidade_definir": return cli_d("unidade-definir", args["uf"], args["cnes"])
+        if cmd == "unidade_limpar": return cli_d("unidade-limpar")
+        if cmd == "unidade_ver": return cli_d("unidade", *comp)
+        if cmd == "aptidao": return cli_d("aptidao", args["codigo"], *comp)
+        if cmd == "rede": return cli_d("rede", args["codigo"], "--escopo", args.get("escopo") or "municipio", *comp)
+        if cmd == "marcar_favorito": return cli_d("favorito", args["codigo"], "sim" if args["favorito"] else "nao")
+        if cmd == "anotar": return cli_d("anotar", args["codigo"], *([args["texto"]] if args["texto"] else []))
+        if cmd == "marcado": return cli_d("marcado", args["codigo"])
+        if cmd == "marcados": return cli_d("marcados", *comp)
+        if cmd == "exportar":
+            destino = f"/tmp/ponte_export/{re.sub(r'[^A-Za-z0-9_.-]', '_', args['nome'])}.xlsx"
+            pathlib.Path(destino).parent.mkdir(exist_ok=True)
+            return cli_d("exportar", "--saida", destino, entrada=json.dumps(args["planilha"]), texto=True)
         raise RuntimeError(f"comando sem simulação na ponte: {cmd}")
 
     class H(http.server.SimpleHTTPRequestHandler):

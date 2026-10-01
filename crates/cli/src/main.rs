@@ -44,11 +44,31 @@ Comandos:
   mudou [TABELA] [--de AAAAMM] [--competencia AAAAMM] [--desde N]
                                   o que mudou da competência anterior (ou de --de), em JSON;
                                   com TABELA, só ela, a partir do item N (padrão 0)
+  cnes-competencias <UF>          competências do CNES no FTP oficial para a UF
+  cnes-baixar <UF> [--competencia AAAAMM]
+                                  baixa o CNES da UF (estabelecimentos, habilitações, serviços,
+                                  leitos, equipamentos; profissionais só da unidade escolhida)
+  cnes-importar <UF> --origem PASTA
+                                  carrega arquivos do CNES baixados por conta própria
+  cnes-situacao                   UFs carregadas e a unidade escolhida, em JSON
+  cnes-buscar <UF> <texto>        procura estabelecimentos por nome ou número do CNES
+  cnes-apagar <UF>                apaga o CNES da UF (banco e arquivos guardados)
+  unidade-definir <UF> <CNES>     escolhe a sua unidade
+  unidade-limpar                  esquece a unidade escolhida
+  unidade [--competencia AAAAMM]  a sua unidade completa, em JSON
+  aptidao <código>                a sua unidade está apta ao procedimento? (regra não confirmada)
+  rede <código> [--escopo municipio|regiao|uf]
+                                  quem faz o procedimento na rede
+  favorito <código> sim|nao       marca ou desmarca um procedimento favorito
+  anotar <código> [texto]         grava a anotação do procedimento (sem texto, apaga)
+  marcados                        favoritos e anotações, em JSON
+  exportar --saida ARQ.xlsx|.csv  grava a planilha recebida em JSON pela entrada padrão
   ajuda                           mostra esta ajuda
 
 Opções:
   --banco ARQUIVO   banco SQLite (padrão: dados\\sigtap.db ao lado do programa)
   --zips PASTA      pasta dos ZIPs (padrão: dados\\zips ao lado do programa)
+  --dados PASTA     pasta de dados para CNES, unidade e favoritos (padrão: a pasta do banco)
 ";
 
 struct Opcoes {
@@ -62,6 +82,8 @@ struct Opcoes {
     de: Option<Competencia>,
     desde: Option<usize>,
     livres: Vec<PathBuf>,
+    dados: Option<PathBuf>,
+    escopo: String,
 }
 
 fn pasta_do_programa() -> PathBuf {
@@ -84,6 +106,8 @@ fn ler_opcoes(args: &[String]) -> Result<Opcoes, String> {
         de: None,
         desde: None,
         livres: Vec::new(),
+        dados: None,
+        escopo: "municipio".into(),
     };
     let mut i = 0;
     let valor = |i: usize, nome: &str| -> Result<String, String> {
@@ -126,6 +150,14 @@ fn ler_opcoes(args: &[String]) -> Result<Opcoes, String> {
             }
             "--de" => {
                 o.de = Some(Competencia::de_texto(&valor(i, "--de")?).map_err(|e| e.to_string())?);
+                i += 1;
+            }
+            "--dados" => {
+                o.dados = Some(PathBuf::from(valor(i, "--dados")?));
+                i += 1;
+            }
+            "--escopo" => {
+                o.escopo = valor(i, "--escopo")?;
                 i += 1;
             }
             "--ultima" => o.ultima = true,
@@ -578,6 +610,154 @@ fn cmd_importar(o: &Opcoes) -> Result<(), String> {
     Ok(())
 }
 
+/// CNES, minha unidade, favoritos e exportação (as mesmas funções usadas pela interface).
+fn cmd_unidade(cmd: &str, o: &Opcoes) -> Result<(), String> {
+    use sa_unidade as un;
+    let dados = match &o.dados {
+        Some(d) => d.clone(),
+        None => o.banco.parent().map(Path::to_path_buf).unwrap_or_default(),
+    };
+    let p = un::Pastas { dados };
+    let livres: Vec<String> = o
+        .livres
+        .iter()
+        .map(|x| x.to_string_lossy().into_owned())
+        .collect();
+    let arg = |i: usize, oque: &str| -> Result<&str, String> {
+        livres
+            .get(i)
+            .map(String::as_str)
+            .ok_or_else(|| format!("informe {oque}. Veja: sigtap-aberto-cli ajuda"))
+    };
+    let progresso = |x: un::Progresso| eprintln!("[{:>3.0}%] {}", x.fracao * 100.0, x.mensagem);
+    let mostrar = |v: serde_json::Value| -> Result<(), String> {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?
+        );
+        Ok(())
+    };
+    let sigtap = || -> Result<(sa_query::Consulta, Competencia), String> {
+        let q = sa_query::Consulta::abrir(&o.banco).map_err(|e| e.to_string())?;
+        let c = match o.competencia {
+            Some(c) => c,
+            None => q.mais_recente().map_err(|e| e.to_string())?,
+        };
+        Ok((q, c))
+    };
+    match cmd {
+        "cnes-competencias" => mostrar(un::competencias_no_servidor(arg(0, "a UF")?)?),
+        "cnes-baixar" => {
+            let pedido = un::PedidoCnes {
+                uf: arg(0, "a UF")?.to_string(),
+                competencia: o.competencia.map(|c| c.to_string()).unwrap_or_default(),
+            };
+            println!(
+                "{}",
+                un::baixar_cnes(&p, &pedido, &AtomicBool::new(false), &progresso)?
+            );
+            Ok(())
+        }
+        "cnes-importar" => {
+            let origem = o.origem.as_ref().ok_or("informe --origem PASTA")?;
+            println!(
+                "{}",
+                un::importar_cnes(&p, origem, arg(0, "a UF")?, &progresso)?
+            );
+            Ok(())
+        }
+        "cnes-situacao" => mostrar(un::situacao(&p)),
+        "cnes-buscar" => mostrar(un::buscar_estabelecimentos(
+            &p,
+            arg(0, "a UF")?,
+            &livres[1..].join(" "),
+        )?),
+        "cnes-apagar" => {
+            println!("{}", un::apagar_uf(&p, arg(0, "a UF")?)?);
+            Ok(())
+        }
+        "unidade-definir" => mostrar(un::definir_minha(
+            &p,
+            arg(0, "a UF")?,
+            arg(1, "o número do CNES")?,
+        )?),
+        "unidade-limpar" => un::limpar_minha(&p),
+        "unidade" => {
+            let (q, c) = sigtap()?;
+            mostrar(un::unidade(&p, &q, c)?)
+        }
+        "aptidao" => {
+            let (q, c) = sigtap()?;
+            mostrar(un::aptidao(&p, &q, c, arg(0, "o código do procedimento")?)?)
+        }
+        "rede" => {
+            let (q, c) = sigtap()?;
+            mostrar(un::rede(
+                &p,
+                &q,
+                c,
+                arg(0, "o código do procedimento")?,
+                &o.escopo,
+            )?)
+        }
+        "favorito" => {
+            let codigo = arg(0, "o código do procedimento")?;
+            let u = un::usuario(&p)?;
+            u.favoritar("procedimento", codigo, arg(1, "sim ou nao")? == "sim")
+                .map_err(|e| e.to_string())?;
+            mostrar(
+                serde_json::to_value(
+                    u.marcado("procedimento", codigo)
+                        .map_err(|e| e.to_string())?,
+                )
+                .map_err(|e| e.to_string())?,
+            )
+        }
+        "anotar" => {
+            let codigo = arg(0, "o código do procedimento")?;
+            let u = un::usuario(&p)?;
+            u.anotar("procedimento", codigo, &livres[1..].join(" "))
+                .map_err(|e| e.to_string())?;
+            mostrar(
+                serde_json::to_value(
+                    u.marcado("procedimento", codigo)
+                        .map_err(|e| e.to_string())?,
+                )
+                .map_err(|e| e.to_string())?,
+            )
+        }
+        "marcado" => {
+            let u = un::usuario(&p)?;
+            mostrar(
+                serde_json::to_value(
+                    u.marcado("procedimento", arg(0, "o código do procedimento")?)
+                        .map_err(|e| e.to_string())?,
+                )
+                .map_err(|e| e.to_string())?,
+            )
+        }
+        "marcados" => {
+            let itens = un::usuario(&p)?
+                .marcados("procedimento")
+                .map_err(|e| e.to_string())?;
+            let (q, c) = sigtap()?;
+            mostrar(un::marcados_com_nome(&q, c, &itens)?)
+        }
+        _ => {
+            let saida = o
+                .saida
+                .as_ref()
+                .ok_or("informe --saida ARQUIVO.xlsx ou .csv")?;
+            let planilha: sa_query::exportar::Planilha =
+                serde_json::from_reader(std::io::stdin().lock())
+                    .map_err(|e| format!("a planilha recebida não é válida ({e})"))?;
+            planilha.validar()?;
+            println!("{}", un::exportar(saida, &planilha, 0)?);
+            Ok(())
+        }
+    }
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(cmd) = args.first().cloned() else {
@@ -596,6 +776,11 @@ fn main() -> ExitCode {
         "territorio" => cmd_territorio(&o),
         "ficha" | "buscar" | "arvore" | "arvore-cid" | "ligados" | "historico" | "mudou" => {
             cmd_consulta(cmd.as_str(), &o)
+        }
+        "cnes-competencias" | "cnes-baixar" | "cnes-importar" | "cnes-situacao" | "cnes-buscar"
+        | "cnes-apagar" | "unidade-definir" | "unidade-limpar" | "unidade" | "aptidao" | "rede"
+        | "favorito" | "anotar" | "marcado" | "marcados" | "exportar" => {
+            cmd_unidade(cmd.as_str(), &o)
         }
         "ajuda" | "--help" | "-h" => {
             print!("{AJUDA}");

@@ -126,7 +126,10 @@ pub struct BancoCnes {
 /// SHA-256 em hexadecimal (para registrar a origem de cada arquivo carregado).
 pub fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
-    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// Nome da tabela de um tipo (`cnes_st`...). O tipo já foi validado pelo manifesto.

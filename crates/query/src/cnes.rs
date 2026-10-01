@@ -235,6 +235,11 @@ pub struct Rede {
     pub regra_confirmada: bool,
 }
 
+/// CNES -> habilitações em vigor.
+type HabilitacoesPorCnes = HashMap<String, HashSet<String>>;
+/// CNES -> pares (serviço, classificação).
+type ParesPorCnes = HashMap<String, HashSet<(String, String)>>;
+
 /// O que um procedimento exige, na competência do SIGTAP.
 struct Exigencias {
     /// (habilitação, grupo ou vazio).
@@ -940,10 +945,17 @@ impl ConsultaCnes {
         let hab_ok = Self::atende_habilitacao(&alternativas, &vigentes);
         if !hab_ok {
             let lista: BTreeSet<&str> = ex.habilitacoes.iter().map(|h| h.0.as_str()).collect();
-            motivos.push(format!(
-                "Falta habilitação: o procedimento exige {} e a unidade não tem nenhuma alternativa completa em vigor.",
-                lista.into_iter().collect::<Vec<_>>().join(", ")
-            ));
+            let codigos = lista.into_iter().collect::<Vec<_>>().join(", ");
+            motivos.push(if alternativas.len() > 1 {
+                format!(
+                    "Falta habilitação: o procedimento aceita {} alternativas (habilitações {codigos}) e a unidade não tem nenhuma delas completa e em vigor.",
+                    alternativas.len()
+                )
+            } else {
+                format!(
+                    "Falta habilitação: o procedimento exige {codigos} e a unidade não a tem em vigor."
+                )
+            });
         }
         if ex.habilitacoes.iter().any(|h| h.0.starts_with("38")) {
             avisos.push("O procedimento lista habilitação do grupo 38 (Agora Tem Especialistas). O Ministério da Saúde informa regra própria para essas habilitações; confira antes de concluir.".to_string());
@@ -1071,13 +1083,7 @@ impl ConsultaCnes {
     fn cadastro_para(
         &self,
         ex: &Exigencias,
-    ) -> Result<
-        (
-            HashMap<String, HashSet<String>>,
-            HashMap<String, HashSet<(String, String)>>,
-        ),
-        ErroConsulta,
-    > {
+    ) -> Result<(HabilitacoesPorCnes, ParesPorCnes), ErroConsulta> {
         let mut hab: HashMap<String, HashSet<String>> = HashMap::new();
         let codigos: BTreeSet<&String> = ex.habilitacoes.iter().map(|h| &h.0).collect();
         if !codigos.is_empty() && self.tem("cnes_hb") {

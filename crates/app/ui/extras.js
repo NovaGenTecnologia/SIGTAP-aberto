@@ -297,19 +297,23 @@ function escolherArvore(qual, tocar) {
   try { localStorage.setItem("arvore-aba", qual); } catch { /* sem armazenamento: vale só nesta abertura */ }
   $("aba-proc").setAttribute("aria-selected", String(qual === "proc"));
   $("aba-cid").setAttribute("aria-selected", String(qual === "cid"));
-  $("arvore").setAttribute("aria-label", qual === "cid" ? "CIDs em árvore" : "Tabela de procedimentos");
+  $("aba-fav").setAttribute("aria-selected", String(qual === "fav"));
+  $("arvore-tudo").hidden = qual === "fav";
+  $("arvore").setAttribute("aria-label", qual === "cid" ? "CIDs em árvore" : qual === "fav" ? "Favoritos e anotações" : "Tabela de procedimentos");
   atualizarBotaoTudo();
   if (tocar !== false) desenharArvore();
 }
 function iniciarAbasArvore() {
   let salva = "proc";
-  try { salva = localStorage.getItem("arvore-aba") === "cid" ? "cid" : "proc"; } catch { /* usa o padrão */ }
+  try { const v = localStorage.getItem("arvore-aba"); salva = v === "cid" || v === "fav" ? v : "proc"; } catch { /* usa o padrão */ }
   $("aba-proc").addEventListener("click", () => E.arvore !== "proc" && escolherArvore("proc"));
   $("aba-cid").addEventListener("click", () => E.arvore !== "cid" && escolherArvore("cid"));
   $("arvore-tudo").addEventListener("click", alternarTudo);
-  for (const aba of [$("aba-proc"), $("aba-cid")]) aba.addEventListener("keydown", (ev) => {
-    if (ev.key === "ArrowRight" || ev.key === "ArrowLeft") { const o = aba === $("aba-proc") ? $("aba-cid") : $("aba-proc"); o.focus(); o.click(); }
-  });
+  const abas = [$("aba-proc"), $("aba-cid"), $("aba-fav")];
+  abas.forEach((aba, i) => aba.addEventListener("keydown", (ev) => {
+    if (ev.key !== "ArrowRight" && ev.key !== "ArrowLeft") return;
+    const o = abas[(i + (ev.key === "ArrowRight" ? 1 : abas.length - 1)) % abas.length]; o.focus(); o.click();
+  }));
   escolherArvore(salva, false);
 }
 

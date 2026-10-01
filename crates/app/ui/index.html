@@ -22,8 +22,10 @@
       <span>Competência</span>
       <select id="competencia" aria-label="Competência"></select>
     </label>
+    <button class="competencia cnes" id="cnes-comp" type="button" hidden></button>
     <button class="link-barra" id="ir-inicio" type="button">Procedimentos</button>
     <button class="link-barra" id="ir-mudou" type="button">O que mudou</button>
+    <button class="link-barra" id="ir-unidade" type="button">Minha unidade</button>
     <button class="link-barra" id="ir-modulos" type="button">Módulos e dados</button>
   </header>
 
@@ -35,6 +37,7 @@
         <div class="abas-arvore" role="tablist" aria-label="O que navegar">
           <button type="button" role="tab" id="aba-proc" aria-selected="true" aria-controls="arvore-raiz">Procedimentos</button>
           <button type="button" role="tab" id="aba-cid" aria-selected="false" aria-controls="arvore-raiz">CIDs</button>
+          <button type="button" role="tab" id="aba-fav" aria-selected="false" aria-controls="arvore-raiz" title="Favoritos e anotações">Favoritos</button>
         </div>
         <span id="arvore-total"></span>
         <button type="button" class="icone" id="arvore-tudo" aria-label="Expandir tudo" title="Expandir tudo"></button>
@@ -97,6 +100,7 @@
   <script src="formatos.js"></script>
   <script src="apoio.js"></script>
   <script src="extras.js"></script>
+  <script src="unidade.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -2798,12 +2798,12 @@ dependencies = [
  "sa-packs",
  "sa-query",
  "sa-sources",
+ "sa-unidade",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
- "zip",
 ]
 
 [[package]]
@@ -2815,6 +2815,7 @@ dependencies = [
  "sa-packs",
  "sa-query",
  "sa-sources",
+ "sa-unidade",
  "serde_json",
  "sha2 0.11.0",
 ]
@@ -2874,6 +2875,21 @@ dependencies = [
  "serde",
  "serde_json",
  "toml 1.1.6+spec-1.1.0",
+ "zip",
+]
+
+[[package]]
+name = "sa-unidade"
+version = "0.1.1"
+dependencies = [
+ "rusqlite",
+ "sa-core",
+ "sa-download",
+ "sa-packs",
+ "sa-query",
+ "sa-sources",
+ "serde",
+ "serde_json",
  "zip",
 ]
 
