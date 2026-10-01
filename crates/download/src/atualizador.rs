@@ -406,9 +406,14 @@ mod testes {
         assert!(!e_mais_nova("1.0.0", "lixo"));
     }
 
+    /// Os testes valem em qualquer máquina: o pacote padrão depende da arquitetura que compila.
+    fn interpretar_x64(json: &[u8], repo: &str) -> Result<Option<Lancamento>, ErroAtualizacao> {
+        interpretar_para(json, repo, "-windows-x64.zip")
+    }
+
     #[test]
     fn interpreta_lancamento_e_recusa_o_que_nao_serve() {
-        let l = interpretar(json("v0.2.0", "").as_bytes(), REPO)
+        let l = interpretar_x64(json("v0.2.0", "").as_bytes(), REPO)
             .unwrap()
             .unwrap();
         assert_eq!(l.versao, "0.2.0");
@@ -416,19 +421,23 @@ mod testes {
         assert!(l.soma_url.ends_with(".zip.sha256"));
         // Rascunho e pré-lançamento: ignorados.
         let rascunho = json("v0.2.0", "").replace(r#""draft":false"#, r#""draft":true"#);
-        assert!(interpretar(rascunho.as_bytes(), REPO).unwrap().is_none());
+        assert!(
+            interpretar_x64(rascunho.as_bytes(), REPO)
+                .unwrap()
+                .is_none()
+        );
         let pre = json("v0.2.0", "").replace(r#""prerelease":false"#, r#""prerelease":true"#);
-        assert!(interpretar(pre.as_bytes(), REPO).unwrap().is_none());
+        assert!(interpretar_x64(pre.as_bytes(), REPO).unwrap().is_none());
         // Sem ZIP de Windows.
         let sem = r#"{"tag_name":"v0.3.0","assets":[]}"#;
-        assert!(interpretar(sem.as_bytes(), REPO).unwrap().is_none());
+        assert!(interpretar_x64(sem.as_bytes(), REPO).unwrap().is_none());
         // Endereço fora do repositório: erro de segurança.
         let ruim = json("v0.2.0", "").replace(&format!("github.com/{REPO}"), "exemplo.com/x");
         assert!(matches!(
-            interpretar(ruim.as_bytes(), REPO),
+            interpretar_x64(ruim.as_bytes(), REPO),
             Err(ErroAtualizacao::Seguranca(_))
         ));
-        assert!(interpretar(b"nao e json", REPO).is_err());
+        assert!(interpretar_x64(b"nao e json", REPO).is_err());
     }
 
     #[test]
