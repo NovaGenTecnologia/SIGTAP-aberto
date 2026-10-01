@@ -13,6 +13,7 @@
 pub mod arvore;
 pub mod busca;
 pub mod cid;
+pub mod cnes;
 pub mod ficha;
 pub mod historico;
 pub mod mudancas;
