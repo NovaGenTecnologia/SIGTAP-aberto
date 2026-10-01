@@ -4,6 +4,9 @@
 //! seguintes DBC, DBF, JSON, CSV, XLSX) em registros, com o esquema lido da própria fonte. Não
 //! grava banco. Limites de memória e de descompressão obrigatórios.
 
+pub mod dbc;
+pub mod dbf;
+pub mod dcl;
 pub mod latin1;
 pub mod sigtap;
 pub mod territorio;
