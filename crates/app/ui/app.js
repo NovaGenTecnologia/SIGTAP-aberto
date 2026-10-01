@@ -127,8 +127,9 @@ async function desenhar() {
 // ---------- árvore ----------
 async function abrirNo(li, no) {
   const filhos = li.querySelector("ul");
-  if (filhos) { filhos.remove(); E.abertos.delete(no.codigo); li.querySelector(".seta").textContent = "▸"; return; }
+  if (filhos) { filhos.remove(); li.classList.remove("aberto"); E.abertos.delete(no.codigo); li.querySelector(".seta").textContent = "▸"; return; }
   E.abertos.add(no.codigo);
+  li.classList.add("aberto");
   li.querySelector(".seta").textContent = "▾";
   const ul = el("ul", { role: "group" });
   li.append(ul);
@@ -143,17 +144,20 @@ async function preencherArvore(ul, pai) {
   const nivel = pai ? pai.length / 2 : 0;
   for (const no of nos) {
     const folha = no.nivel === "procedimento";
+    // A numeração é a tabulação: cada nível mostra só o seu pedaço do código (04, 06, 01,
+    // 057-9), em escada; o código inteiro fica na dica e na ficha.
+    const segmento = folha ? `${no.codigo.slice(6, 9)}-${no.codigo.slice(9)}` : no.codigo.slice(-2);
     const btn = el("button", {
-      class: "no" + (folha && no.codigo === E.selecionado ? " selecionado" : ""),
-      type: "button", role: "treeitem", "data-codigo": no.codigo,
-      title: no.nome || "",
+      class: "no" + (folha ? " folha" : "") + (folha && no.codigo === E.selecionado ? " selecionado" : ""),
+      type: "button", role: "treeitem", "data-codigo": no.codigo, "aria-level": String(nivel + 1),
+      title: `${no.codigo_mascarado} ${no.nome || ""}`.trim(),
     },
-      el("span", { class: "seta", text: folha ? "" : "▸" }),
-      el("span", { class: "cod", text: folha ? no.codigo_mascarado : pontuar(no.codigo) }),
+      folha ? null : el("span", { class: "seta", text: "▸" }),
+      el("span", { class: "cod", text: segmento }),
       no.nome ? el("span", { class: "nome", text: folha ? capitalizar(no.nome) : no.nome })
               : el("span", { class: "nome sem-nome", text: "sem nome na tabela de estrutura" }),
     );
-    btn.style.paddingLeft = `${14 + Math.min(nivel, 3) * 14}px`;
+    btn.style.setProperty("--nivel", String(Math.min(nivel, 3)));
     const li = el("li", {}, btn);
     btn.addEventListener("click", () => folha ? ir({ tipo: "ficha", codigo: no.codigo }) : abrirNo(li, no));
     ul.append(li);
@@ -358,12 +362,6 @@ async function telaFicha(c, codigo, aba) {
     el("span", { class: "copiado", text: "" }));
   topo.append(el("div", { class: "linha-cod" }, caixas,
     el("h1", { class: "nome-proc", text: campoDe(p, "no_procedimento").valor })));
-  const desc = rel("tb_descricao");
-  if (desc && desc.linhas.length) {
-    const d = el("p", { class: "descricao recolhida", text: campoDe(desc.linhas[0], "ds_procedimento").valor });
-    const b = el("button", { class: "link pequeno", type: "button", onclick: () => { d.classList.toggle("recolhida"); b.textContent = d.classList.contains("recolhida") ? "Mostrar a descrição inteira" : "Recolher"; } }, "Mostrar a descrição inteira");
-    topo.append(el("div", { class: "desc-bloco" }, el("span", { class: "rotulo", text: "Descrição oficial" }), d, b));
-  }
   // Faixa com o que o faturista confere primeiro.
   const sh = campoDe(p, "vl_sh"), sa = campoDe(p, "vl_sa"), sp = campoDe(p, "vl_sp");
   const total = (sh?.valor || 0) + (sa?.valor || 0) + (sp?.valor || 0);
@@ -442,6 +440,13 @@ function listaCurta(r, col, max) {
 }
 
 function resumo(corpo, f, p, rel, codigo) {
+  // Descrição oficial no topo do resumo, recolhida em uma linha (economiza altura em 1366×768).
+  const desc = rel("tb_descricao");
+  if (desc && desc.linhas.length) {
+    const d = el("p", { class: "descricao recolhida", text: campoDe(desc.linhas[0], "ds_procedimento").valor });
+    const b = el("button", { class: "link pequeno", type: "button", onclick: () => { d.classList.toggle("recolhida"); b.textContent = d.classList.contains("recolhida") ? "mostrar inteira" : "recolher"; } }, "mostrar inteira");
+    corpo.append(el("div", { class: "desc-bloco" }, el("span", { class: "rotulo", text: "Descrição oficial" }), d, b));
+  }
   const cols = el("div", { class: "colunas" });
   corpo.append(cols);
   const A = el("div", { class: "coluna" }), B = el("div", { class: "coluna" });
@@ -761,7 +766,29 @@ async function atualizarSituacao() {
   $("primeira").hidden = !E.situacao.primeira_execucao;
 }
 
+function divisorArvore() {
+  const corpo = document.querySelector(".corpo");
+  const aplicar = (px) => corpo.style.setProperty("--largura-arvore", `${Math.max(220, Math.min(560, px))}px`);
+  try { const v = Number(localStorage.getItem("largura-arvore")); if (v) aplicar(v); } catch { /* sem armazenamento: usa o padrão */ }
+  const d = $("divisor");
+  d.addEventListener("pointerdown", (ev) => {
+    d.setPointerCapture(ev.pointerId);
+    const mover = (e) => aplicar(e.clientX);
+    const soltar = (e) => {
+      d.removeEventListener("pointermove", mover); d.removeEventListener("pointerup", soltar);
+      try { localStorage.setItem("largura-arvore", String(Math.round(e.clientX))); } catch { /* ignora */ }
+    };
+    d.addEventListener("pointermove", mover); d.addEventListener("pointerup", soltar);
+  });
+  d.addEventListener("keydown", (ev) => {
+    const atual = $("arvore").getBoundingClientRect().width;
+    if (ev.key === "ArrowLeft") aplicar(atual - 24);
+    if (ev.key === "ArrowRight") aplicar(atual + 24);
+  });
+}
+
 async function iniciar() {
+  divisorArvore();
   $("form-busca").addEventListener("submit", (ev) => {
     ev.preventDefault();
     const t = $("busca").value.trim();
