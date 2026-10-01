@@ -7,12 +7,71 @@
   <link rel="stylesheet" href="estilo.css">
 </head>
 <body>
-  <main>
-    <h1>SIGTAP Aberto</h1>
-    <p class="sub">Consulta da Tabela de Procedimentos do SUS e cruzamentos com os dados do DATASUS.</p>
-    <p class="aviso"><strong>Ferramenta não oficial</strong>, sem vínculo com o Ministério da Saúde.
-      Confira sempre no SIGTAP oficial antes de faturar.</p>
-    <p class="fase">Versão de preparação (Fase 0): ainda sem dados. A consulta chega na Fase 2.</p>
-  </main>
+  <header class="barra">
+    <div class="marca"><b>SIGTAP</b> Aberto</div>
+    <form class="busca" id="form-busca" role="search">
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <input id="busca" type="search" autocomplete="off" spellcheck="false"
+             placeholder="Código, nome, CID, CBO ou habilitação" aria-label="Buscar">
+      <kbd>Ctrl+K</kbd>
+    </form>
+    <div class="espaco"></div>
+    <label class="competencia">
+      <span>Competência</span>
+      <select id="competencia" aria-label="Competência"></select>
+    </label>
+    <button class="link-barra" id="ir-mudou" type="button">O que mudou</button>
+    <button class="link-barra" id="ir-modulos" type="button">Módulos e dados</button>
+  </header>
+
+  <div class="corpo">
+    <nav class="arvore" id="arvore" aria-label="Tabela de procedimentos">
+      <div class="arvore-cab"><b>Tabela de procedimentos</b> <span id="arvore-total"></span></div>
+      <ul id="arvore-raiz" role="tree"></ul>
+    </nav>
+    <main class="conteudo" id="conteudo" tabindex="-1"></main>
+  </div>
+
+  <footer class="rodape">
+    <b>Ferramenta não oficial. Confira no SIGTAP oficial antes de faturar.</b>
+    <span id="rodape-fonte"></span>
+  </footer>
+
+  <div class="sobreposicao" id="primeira" hidden>
+    <section class="janela" role="dialog" aria-modal="true" aria-labelledby="primeira-titulo">
+      <h1 id="primeira-titulo">Antes de começar, o programa baixa os dados oficiais</h1>
+      <p class="quieto">Tudo fica na pasta <b>dados</b>, ao lado do SIGTAP Aberto.exe. Nada é instalado no Windows e nenhum dado sai deste computador.</p>
+      <label class="modulo">
+        <input type="checkbox" checked disabled>
+        <span class="modulo-txt"><b>Tabela de procedimentos, competência mais recente</b> <em class="etiqueta">obrigatório</em><br>
+          <small>SIGTAP do DATASUS, ftp2.datasus.gov.br. Cerca de 2 MB.</small></span>
+      </label>
+      <label class="modulo">
+        <input type="checkbox" checked disabled>
+        <span class="modulo-txt"><b>Território: municípios, UFs e regiões de saúde</b> <em class="etiqueta">obrigatório</em><br>
+          <small>IBGE e Ministério da Saúde. Cerca de 4 MB.</small></span>
+      </label>
+      <label class="modulo opcional">
+        <input type="checkbox" id="primeira-historico">
+        <span class="modulo-txt"><b>Histórico completo da tabela</b><br>
+          <small>Todas as competências desde 01/2008, cerca de 360 MB. Permite ver o que valia em qualquer mês e como cada procedimento mudou. Pode ser baixado depois, em Módulos e dados.</small></span>
+      </label>
+      <p class="quieto pequeno">Um arquivo por vez, com pausa entre eles, para não sobrecarregar os servidores públicos. Se a conexão cair, o download continua de onde parou.</p>
+      <div class="progresso" id="primeira-progresso" hidden>
+        <div class="trilho"><div class="barra-prog" id="primeira-barra"></div></div>
+        <span id="primeira-msg"></span>
+      </div>
+      <p class="erro" id="primeira-erro" hidden></p>
+      <div class="acoes">
+        <button type="button" class="botao" id="primeira-importar">Importar de uma pasta</button>
+        <div class="espaco"></div>
+        <button type="button" class="botao" id="primeira-cancelar">Cancelar</button>
+        <button type="button" class="botao primario" id="primeira-baixar">Baixar agora</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="formatos.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

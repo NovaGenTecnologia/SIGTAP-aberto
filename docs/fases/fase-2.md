@@ -74,6 +74,30 @@ do UniSUS.
 
 CNES e qualquer cruzamento com a unidade (Fase 3); produção e rejeições (Fase 4).
 
-## 2. Fechamento
+## 2. Andamento (30/09/2026)
+
+| Id | Situação | Evidência até agora |
+|----|----------|---------------------|
+| E01 | Feito | `manifestos/sigtap_dominios.toml`; teste `dominios_cobrem_o_banco` (225 competências): 26 códigos com descrição oficial; **sem descrição na fonte**: compatibilidade 4 (desde 201502) e 5 (desde 201509), sexo `A` (só 0702050369 em 200801) |
+| E02 | Feito (Linux) | `sa-query` + `manifestos/sigtap_referencias.toml`; `tests/consulta_real.rs`: 331 fichas em 7 competências, 6.600 relações e 19.280 linhas conferidas por SQL independente; árvore = total de vigentes em 200801 e 202609; 22 históricos iguais à comparação mês a mês; 224 viradas do "o que mudou" iguais aos intervalos; 72 colunas CO_/NU_ cobertas pelo manifesto |
+| E03 | Feito (Linux) | Casos reais: "desfibrilador" = 19 (igual a LIKE), sem acento e por partes, código com e sem máscara, prefixo 04.06.01 = 149, CID I42.0, CBO 225120, habilitação 0802 e por nome; pior tempo 32 ms (Linux) |
+| E04 | Feito, falta conferência visual de 30 fichas no site oficial | Ficha lista toda tabela que cita o procedimento, inclusive vazias (teste compara com o leiaute da competência) |
+| E05 | Feito | 0406010579: 26 competências com mudança; VL_SP alterado em 202206 conferido |
+| E06 | Feito | 202608→202609: 3 procedimentos alterados, 574 vínculos, 11 mudanças de apoio |
+| E07 | Feito (Linux, download real) | `territorio.db`: 5.571 municípios IBGE, 5.570 DEMAS, 27 UFs, 439 regiões, 121 macros; 5101837 sem região de saúde na fonte |
+| E08 | Feito | `sa-download::http` + testes com servidor falso (página curta de 860, queda, 404 sem repetir, 503 com 3 tentativas, limite de tamanho, formato novo recusado) |
+| E09 | Em andamento | Comandos do aplicativo prontos (situação, consultas, baixar, importar, cancelar, eventos de progresso); falta executar no Windows |
+| E10 | Em andamento | Protótipo no Penpot (6 telas, aguardando aprovação); interface HTML implementada e navegada no Chromium pela ponte de desenvolvimento (`scripts/dev/ponte_ui.py`), sem erros de console |
+| E11 | Parcial | CLI com `ficha`, `buscar`, `arvore`, `historico`, `mudou`, `territorio` em JSON; favoritos, anotações e exportação CSV/XLSX pendentes |
+| E12–E14 | Pendentes | Validação no Windows e registro |
+
+Achados desta etapa:
+- O `Lay-out.xls` diz idade de 0 a 1.331 meses; os dados usam até 1.571 desde 201308.
+- Textos oficiais com `||` dentro (ex.: `tb_regra_condicionada` 0015, `tb_descricao_detalhe` 001): parece marcador de quebra de linha, mas não há documentação. Exibido como está até haver prova.
+- A ficha mostra o nome de cada código na competência do evento: a habilitação 2902 aparecia em 09/2023 como "Programa Nacional de Redução de Filas de Cirurgias Eletivas" e hoje tem outro nome.
+- Dependência nova com licença fora da lista: `webpki-root-certs` (CDLA-Permissive-2.0, lista de certificados raiz da Mozilla). Exceção documentada em `deny.toml`.
+- Protótipo migrado do Figma (limite de chamadas do plano Starter) para o Penpot do cliente.
+
+## 3. Fechamento
 
 (preenchido ao final da fase)
