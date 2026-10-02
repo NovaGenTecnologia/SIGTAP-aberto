@@ -17,7 +17,7 @@ jobs:
     name: Conferir versão e testar
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Rust (versão de rust-toolchain.toml)
         run: rustup show
       - name: A tag tem de ser a versão do programa, e as notas têm de existir
@@ -40,8 +40,8 @@ jobs:
     needs: pacotes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: pacote-*
           path: pacotes
@@ -81,7 +81,7 @@ jobs:
             cat "../docs/lancamentos/${TAG}.md"
           } > ../notas.md
       - name: Criar o rascunho com os arquivos
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: true
           body_path: notas.md

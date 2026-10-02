@@ -33,7 +33,7 @@ jobs:
           - { arq: x64, alvo: x86_64-pc-windows-msvc, maquina: "8664" }
           - { arq: arm64, alvo: aarch64-pc-windows-msvc, maquina: "AA64" }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Top 10 de contribuidores (tela Sobre)
         shell: bash
         env:
@@ -67,7 +67,7 @@ jobs:
           try { $itens = @($z.Entries | ForEach-Object FullName | Sort-Object) } finally { $z.Dispose() }
           if (($itens -join "|") -ne "SIGTAP Aberto/LEIAME.txt|SIGTAP Aberto/LICENSE|SIGTAP Aberto/sigtap-aberto.exe") { throw "ZIP com conteúdo inesperado: $($itens -join ', ')" }
           Get-ChildItem saida | ForEach-Object { "{0}  {1:N1} MB  máquina $maquina" -f $_.Name, ($_.Length / 1MB) }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pacote-windows-${{ matrix.arq }}
           path: saida/*
@@ -86,7 +86,7 @@ jobs:
     env:
       APPIMAGE_EXTRACT_AND_RUN: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Top 10 de contribuidores (tela Sobre)
         shell: bash
         env:
@@ -98,7 +98,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev librsvg2-dev patchelf file
       - name: Rust (versão de rust-toolchain.toml)
         run: rustup show
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
       - name: Compilar e montar o AppImage
@@ -116,7 +116,7 @@ jobs:
           bin=$(find /tmp/squashfs-root -type f -name sigtap-aberto | head -1)
           file "$bin" | tee /dev/stderr | grep -q "ELF 64-bit.*${{ matrix.elf }}" || { echo "arquitetura errada"; exit 1; }
           ls -la saida
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pacote-linux-${{ matrix.arq }}
           path: saida/*
@@ -126,7 +126,7 @@ jobs:
     name: macOS (Intel e Apple)
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Top 10 de contribuidores (tela Sobre)
         shell: bash
         env:
@@ -136,7 +136,7 @@ jobs:
         run: |
           rustup show
           rustup target add aarch64-apple-darwin x86_64-apple-darwin
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
       - name: Compilar e montar o app universal
@@ -156,7 +156,7 @@ jobs:
           cp scripts/pacote/LEIAME-macos.txt "pacote/SIGTAP Aberto/LEIAME.txt"
           ( cd pacote && ditto -c -k --keepParent "SIGTAP Aberto" "../saida/SIGTAP-Aberto-v$v-macos-universal.zip" )
           ls -la saida
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pacote-macos-universal
           path: saida/*
