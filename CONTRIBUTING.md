@@ -71,15 +71,11 @@ Pode usar ferramentas de IA, inclusive este projeto é desenvolvido com apoio de
 
 ## Acordo de contribuição (CLA)
 
-> **Proposta, pendente de revisão jurídica.** Até o texto definitivo, contribuições de código de pessoas de fora não são aceitas. Issues, relatos e sugestões já são bem-vindos.
+Para contribuir com código, texto ou qualquer outro material, você aceita o [Acordo de Licença de Contribuição](CLA.md). Em resumo: o código continua sendo seu, você dá ao projeto uma licença ampla (inclusive para relicenciar no futuro, por exemplo para uma versão mais nova da AGPL), e a NovaGen Tecnologia se compromete a manter o código público sob licença de software livre. O texto tem as cláusulas completas, e o que vale é ele.
 
-Para que o projeto possa, no futuro, ajustar a licença (por exemplo, para uma versão mais nova da AGPL) sem precisar localizar cada autor, cada contribuidor externo assinará um acordo que:
+**Como aceitar:** no seu primeiro pull request, comente: *Li o CLA 1.0 do SIGTAP Aberto e concordo com os seus termos.* Vale para as suas contribuições passadas e futuras. Se você contribui em nome de uma empresa ou de um órgão público (por exemplo, servidor de secretaria de saúde ou de hospital), leia o Anexo I do CLA: pode ser preciso que a instituição autorize.
 
-- mantém com o contribuidor os direitos autorais da contribuição;
-- concede ao projeto licença ampla, perpétua e irrevogável para usar, modificar e relicenciar a contribuição, desde que o código continue disponível como software livre;
-- declara que o contribuidor tem o direito de conceder essa licença.
-
-O texto final e a forma de assinatura (por exemplo, um robô de CLA no GitHub) serão definidos antes da primeira contribuição externa.
+> **Em implantação.** O CLA está redigido, mas ainda precisa de revisão jurídica e do robô que registra o aceite. Até lá, **contribuições de código de pessoas de fora não são aceitas.** Issues, relatos e sugestões já são bem-vindos.
 
 ## Convivência
 
@@ -87,4 +83,4 @@ Trate as pessoas com respeito e paciência. Muita gente aqui é do faturamento, 
 
 ## Licença
 
-Ao contribuir, você concorda que o seu código será distribuído sob a [AGPL-3.0](LICENSE), a mesma licença do projeto.
+Ao contribuir, você concorda que o seu código será distribuído sob a [AGPL-3.0](LICENSE), a mesma licença do projeto, e com o [CLA](CLA.md).
