@@ -45,7 +45,8 @@ async function carregarFontes() {
 }
 
 function abrir(arquivo) {
-  const [cmd, args] = process.platform === "win32" ? ["cmd", ["/c", "start", "", arquivo]] : process.platform === "darwin" ? ["open", [arquivo]] : ["xdg-open", [arquivo]];
+  // Sem passar por shell (cmd interpretaria & ^ % do caminho): é o mesmo método que o programa usa.
+  const [cmd, args] = process.platform === "win32" ? ["rundll32", ["url.dll,FileProtocolHandler", arquivo]] : process.platform === "darwin" ? ["open", [arquivo]] : ["xdg-open", [arquivo]];
   execFile(cmd, args, () => {});
 }
 

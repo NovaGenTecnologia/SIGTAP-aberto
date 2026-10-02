@@ -11,8 +11,13 @@ function soWindows() {
   }
 }
 
+const PERIGOSOS = /["%&|<>^\r\n]/;
+
 export async function agendar(minutos, script) {
   soWindows();
+  for (const caminho of [process.execPath, script]) {
+    if (PERIGOSOS.test(caminho)) throw new Error(`O caminho "${caminho}" tem caracteres que o agendador não aceita com segurança (aspas, % & | < > ^). Mova a pasta do monitor para um caminho simples, como C:\\monitor.`);
+  }
   if (!Number.isInteger(minutos) || minutos < 5 || minutos > 1439) throw new Error("Informe o intervalo em minutos, de 5 a 1439.");
   const tr = `"${process.execPath}" "${script}" rodar --silencioso`;
   await exec("schtasks", ["/Create", "/TN", NOME_TAREFA, "/SC", "MINUTE", "/MO", String(minutos), "/TR", tr, "/F"]);
