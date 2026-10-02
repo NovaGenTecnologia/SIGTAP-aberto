@@ -15,7 +15,7 @@ Este quadro resume o acordo para facilitar a leitura. O que vale é o texto das 
 
 ## 1. Partes
 
-- **Mantenedor:** NovaGen Tecnologia, [RAZÃO SOCIAL COMPLETA], inscrita no CNPJ sob o nº [CNPJ], com sede em [ENDEREÇO COMPLETO], responsável pelo repositório `NovaGenTecnologia/SIGTAP-aberto`.
+- **Mantenedor:** NovaGen Tecnologia, inscrita no CNPJ sob o nº 54.753.209/0001-55, responsável pelo repositório `NovaGenTecnologia/SIGTAP-aberto`. O e-mail de contato para avisos é novagen@novagentecnologia.com.br.
 - **Contribuidor ("Você"):** a pessoa que aceita este acordo, identificada pelo nome, pelo usuário do GitHub e pelo e-mail dos seus commits. Se Você contribui em nome de uma empresa ou órgão, vale também o Anexo I.
 
 ## 2. Definições
@@ -85,13 +85,14 @@ Contribuir não cria vínculo de emprego, de sociedade, de representação nem d
 
 ## 11. Dados pessoais (LGPD)
 
-Para provar que Você aceitou este acordo, o Mantenedor registra o seu nome ou usuário do GitHub, o e-mail dos commits, a data e a hora do aceite, a versão do CLA e o endereço do pull request. Esse registro pode ficar visível publicamente no repositório. O Mantenedor, controlador desses dados, os trata para cumprir este acordo e para o exercício regular de direitos, e os mantém enquanto o Projeto existir e durante o prazo em que possam ser exigidos. Para pedidos sobre os seus dados, escreva para [E-MAIL PARA AVISOS].
+Para provar que Você aceitou este acordo, o Mantenedor registra o seu nome ou usuário do GitHub, o e-mail dos commits, a data e a hora do aceite, a versão do CLA e o endereço do pull request. Esse registro pode ficar visível publicamente no repositório. O Mantenedor, controlador desses dados, os trata para cumprir este acordo e para o exercício regular de direitos, e os mantém enquanto o Projeto existir e durante o prazo em que possam ser exigidos. Para pedidos sobre os seus dados, escreva para novagen@novagentecnologia.com.br.
 
 ## 12. Vigência, mudanças e fim
 
 - Este acordo vale a partir do aceite e **não termina com o fim da sua participação**. Você pode deixar de contribuir quando quiser, e isso vale daí para a frente.
 - As licenças já concedidas sobre Contribuições recebidas (aceitas ou não pelo Projeto) são **irrevogáveis**. O Mantenedor e quem recebeu o Projeto antes de Você parar de contribuir podem continuar a usar o que Você enviou, inclusive em versões futuras.
 - Se o Mantenedor publicar uma nova versão deste acordo, ela vale **só para Contribuições feitas depois** de Você aceitá-la. Antes disso, continua valendo a versão que Você aceitou.
+- **Sucessão.** O Mantenedor pode ceder este acordo e as licenças recebidas a quem o suceder na manutenção do Projeto, inclusive em caso de mudança da sua forma jurídica, do seu enquadramento ou do seu CNPJ, mantido o compromisso de abertura da cláusula 5. O novo titular será indicado no repositório, e o aceite do Contribuidor continua valendo.
 - Se alguma cláusula for considerada inválida, as demais continuam valendo.
 
 ## 13. Lei aplicável e foro
@@ -124,4 +125,4 @@ Use este anexo quando o seu empregador, contratante ou órgão tiver, ou puder t
 
 **5. Órgão público.** Se a Instituição é órgão ou entidade pública, o seu representante declara que a contribuição observa as normas internas do órgão sobre propriedade intelectual, e que a licença dada não depende de licitação nem de outra formalidade que o órgão não tenha cumprido.
 
-**6. Como assinar.** O representante envia ao Mantenedor, para [E-MAIL PARA AVISOS], uma carta ou mensagem com: o nome e o CNPJ da Instituição, o nome e o cargo do representante, a frase "Concordo, em nome da Instituição, com o Anexo I do CLA 1.0 do SIGTAP Aberto" e a lista de Contribuidores designados. O Mantenedor guarda a resposta e a registra no repositório.
+**6. Como assinar.** O representante envia ao Mantenedor, para novagen@novagentecnologia.com.br, uma carta ou mensagem com: o nome e o CNPJ da Instituição, o nome e o cargo do representante, a frase "Concordo, em nome da Instituição, com o Anexo I do CLA 1.0 do SIGTAP Aberto" e a lista de Contribuidores designados. O Mantenedor guarda a resposta e a registra no repositório.
