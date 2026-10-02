@@ -1,0 +1,28 @@
+name: Problema
+description: Algo não funcionou como esperado
+labels: ["problema"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Nunca cole dado de paciente** (nome, CPF, CNS, número de AIH ou APAC, trechos de arquivos reais de BPA, APAC, AIH ou TISS). Para mostrar a estrutura de um arquivo, diga o tamanho do registro, as posições e as contagens, nunca os valores.
+  - type: textarea
+    id: o-que-aconteceu
+    attributes:
+      label: O que você estava fazendo e o que aconteceu?
+      description: Se apareceu uma mensagem, copie o texto dela.
+    validations:
+      required: true
+  - type: textarea
+    id: esperado
+    attributes:
+      label: O que você esperava ver?
+    validations:
+      required: true
+  - type: input
+    id: versao
+    attributes:
+      label: Versão do programa e sistema
+      description: "Por exemplo: 0.2.1, Windows 11. A tela Sobre mostra a versão."
+    validations:
+      required: true

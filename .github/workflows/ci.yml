@@ -1,11 +1,17 @@
 # Integração contínua do SIGTAP Aberto: testes e auditoria de licenças nos três sistemas.
-# Ativa quando o repositório tiver remoto no GitHub (Fase 7).
 name: ci
 
 on:
   push:
     branches: [main]
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   testes:

@@ -1,0 +1,34 @@
+name: Dado diferente do oficial
+description: Uma informação não bate com o SIGTAP, o CNES ou outra fonte oficial
+labels: ["dado"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Nunca cole dado de paciente** (nome, CPF, CNS, número de AIH ou APAC, trechos de arquivos reais de BPA, APAC, AIH ou TISS). Para mostrar a estrutura de um arquivo, diga o tamanho do registro, as posições e as contagens, nunca os valores.
+  - type: input
+    id: codigo
+    attributes:
+      label: Código do procedimento ou CNES
+    validations:
+      required: true
+  - type: input
+    id: competencia
+    attributes:
+      label: Competência (AAAAMM)
+    validations:
+      required: true
+  - type: textarea
+    id: diferenca
+    attributes:
+      label: Qual informação está diferente?
+      description: Diga o que o programa mostra e o que a fonte oficial mostra.
+    validations:
+      required: true
+  - type: input
+    id: fonte
+    attributes:
+      label: Onde você conferiu
+      description: Site do SIGTAP, ZIP oficial, site do CNES etc.
+    validations:
+      required: true

@@ -1,0 +1,31 @@
+{
+  "name": "Autoria permitida (opcional, planos Enterprise)",
+  "target": "branch",
+  "source_type": "Repository",
+  "source": "NovaGenTecnologia/SIGTAP-aberto",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": { "include": ["~ALL"], "exclude": [] }
+  },
+  "bypass_actors": [],
+  "rules": [
+    {
+      "type": "commit_author_email_pattern",
+      "parameters": {
+        "name": "Autor permitido",
+        "operator": "regex",
+        "negate": false,
+        "pattern": "^(novagen@novagentecnologia\\.com\\.br|noreply@anthropic\\.com|[0-9]+\\+dependabot\\[bot\\]@users\\.noreply\\.github\\.com)$"
+      }
+    },
+    {
+      "type": "committer_email_pattern",
+      "parameters": {
+        "name": "Committer permitido",
+        "operator": "regex",
+        "negate": false,
+        "pattern": "^(novagen@novagentecnologia\\.com\\.br|noreply@anthropic\\.com|noreply@github\\.com|[0-9]+\\+dependabot\\[bot\\]@users\\.noreply\\.github\\.com)$"
+      }
+    }
+  ]
+}
