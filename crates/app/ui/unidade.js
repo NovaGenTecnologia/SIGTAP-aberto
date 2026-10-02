@@ -392,11 +392,11 @@ async function telaUnidade(c, aba) {
   if (u.ativa) {
     const terc = meusTerceiros();
     pg.append(el("div", { class: "uni-troca terceiros", role: "group", "aria-label": "Terceiros contratados" },
-      el("span", { class: "rotulo-terc", text: "Terceiros contratados" }),
+      el("span", { class: "rotulo-terc", text: `Terceiros contratados por ${u.nome || `CNES ${u.cnes}`}` }),
       terc.map((t) => el("span", { class: "chip terc" },
         el("button", { class: "link", type: "button", title: `Ver ${t.nome || `CNES ${t.cnes}`}`, onclick: () => ir({ tipo: "unidade", uf: t.uf, cnes: t.cnes }) }, t.nome || `CNES ${t.cnes}`),
         el("button", { class: "x", type: "button", "aria-label": `Remover ${t.nome || t.cnes}`, title: "Remover", onclick: async () => {
-          try { await invoke("terceiro_remover", { uf: t.uf, cnes: t.cnes }); await aposTrocarUnidade(); } catch (e) { avisoTopo(String(e)); }
+          try { await invoke("terceiro_remover", { uf: u.uf, cnes: u.cnes, terceiroUf: t.uf, terceiroCnes: t.cnes }); await aposTrocarUnidade(); } catch (e) { avisoTopo(String(e)); }
         } }, "×"))),
       el("button", { class: "link pequeno", type: "button", onclick: () => ir({ tipo: "unidade", trocar: true, terceiro: true }) }, "+ Adicionar terceiro")));
   }
@@ -569,7 +569,7 @@ function telaEscolherUnidade(pg) {
   const terceiro = !!E.rota.terceiro;
   if (m) pg.append(botaoVoltar());
   pg.append(el("h1", { text: terceiro ? "Adicionar terceiro contratado" : m ? "Adicionar unidade" : "Qual é a sua unidade?" }),
-    el("p", { class: "lide", text: terceiro ? "Estabelecimento que presta serviço para a sua unidade. Nome fantasia ou número do CNES." : "Nome fantasia ou número do CNES." }));
+    el("p", { class: "lide", text: terceiro ? `Estabelecimento que presta serviço para ${m.nome || `CNES ${m.cnes}`}. Nome fantasia ou número do CNES.` : "Nome fantasia ou número do CNES." }));
   const uf = seletorUf(m ? m.uf : ufs[0], ufs);
   const campo = el("input", { type: "search", class: "campo busca-uni", placeholder: "Nome do estabelecimento ou CNES", "aria-label": "Procurar estabelecimento", autocomplete: "off", spellcheck: "false" });
   const saida = el("div", { class: "uni-resultados" });
@@ -590,7 +590,7 @@ function telaEscolherUnidade(pg) {
           el("td", { text: e.municipio_nome || e.municipio }), el("td", { class: "quieto", text: capitalizar(e.tipo_nome || e.tipo) }),
           el("td", { class: "acao" }, el("button", { class: "botao pequeno", type: "button", onclick: async (ev) => {
             ev.currentTarget.disabled = true; ev.currentTarget.textContent = "Gravando…";
-            try { await invoke(terceiro ? "terceiro_adicionar" : "unidade_definir", { uf: uf.value, cnes: e.cnes }); await aposTrocarUnidade(); ir({ tipo: "unidade" }, { substituir: true }); }
+            try { await (terceiro ? invoke("terceiro_adicionar", { uf: m.uf, cnes: m.cnes, terceiroUf: uf.value, terceiroCnes: e.cnes }) : invoke("unidade_definir", { uf: uf.value, cnes: e.cnes })); await aposTrocarUnidade(); ir({ tipo: "unidade" }, { substituir: true }); }
             catch (x) { limpar(saida).append(erro(x)); }
           } }, terceiro ? "Cadastrar como terceiro" : "Utilizar este")))))));
       if (r.length >= 30) saida.append(el("p", { class: "quieto pequeno", text: "Mostrando os 30 primeiros. Digite mais para afinar." }));

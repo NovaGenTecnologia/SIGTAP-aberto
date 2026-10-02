@@ -507,19 +507,39 @@ async fn unidade_remover(s: Estado<'_>, uf: String, cnes: String) -> Result<(), 
     unidade::remover_unidade(&unidade::local(&s.pastas), &uf, &cnes)
 }
 
-/// Cadastra um terceiro contratado pela unidade.
+/// Cadastra um terceiro contratado da unidade `uf`/`cnes`.
 #[tauri::command]
 async fn terceiro_adicionar(
     s: Estado<'_>,
     uf: String,
     cnes: String,
+    terceiro_uf: String,
+    terceiro_cnes: String,
 ) -> Result<serde_json::Value, String> {
-    unidade::adicionar_terceiro(&unidade::local(&s.pastas), &uf, &cnes)
+    unidade::adicionar_terceiro(
+        &unidade::local(&s.pastas),
+        &uf,
+        &cnes,
+        &terceiro_uf,
+        &terceiro_cnes,
+    )
 }
 
 #[tauri::command]
-async fn terceiro_remover(s: Estado<'_>, uf: String, cnes: String) -> Result<(), String> {
-    unidade::remover_terceiro(&unidade::local(&s.pastas), &uf, &cnes)
+async fn terceiro_remover(
+    s: Estado<'_>,
+    uf: String,
+    cnes: String,
+    terceiro_uf: String,
+    terceiro_cnes: String,
+) -> Result<(), String> {
+    unidade::remover_terceiro(
+        &unidade::local(&s.pastas),
+        &uf,
+        &cnes,
+        &terceiro_uf,
+        &terceiro_cnes,
+    )
 }
 
 /// Uma unidade completa: a indicada (UF e CNES) ou, sem indicação, a ativa.

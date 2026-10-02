@@ -53,8 +53,11 @@ pub type Emissor<'a> = &'a (dyn Fn(Progresso) + Sync);
 const CHAVE_UNIDADE: &str = "minha_unidade";
 /// Unidades guardadas para troca rápida: "UF:CNES,UF:CNES". A de `CHAVE_UNIDADE` é a ativa.
 const CHAVE_UNIDADES: &str = "minhas_unidades";
-/// Terceiros contratados pela unidade: "UF:CNES,UF:CNES".
-const CHAVE_TERCEIROS: &str = "terceiros_contratados";
+/// Terceiros contratados de uma unidade: chave `terceiros:UF:CNES` da unidade, valor "UF:CNES,UF:CNES".
+/// Cada unidade tem a sua lista; o mesmo terceiro pode estar em várias.
+fn chave_terceiros(uf: &str, cnes: &str) -> String {
+    format!("terceiros:{uf}:{cnes}")
+}
 /// Tipos sempre baixados; PF só quando a unidade do usuário é da UF.
 const TIPOS_BASE: [&str; 5] = ["ST", "HB", "SR", "LT", "EQ"];
 
@@ -127,12 +130,12 @@ pub fn minhas(p: &Pastas) -> Vec<(String, String)> {
     v
 }
 
-/// Terceiros contratados cadastrados pelo usuário (na ordem de cadastro).
-pub fn terceiros(p: &Pastas) -> Vec<(String, String)> {
+/// Terceiros contratados da unidade (na ordem de cadastro).
+pub fn terceiros(p: &Pastas, uf: &str, cnes: &str) -> Vec<(String, String)> {
     let mut v: Vec<(String, String)> = Vec::new();
     if banco_usuario(p).exists()
         && let Ok(u) = usuario(p)
-        && let Ok(Some(lista)) = u.config(CHAVE_TERCEIROS)
+        && let Ok(Some(lista)) = u.config(&chave_terceiros(uf, cnes))
     {
         for par in lista.split(',').filter_map(ler_par) {
             if !v.contains(&par) {
@@ -143,7 +146,12 @@ pub fn terceiros(p: &Pastas) -> Vec<(String, String)> {
     v
 }
 
-fn gravar_terceiros(p: &Pastas, v: &[(String, String)]) -> Result<(), String> {
+fn gravar_terceiros(
+    p: &Pastas,
+    uf: &str,
+    cnes: &str,
+    v: &[(String, String)],
+) -> Result<(), String> {
     let texto = v
         .iter()
         .map(|(u, c)| format!("{u}:{c}"))
@@ -151,7 +159,7 @@ fn gravar_terceiros(p: &Pastas, v: &[(String, String)]) -> Result<(), String> {
         .join(",");
     usuario(p)?
         .gravar_config(
-            CHAVE_TERCEIROS,
+            &chave_terceiros(uf, cnes),
             (!texto.is_empty()).then_some(texto.as_str()),
         )
         .map_err(|e| e.to_string())
@@ -166,43 +174,60 @@ fn nome_da_unidade(p: &Pastas, uf: &str, cnes: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Terceiros com o nome (vazio se o CNES da UF não está carregado).
-pub fn terceiros_com_nome(p: &Pastas) -> serde_json::Value {
-    let v: Vec<serde_json::Value> = terceiros(p)
+/// Terceiros da unidade com o nome (vazio se o CNES da UF não está carregado).
+pub fn terceiros_com_nome(p: &Pastas, uf: &str, cnes: &str) -> serde_json::Value {
+    let v: Vec<serde_json::Value> = terceiros(p, uf, cnes)
         .into_iter()
-        .map(|(uf, cnes)| {
-            let nome = nome_da_unidade(p, &uf, &cnes);
-            json!({ "uf": uf, "cnes": cnes, "nome": nome })
+        .map(|(tuf, tcnes)| {
+            let nome = nome_da_unidade(p, &tuf, &tcnes);
+            json!({ "uf": tuf, "cnes": tcnes, "nome": nome })
         })
         .collect();
     json!(v)
 }
 
-/// Cadastra um terceiro contratado. O CNES tem de estar no cadastro da UF carregada.
-pub fn adicionar_terceiro(p: &Pastas, uf: &str, cnes: &str) -> Result<serde_json::Value, String> {
+/// Cadastra `tcnes` (de `tuf`) como terceiro contratado da unidade `uf`/`cnes`. O CNES do
+/// terceiro tem de estar no cadastro da UF carregada, e uma unidade não é terceira de si mesma.
+pub fn adicionar_terceiro(
+    p: &Pastas,
+    uf: &str,
+    cnes: &str,
+    tuf: &str,
+    tcnes: &str,
+) -> Result<serde_json::Value, String> {
     exigir_uf(uf)?;
-    let q = consulta_cnes(p, uf)?;
+    exigir_uf(tuf)?;
+    if uf == tuf && cnes == tcnes {
+        return Err("a unidade não pode ser terceira de si mesma".into());
+    }
+    let q = consulta_cnes(p, tuf)?;
     let achado = q
-        .buscar(cnes, 5)
+        .buscar(tcnes, 5)
         .map_err(|e| e.to_string())?
         .into_iter()
-        .find(|e| e.cnes == cnes)
-        .ok_or_else(|| format!("o CNES {cnes} não está no cadastro de {uf} carregado. Confira o número ou baixe o CNES de {uf}"))?;
+        .find(|e| e.cnes == tcnes)
+        .ok_or_else(|| format!("o CNES {tcnes} não está no cadastro de {tuf} carregado. Confira o número ou baixe o CNES de {tuf}"))?;
     drop(q);
-    let mut lista = terceiros(p);
-    let par = (uf.to_string(), cnes.to_string());
+    let mut lista = terceiros(p, uf, cnes);
+    let par = (tuf.to_string(), tcnes.to_string());
     if !lista.contains(&par) {
         lista.push(par);
     }
-    gravar_terceiros(p, &lista)?;
-    Ok(json!({ "uf": uf, "cnes": cnes, "nome": achado.nome }))
+    gravar_terceiros(p, uf, cnes, &lista)?;
+    Ok(json!({ "uf": tuf, "cnes": tcnes, "nome": achado.nome }))
 }
 
-pub fn remover_terceiro(p: &Pastas, uf: &str, cnes: &str) -> Result<(), String> {
-    let par = (uf.to_string(), cnes.to_string());
-    let mut lista = terceiros(p);
+pub fn remover_terceiro(
+    p: &Pastas,
+    uf: &str,
+    cnes: &str,
+    tuf: &str,
+    tcnes: &str,
+) -> Result<(), String> {
+    let par = (tuf.to_string(), tcnes.to_string());
+    let mut lista = terceiros(p, uf, cnes);
     lista.retain(|x| x != &par);
-    gravar_terceiros(p, &lista)
+    gravar_terceiros(p, uf, cnes, &lista)
 }
 
 fn gravar_unidades(p: &Pastas, v: &[(String, String)]) -> Result<(), String> {
@@ -640,7 +665,7 @@ pub fn situacao(p: &Pastas) -> serde_json::Value {
             json!({ "uf": uf, "cnes": cnes, "nome": nome })
         })
         .collect();
-    json!({ "ufs": ufs, "minha": minha, "unidades": unidades, "terceiros": terceiros_com_nome(p), "ufs_disponiveis": dl::UFS })
+    json!({ "ufs": ufs, "minha": minha, "unidades": unidades, "terceiros": minha.as_ref().map_or_else(|| json!([]), |m| terceiros_com_nome(p, m["uf"].as_str().unwrap_or_default(), m["cnes"].as_str().unwrap_or_default())), "ufs_disponiveis": dl::UFS })
 }
 
 /// Escolhe a unidade ativa (e a guarda na lista de troca rápida). Carrega os profissionais dela
@@ -687,6 +712,7 @@ pub fn remover_unidade(p: &Pastas, uf: &str, cnes: &str) -> Result<(), String> {
     lista.retain(|x| x != &par);
     let era_ativa = minha(p).as_ref() == Some(&par);
     gravar_unidades(p, &lista)?;
+    gravar_terceiros(p, uf, cnes, &[])?;
     if era_ativa {
         remover_profissionais(p, uf)?;
         usuario(p)?
@@ -775,7 +801,7 @@ pub fn aptidao(
     let mut v = serde_json::to_value(&a).map_err(|e| e.to_string())?;
     if a.as_ref().is_some_and(|a| !a.apta) {
         let mut dos_terceiros = Vec::new();
-        for (tuf, tcnes) in terceiros(p) {
+        for (tuf, tcnes) in terceiros(p, &uf, &cnes) {
             if !banco_cnes(p, &tuf).exists() {
                 continue;
             }
@@ -860,7 +886,7 @@ pub fn marcadores(
     };
     // Estados de cada terceiro contratado (UFs sem banco carregado ficam de fora).
     let mut dos_terceiros = Vec::new();
-    for (tuf, tcnes) in terceiros(p) {
+    for (tuf, tcnes) in terceiros(p, &uf, &cnes) {
         if let Ok(Some(e)) = estados_da_unidade(p, sig, comp, &tuf, &tcnes) {
             dos_terceiros.push(e);
         }
@@ -1187,32 +1213,49 @@ mod testes {
     use std::time::Duration;
 
     #[test]
-    fn terceiros_sao_guardados_sem_duplicar_e_removidos() {
+    fn terceiros_sao_por_unidade() {
         let d = std::env::temp_dir().join(format!("sa-terc-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         let p = Pastas { dados: d.clone() };
-        assert!(terceiros(&p).is_empty());
-        gravar_terceiros(
-            &p,
+        let par = |u: &str, c: &str| (u.to_string(), c.to_string());
+        let grava = |ua: &str, ca: &str, ts: &[&str]| {
+            let v: Vec<_> = ts.iter().map(|c| par("MS", c)).collect();
+            gravar_terceiros(&p, ua, ca, &v).unwrap();
+        };
+        assert!(terceiros(&p, "MS", "1000001").is_empty());
+        // Alpha tem A, B, C, D; Beta tem B, D, E, F, G (B e D nas duas).
+        grava(
+            "MS",
+            "1000001",
+            &["2000001", "2000002", "2000003", "2000004"],
+        );
+        grava(
+            "MS",
+            "1000002",
             &[
-                ("MS".into(), "1234567".into()),
-                ("SP".into(), "7654321".into()),
-                ("MS".into(), "1234567".into()),
+                "2000002", "2000004", "2000005", "2000006", "2000007", "2000002",
             ],
-        )
-        .unwrap();
-        assert_eq!(
-            terceiros(&p),
-            vec![
-                ("MS".to_string(), "1234567".to_string()),
-                ("SP".to_string(), "7654321".to_string())
-            ]
         );
-        remover_terceiro(&p, "MS", "1234567").unwrap();
+        let nomes = |ua: &str, ca: &str| -> Vec<String> {
+            terceiros(&p, ua, ca).into_iter().map(|(_, c)| c).collect()
+        };
         assert_eq!(
-            terceiros(&p),
-            vec![("SP".to_string(), "7654321".to_string())]
+            nomes("MS", "1000001"),
+            ["2000001", "2000002", "2000003", "2000004"]
         );
+        assert_eq!(
+            nomes("MS", "1000002"),
+            ["2000002", "2000004", "2000005", "2000006", "2000007"]
+        );
+        // Tirar B da Alpha não mexe na Beta.
+        remover_terceiro(&p, "MS", "1000001", "MS", "2000002").unwrap();
+        assert_eq!(nomes("MS", "1000001"), ["2000001", "2000003", "2000004"]);
+        assert_eq!(
+            nomes("MS", "1000002"),
+            ["2000002", "2000004", "2000005", "2000006", "2000007"]
+        );
+        // Uma unidade não é terceira de si mesma.
+        assert!(adicionar_terceiro(&p, "MS", "1000001", "MS", "1000001").is_err());
         let _ = std::fs::remove_dir_all(&d);
     }
 
