@@ -237,6 +237,28 @@ pub struct Rede {
     pub regra_confirmada: bool,
 }
 
+/// Situação resumida de uma unidade diante de um procedimento (marcador da lista).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Estado {
+    /// O SIGTAP não pede habilitação nem serviço.
+    Livre,
+    /// Habilitação e serviço conferem.
+    Apta,
+    /// A habilitação confere; o serviço exigido não está entre os próprios (pode ser terceirizado).
+    Ressalva,
+    /// Falta habilitação ou serviço.
+    Nao,
+}
+
+/// Procedimento que a unidade pode cobrar pelo cadastro.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProcedimentoDaUnidade {
+    pub codigo: String,
+    pub nome: String,
+    pub estado: Estado,
+}
+
 /// O arquivo público de serviços (SR) só traz serviço próprio: nos seis arquivos de MS conferidos
 /// (01/2008 a 08/2026) nenhuma linha é de serviço terceirizado, e a unidade conferida no site do
 /// CNES tinha 17 pares terceirizados que não estão no arquivo. Ver `docs/fontes/cnes.md`.
@@ -324,7 +346,11 @@ impl ConsultaCnes {
     }
 
     fn codigo(&self, campo: &str, codigo: String) -> Codigo {
-        let nome = self.decod(campo, &codigo);
+        let nome = self.decod(campo, &codigo).or_else(|| {
+            self.manifesto
+                .valor_fixo(campo, &codigo)
+                .map(str::to_string)
+        });
         Codigo { codigo, nome }
     }
 
@@ -1056,7 +1082,7 @@ impl ConsultaCnes {
         let leito_ok = tipos.is_empty() || tipos.iter().any(|t| t.tem);
         if !leito_ok {
             motivos.push(format!(
-                "Leito: o procedimento pede leito de um destes tipos e não achamos nenhum no cadastro da unidade: {}. (Correspondência de códigos não confirmada.)",
+                "Leito: o procedimento pede leito de um destes tipos e não achamos nenhum no cadastro da unidade: {}.",
                 tipos.iter().map(|t| t.tipo.codigo.clone()).collect::<Vec<_>>().join(", ")
             ));
         }
@@ -1156,6 +1182,157 @@ impl ConsultaCnes {
             .filter(|c| ex.servicos.is_empty() || sr.contains_key(*c))
             .cloned()
             .collect())
+    }
+
+    /// Exigências de todos os procedimentos vigentes na competência (uma consulta por relação).
+    fn exigencias_de_todos(sig: &Consulta, seq: i64) -> HashMap<String, Exigencias> {
+        let mut m: HashMap<String, Exigencias> = HashMap::new();
+        let mut ler = |tabela: &'static str,
+                       a: &'static str,
+                       b: &'static str,
+                       pr: &mut dyn FnMut(&mut Exigencias, String, String)| {
+            let sql = format!(
+                "SELECT t.co_procedimento, t.{a}, coalesce(t.{b}, '') FROM {tabela} t JOIN {tabela}__vig v ON v.sa_id = t.sa_id \
+                 WHERE v.vig_ini <= ?1 AND v.vig_fim >= ?1"
+            );
+            let Ok(mut st) = sig.conn().prepare(&sql) else {
+                return;
+            };
+            let Ok(linhas) = st.query_map([seq], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            }) else {
+                return;
+            };
+            for (p, x, y) in linhas.flatten() {
+                let e = m.entry(p).or_insert_with(|| Exigencias {
+                    habilitacoes: Vec::new(),
+                    servicos: Vec::new(),
+                    leitos: Vec::new(),
+                });
+                pr(e, x, y);
+            }
+        };
+        ler(
+            "rl_procedimento_habilitacao",
+            "co_habilitacao",
+            "nu_grupo_habilitacao",
+            &mut |e, x, y| e.habilitacoes.push((x, y)),
+        );
+        ler(
+            "rl_procedimento_servico",
+            "co_servico",
+            "co_classificacao",
+            &mut |e, x, y| e.servicos.push((x, y)),
+        );
+        m
+    }
+
+    /// Situação da unidade diante de cada procedimento vigente que tem exigência de habilitação
+    /// ou serviço (mesma regra de `aptidao`, em uma passada só). Procedimento ausente do mapa =
+    /// sem exigência. `None` se o CNES não está no banco.
+    pub fn estados(
+        &self,
+        sig: &Consulta,
+        comp: Competencia,
+        cnes: &str,
+    ) -> Result<Option<HashMap<String, Estado>>, ErroConsulta> {
+        let seq = sig.exigir(comp)?;
+        if !self.tem("cnes_st") {
+            return Ok(None);
+        }
+        let existe: bool = self.conn().query_row(
+            "SELECT count(*) > 0 FROM cnes_st WHERE cnes = ?1",
+            [cnes],
+            |r| r.get(0),
+        )?;
+        if !existe {
+            return Ok(None);
+        }
+        let mut vigentes: HashSet<String> = HashSet::new();
+        if self.tem("cnes_hb") {
+            let ref_hb = self.competencia_de("HB");
+            let mut st = self
+                .conn()
+                .prepare("SELECT sgruphab, cmpt_ini, cmpt_fim FROM cnes_hb WHERE cnes = ?1")?;
+            for l in st.query_map([cnes], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })? {
+                let (h, ini, fim) = l?;
+                if vigente(&ini, &fim, &ref_hb) {
+                    vigentes.insert(h);
+                }
+            }
+        }
+        let mut tem_sr: HashSet<(String, String)> = HashSet::new();
+        if self.tem("cnes_sr") {
+            let mut st = self
+                .conn()
+                .prepare("SELECT serv_esp, class_sr FROM cnes_sr WHERE cnes = ?1")?;
+            tem_sr = st
+                .query_map([cnes], |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+                })?
+                .collect::<Result<_, _>>()?;
+        }
+        let mut saida = HashMap::new();
+        for (proc_, ex) in Self::exigencias_de_todos(sig, seq) {
+            if ex.habilitacoes.is_empty() && ex.servicos.is_empty() {
+                continue;
+            }
+            let alternativas = Self::alternativas(&ex.habilitacoes);
+            let hab_ok = Self::atende_habilitacao(&alternativas, &vigentes);
+            let serv_ok = ex.servicos.is_empty() || ex.servicos.iter().any(|p| tem_sr.contains(p));
+            let estado = match (hab_ok, serv_ok) {
+                (true, true) => Estado::Apta,
+                (true, false) => Estado::Ressalva,
+                _ => Estado::Nao,
+            };
+            saida.insert(proc_, estado);
+        }
+        Ok(Some(saida))
+    }
+
+    /// Procedimentos que a unidade pode cobrar pelo cadastro (aptos, e os
+    /// com ressalva de serviço), com o nome na competência, em ordem de código.
+    pub fn procedimentos_da_unidade(
+        &self,
+        sig: &Consulta,
+        comp: Competencia,
+        cnes: &str,
+    ) -> Result<Option<Vec<ProcedimentoDaUnidade>>, ErroConsulta> {
+        let Some(estados) = self.estados(sig, comp, cnes)? else {
+            return Ok(None);
+        };
+        let seq = sig.exigir(comp)?;
+        let nomes = Self::nomes_sigtap(
+            sig,
+            seq,
+            "tb_procedimento",
+            "co_procedimento",
+            "no_procedimento",
+        );
+        let mut v: Vec<ProcedimentoDaUnidade> = estados
+            .into_iter()
+            .filter(|(_, e)| matches!(e, Estado::Apta | Estado::Ressalva))
+            .filter_map(|(codigo, estado)| {
+                let nome = nomes.get(&codigo)?.clone(); // só procedimento vigente
+                Some(ProcedimentoDaUnidade {
+                    codigo,
+                    nome,
+                    estado,
+                })
+            })
+            .collect();
+        v.sort_by(|a, b| a.codigo.cmp(&b.codigo));
+        Ok(Some(v))
     }
 
     /// Quem na rede está apto ao procedimento. `municipios`: restringe o escopo (códigos de 6

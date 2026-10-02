@@ -16,13 +16,14 @@ use sa_packs::saude;
 use sa_packs::territorio::BancoTerritorio;
 use sa_packs::usuario::BancoUsuario;
 use sa_query::Consulta;
-use sa_query::cnes::ConsultaCnes;
+use sa_query::cnes::{ConsultaCnes, Estado};
 use sa_sources::cnes::{Manifesto, ler_cnv};
 use sa_sources::{dbc, latin1};
 use serde_json::json;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 
 /// Onde o programa guarda os dados (a pasta `dados` ao lado do executável).
 #[derive(Debug, Clone)]
@@ -50,6 +51,8 @@ pub struct Progresso {
 pub type Emissor<'a> = &'a (dyn Fn(Progresso) + Sync);
 
 const CHAVE_UNIDADE: &str = "minha_unidade";
+/// Unidades guardadas para troca rápida: "UF:CNES,UF:CNES". A de `CHAVE_UNIDADE` é a ativa.
+const CHAVE_UNIDADES: &str = "minhas_unidades";
 /// Tipos sempre baixados; PF só quando a unidade do usuário é da UF.
 const TIPOS_BASE: [&str; 5] = ["ST", "HB", "SR", "LT", "EQ"];
 
@@ -93,6 +96,47 @@ pub fn minha(p: &Pastas) -> Option<(String, String)> {
     let v = usuario(p).ok()?.config(CHAVE_UNIDADE).ok()??;
     let (uf, cnes) = v.split_once(':')?;
     (dl::uf_valida(uf) && cnes.len() == 7).then(|| (uf.to_string(), cnes.to_string()))
+}
+
+fn ler_par(v: &str) -> Option<(String, String)> {
+    let (uf, cnes) = v.trim().split_once(':')?;
+    (dl::uf_valida(uf) && cnes.len() == 7 && cnes.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| (uf.to_string(), cnes.to_string()))
+}
+
+/// As unidades guardadas para troca rápida (a ativa sempre está entre elas).
+pub fn minhas(p: &Pastas) -> Vec<(String, String)> {
+    let mut v: Vec<(String, String)> = Vec::new();
+    if banco_usuario(p).exists()
+        && let Ok(u) = usuario(p)
+        && let Ok(Some(lista)) = u.config(CHAVE_UNIDADES)
+    {
+        for par in lista.split(',').filter_map(ler_par) {
+            if !v.contains(&par) {
+                v.push(par);
+            }
+        }
+    }
+    if let Some(ativa) = minha(p)
+        && !v.contains(&ativa)
+    {
+        v.insert(0, ativa);
+    }
+    v
+}
+
+fn gravar_unidades(p: &Pastas, v: &[(String, String)]) -> Result<(), String> {
+    let texto = v
+        .iter()
+        .map(|(u, c)| format!("{u}:{c}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    usuario(p)?
+        .gravar_config(
+            CHAVE_UNIDADES,
+            (!texto.is_empty()).then_some(texto.as_str()),
+        )
+        .map_err(|e| e.to_string())
 }
 
 /// UFs com banco do CNES.
@@ -504,10 +548,23 @@ pub fn situacao(p: &Pastas) -> serde_json::Value {
             .unwrap_or_default();
         json!({ "uf": uf, "cnes": cnes, "nome": nome })
     });
-    json!({ "ufs": ufs, "minha": minha, "ufs_disponiveis": dl::UFS })
+    let unidades: Vec<serde_json::Value> = minhas(p)
+        .into_iter()
+        .map(|(uf, cnes)| {
+            let nome = consulta_cnes(p, &uf)
+                .ok()
+                .and_then(|q| q.buscar(&cnes, 1).ok())
+                .and_then(|v| v.into_iter().next())
+                .map(|e| e.nome)
+                .unwrap_or_default();
+            json!({ "uf": uf, "cnes": cnes, "nome": nome })
+        })
+        .collect();
+    json!({ "ufs": ufs, "minha": minha, "unidades": unidades, "ufs_disponiveis": dl::UFS })
 }
 
-/// Escolhe a unidade do usuário. Carrega os profissionais dela se o arquivo já estiver guardado.
+/// Escolhe a unidade ativa (e a guarda na lista de troca rápida). Carrega os profissionais dela
+/// se o arquivo já estiver guardado. Escolher a que já está ativa não muda nada.
 pub fn definir_minha(p: &Pastas, uf: &str, cnes: &str) -> Result<serde_json::Value, String> {
     exigir_uf(uf)?;
     let q = consulta_cnes(p, uf)?;
@@ -518,31 +575,56 @@ pub fn definir_minha(p: &Pastas, uf: &str, cnes: &str) -> Result<serde_json::Val
         .find(|e| e.cnes == cnes)
         .ok_or_else(|| format!("o CNES {cnes} não está no cadastro de {uf} carregado. Confira o número ou baixe o CNES de novo"))?;
     drop(q);
-    if let Some((uf_antes, _)) = minha(p).filter(|(u, _)| u != uf) {
+    let mut lista = minhas(p);
+    let par = (uf.to_string(), cnes.to_string());
+    if !lista.contains(&par) {
+        lista.push(par.clone());
+    }
+    if minha(p).as_ref() == Some(&par) {
+        gravar_unidades(p, &lista)?;
+        return Ok(json!({ "uf": uf, "cnes": cnes, "nome": achado.nome, "profissionais": false }));
+    }
+    // Os profissionais são só da unidade ativa: os da anterior saem do banco.
+    if let Some((uf_antes, _)) = minha(p) {
         remover_profissionais(p, &uf_antes)?;
     }
     usuario(p)?
         .gravar_config(CHAVE_UNIDADE, Some(&format!("{uf}:{cnes}")))
         .map_err(|e| e.to_string())?;
+    gravar_unidades(p, &lista)?;
     let tem_pf = dl::locais(&arquivos_cnes(p, uf), uf).contains_key("PF");
-    // Tira os profissionais da unidade anterior e traz os desta, se o arquivo estiver guardado.
-    remover_profissionais(p, uf)?;
     if tem_pf {
         carregar_profissionais(p, uf)?;
     }
     Ok(json!({ "uf": uf, "cnes": cnes, "nome": achado.nome, "profissionais": tem_pf }))
 }
 
-/// Esquece a unidade escolhida (e os profissionais dela saem do banco).
-pub fn limpar_minha(p: &Pastas) -> Result<(), String> {
-    let anterior = minha(p);
-    usuario(p)?
-        .gravar_config(CHAVE_UNIDADE, None)
-        .map_err(|e| e.to_string())?;
-    if let Some((uf, _)) = anterior {
-        remover_profissionais(p, &uf)?;
+/// Tira uma unidade da lista de troca rápida. Se era a ativa, passa a ativa a primeira que
+/// sobrar (ou nenhuma); os profissionais dela saem do banco.
+pub fn remover_unidade(p: &Pastas, uf: &str, cnes: &str) -> Result<(), String> {
+    let par = (uf.to_string(), cnes.to_string());
+    let mut lista = minhas(p);
+    lista.retain(|x| x != &par);
+    let era_ativa = minha(p).as_ref() == Some(&par);
+    gravar_unidades(p, &lista)?;
+    if era_ativa {
+        remover_profissionais(p, uf)?;
+        usuario(p)?
+            .gravar_config(CHAVE_UNIDADE, None)
+            .map_err(|e| e.to_string())?;
+        if let Some((u, c)) = lista.first() {
+            definir_minha(p, u, c)?;
+        }
     }
     Ok(())
+}
+
+/// Esquece a unidade ativa (sai da lista de troca rápida; os profissionais dela saem do banco).
+pub fn limpar_minha(p: &Pastas) -> Result<(), String> {
+    match minha(p) {
+        Some((uf, cnes)) => remover_unidade(p, &uf, &cnes),
+        None => Ok(()),
+    }
 }
 
 /// Apaga do banco da UF as tabelas que só existem para a unidade escolhida (profissionais).
@@ -562,9 +644,21 @@ fn sem_unidade() -> String {
     "nenhuma unidade escolhida. Escolha a sua unidade em Minha unidade".to_string()
 }
 
-/// A unidade do usuário, completa.
-pub fn unidade(p: &Pastas, sig: &Consulta, comp: Competencia) -> Result<serde_json::Value, String> {
-    let (uf, cnes) = minha(p).ok_or_else(sem_unidade)?;
+/// Uma unidade, completa: a `alvo` (UF, CNES) ou, sem alvo, a ativa. Qualquer estabelecimento
+/// de uma UF carregada pode ser visto; os profissionais só existem para a unidade ativa.
+pub fn unidade(
+    p: &Pastas,
+    sig: &Consulta,
+    comp: Competencia,
+    alvo: Option<(&str, &str)>,
+) -> Result<serde_json::Value, String> {
+    let (uf, cnes) = match alvo {
+        Some((u, c)) => {
+            exigir_uf(u)?;
+            (u.to_string(), c.to_string())
+        }
+        None => minha(p).ok_or_else(sem_unidade)?,
+    };
     let q = consulta_cnes(p, &uf)?;
     let u = q
         .unidade(sig, comp, &cnes)
@@ -572,6 +666,8 @@ pub fn unidade(p: &Pastas, sig: &Consulta, comp: Competencia) -> Result<serde_js
         .ok_or_else(|| format!("o CNES {cnes} não está mais no cadastro de {uf} carregado. Escolha a unidade de novo"))?;
     let mut v = serde_json::to_value(&u).map_err(|e| e.to_string())?;
     v["uf"] = json!(uf);
+    v["ativa"] = json!(minha(p).as_ref() == Some(&(uf.clone(), cnes.clone())));
+    v["guardada"] = json!(minhas(p).contains(&(uf.clone(), cnes.clone())));
     v["municipio_nome"] = json!(nome_municipio(p, &u.municipio));
     v["tem_arquivo_de_profissionais"] =
         json!(dl::locais(&arquivos_cnes(p, &uf), &uf).contains_key("PF"));
@@ -596,6 +692,113 @@ pub fn aptidao(
         .aptidao(sig, comp, procedimento, &cnes)
         .map_err(|e| e.to_string())?;
     serde_json::to_value(&a).map_err(|e| e.to_string())
+}
+
+type CacheEstados = (String, Arc<HashMap<String, Estado>>);
+static CACHE_ESTADOS: Mutex<Option<CacheEstados>> = Mutex::new(None);
+
+/// Estados de uma unidade diante dos procedimentos, com cache de uma entrada (a lista da
+/// esquerda chama a cada grupo aberto). A chave inclui a data do banco do CNES, então um
+/// download novo invalida o cache.
+fn estados_da_unidade(
+    p: &Pastas,
+    sig: &Consulta,
+    comp: Competencia,
+    uf: &str,
+    cnes: &str,
+) -> Result<Option<Arc<HashMap<String, Estado>>>, String> {
+    exigir_uf(uf)?;
+    if !banco_cnes(p, uf).exists() {
+        return Ok(None);
+    }
+    let mtime = std::fs::metadata(banco_cnes(p, uf))
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let chave = format!("{uf}:{cnes}:{comp}:{mtime}");
+    if let Ok(g) = CACHE_ESTADOS.lock()
+        && let Some((k, v)) = g.as_ref()
+        && *k == chave
+    {
+        return Ok(Some(v.clone()));
+    }
+    let q = consulta_cnes(p, uf)?;
+    let Some(m) = q.estados(sig, comp, cnes).map_err(|e| e.to_string())? else {
+        return Ok(None);
+    };
+    let m = Arc::new(m);
+    if let Ok(mut g) = CACHE_ESTADOS.lock() {
+        *g = Some((chave, m.clone()));
+    }
+    Ok(Some(m))
+}
+
+/// Marcador da lista de procedimentos: para cada código pedido que a unidade ativa tem
+/// exigência, `apta`, `ressalva` ou `nao`. Sem unidade ativa, mapa vazio.
+pub fn marcadores(
+    p: &Pastas,
+    sig: &Consulta,
+    comp: Competencia,
+    codigos: &[String],
+) -> Result<serde_json::Value, String> {
+    let Some((uf, cnes)) = minha(p) else {
+        return Ok(json!({}));
+    };
+    let Some(estados) = estados_da_unidade(p, sig, comp, &uf, &cnes)? else {
+        return Ok(json!({}));
+    };
+    let mut m = serde_json::Map::new();
+    for c in codigos {
+        if let Some(e) = estados.get(c) {
+            m.insert(
+                c.clone(),
+                serde_json::to_value(e).map_err(|e| e.to_string())?,
+            );
+        }
+    }
+    Ok(serde_json::Value::Object(m))
+}
+
+/// Procedimentos que uma unidade (qualquer uma de uma UF carregada) pode cobrar pelo cadastro.
+pub fn procedimentos_da_unidade(
+    p: &Pastas,
+    sig: &Consulta,
+    comp: Competencia,
+    uf: &str,
+    cnes: &str,
+) -> Result<serde_json::Value, String> {
+    let q = consulta_cnes(p, uf)?;
+    let v = q
+        .procedimentos_da_unidade(sig, comp, cnes)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("o CNES {cnes} não está no cadastro de {uf} carregado"))?;
+    serde_json::to_value(&v).map_err(|e| e.to_string())
+}
+
+/// Procura estabelecimentos por nome ou número em todas as UFs carregadas (a busca da barra).
+pub fn buscar_unidades(p: &Pastas, texto: &str, limite: usize) -> serde_json::Value {
+    let mut saida = Vec::new();
+    for uf in ufs_carregadas(p) {
+        if saida.len() >= limite {
+            break;
+        }
+        let Ok(q) = consulta_cnes(p, &uf) else {
+            continue;
+        };
+        let Ok(v) = q.buscar(texto, limite) else {
+            continue;
+        };
+        for e in v {
+            if saida.len() >= limite {
+                break;
+            }
+            saida.push(json!({ "uf": uf, "cnes": e.cnes, "nome": e.nome, "municipio": e.municipio,
+                               "municipio_nome": nome_municipio(p, &e.municipio), "tipo_nome": e.tipo_nome }));
+        }
+    }
+    json!(saida)
 }
 
 fn territorio(p: &Pastas) -> Option<BancoTerritorio> {
@@ -750,6 +953,43 @@ pub fn exportar(
     ))
 }
 
+/// Confere no servidor oficial se há CNES mais novo que o carregado, UF por UF (uma consulta por
+/// vez). Devolve `{ "novas": [{uf, atual, nova, bytes}], "erro": texto ou null }`. Falha de rede
+/// não é erro de programa: volta em `erro`, junto com o que deu para conferir.
+pub fn verificar_cnes(p: &Pastas) -> serde_json::Value {
+    verificar_cnes_em(p, &dl::Fonte::oficial())
+}
+
+fn verificar_cnes_em(p: &Pastas, fonte: &dl::Fonte) -> serde_json::Value {
+    let mut novas = Vec::new();
+    let mut erro: Option<String> = None;
+    for uf in ufs_carregadas(p) {
+        let Some(atual) = consulta_cnes(p, &uf)
+            .ok()
+            .and_then(|q| q.resumo().ok())
+            .map(|r| r.competencia)
+        else {
+            continue;
+        };
+        match dl::competencias(fonte, &uf) {
+            Ok(cs) => {
+                if let Some((c, bytes)) = cs.last()
+                    && c.to_string() > atual
+                {
+                    novas.push(
+                        json!({ "uf": uf, "atual": atual, "nova": c.to_string(), "bytes": bytes }),
+                    );
+                }
+            }
+            Err(e) => {
+                erro = Some(e.to_string());
+                break;
+            }
+        }
+    }
+    json!({ "novas": novas, "erro": erro })
+}
+
 /// Competências do CNES no servidor oficial para a UF (mais recente primeiro), com o tamanho do
 /// arquivo de estabelecimentos.
 pub fn competencias_no_servidor(uf: &str) -> Result<serde_json::Value, String> {
@@ -767,9 +1007,9 @@ pub fn competencias_no_servidor(uf: &str) -> Result<serde_json::Value, String> {
 /// Apaga o CNES de uma UF: o banco e os arquivos oficiais guardados (podem ser baixados de novo).
 pub fn apagar_uf(p: &Pastas, uf: &str) -> Result<String, String> {
     exigir_uf(uf)?;
-    if minha(p).is_some_and(|(u, _)| u == uf) {
+    if minhas(p).iter().any(|(u, _)| u == uf) {
         return Err(format!(
-            "a sua unidade é de {uf}. Troque ou esqueça a unidade em Minha unidade antes de apagar o CNES de {uf}"
+            "há unidade de {uf} na sua lista. Remova-a em Minha unidade antes de apagar o CNES de {uf}"
         ));
     }
     let db = banco_cnes(p, uf);
@@ -899,6 +1139,9 @@ mod testes {
             .collect();
         arquivos.insert("STMS2401.dbc".into(), origem.join("STMS2401.dbc"));
         arquivos.insert("TAB_CNES.zip".into(), d.join("TAB_CNES.zip"));
+        let mut com_mais_novo = arquivos.clone();
+        com_mais_novo.insert("STMS2609.dbc".into(), origem.join("STMS2608.dbc"));
+        let porta_nova = sa_download::servidor_falso::iniciar(com_mais_novo);
         let porta = sa_download::servidor_falso::iniciar(arquivos);
         let fonte = dl::Fonte {
             servidor: "127.0.0.1".into(),
@@ -935,6 +1178,15 @@ mod testes {
         assert_eq!(sit["ufs"][0]["uf"], "MS");
         assert_eq!(sit["ufs"][0]["resumo"]["competencia"], "202608", "{sit}");
         assert!(sit["minha"].is_null());
+        // Verificação de atualização: em dia com o servidor que só tem 08/2026; defasado com o que já tem 09/2026.
+        let em_dia = verificar_cnes_em(&p, &fonte);
+        assert!(em_dia["novas"].as_array().unwrap().is_empty(), "{em_dia}");
+        let mut fonte_nova = fonte.clone();
+        fonte_nova.cortesia.porta = porta_nova;
+        let defasado = verificar_cnes_em(&p, &fonte_nova);
+        assert_eq!(defasado["novas"][0]["uf"], "MS", "{defasado}");
+        assert_eq!(defasado["novas"][0]["atual"], "202608");
+        assert_eq!(defasado["novas"][0]["nova"], "202609");
         let sig = Consulta::abrir(&sig).unwrap();
         let comp = Competencia::nova(2026, 9).unwrap();
         // Sem unidade: aptidão é nula (a ficha não mostra o bloco) e a rede orienta.
@@ -959,7 +1211,7 @@ mod testes {
         let def = definir_minha(&p, "MS", &meu).unwrap();
         assert_eq!(def["profissionais"], false);
         assert_eq!(minha(&p), Some(("MS".to_string(), meu.clone())));
-        let u = unidade(&p, &sig, comp).unwrap();
+        let u = unidade(&p, &sig, comp, None).unwrap();
         assert!(!u["habilitacoes"].as_array().unwrap().is_empty());
         assert!(
             u["profissionais"].is_null(),
@@ -1001,7 +1253,7 @@ mod testes {
             !arquivos_cnes(&p, "MS").join("PFMS2608.dbc").exists(),
             "o arquivo com todas as pessoas da UF não pode ficar guardado"
         );
-        let u = unidade(&p, &sig, comp).unwrap();
+        let u = unidade(&p, &sig, comp, None).unwrap();
         assert!(!u["profissionais"].as_array().unwrap().is_empty());
         assert!(!u["ocupacoes"].as_array().unwrap().is_empty());
 
@@ -1018,10 +1270,81 @@ mod testes {
         let busca = buscar_estabelecimentos(&p, "MS", &meu).unwrap();
         assert_eq!(busca[0]["cnes"], meu.as_str());
 
+        // 4b. Marcador da lista, procedimentos da unidade e busca por nome em qualquer UF carregada.
+        let mar = marcadores(
+            &p,
+            &sig,
+            comp,
+            &["0301010072".to_string(), "9999999999".to_string()],
+        )
+        .unwrap();
+        assert!(mar.get("9999999999").is_none());
+        let todos = procedimentos_da_unidade(&p, &sig, comp, "MS", &meu).unwrap();
+        let todos = todos.as_array().unwrap();
+        assert!(!todos.is_empty());
+        let um = todos[0]["codigo"].as_str().unwrap().to_string();
+        let mar = marcadores(&p, &sig, comp, std::slice::from_ref(&um)).unwrap();
+        assert!(["apta", "ressalva"].contains(&mar[um.as_str()].as_str().unwrap()));
+        let nome_unidade = unidade(&p, &sig, comp, None).unwrap()["nome"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let achadas = buscar_unidades(&p, &nome_unidade, 8);
+        assert!(
+            achadas
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["cnes"] == meu.as_str() && e["uf"] == "MS")
+        );
+
+        // 4c. Mais de uma unidade: a lista guarda as duas, a troca é rápida e só a ativa tem
+        // profissionais; ver outra unidade não a torna ativa.
+        let outra: String = BancoCnes::abrir(&banco_cnes(&p, "MS"))
+            .unwrap()
+            .conexao()
+            .query_row(
+                "SELECT cnes FROM cnes_hb WHERE cnes <> ?1 GROUP BY cnes ORDER BY count(*) DESC, cnes LIMIT 1",
+                [&meu],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let visto = unidade(&p, &sig, comp, Some(("MS", &outra))).unwrap();
+        assert_eq!(visto["ativa"], false);
+        assert_eq!(minha(&p), Some(("MS".to_string(), meu.clone())));
+        definir_minha(&p, "MS", &meu).unwrap(); // a mesma: não mexe em nada
+        assert!(
+            !BancoCnes::abrir(&banco_cnes(&p, "MS"))
+                .unwrap()
+                .conexao()
+                .query_row("SELECT count(*) FROM cnes_pf", [], |r| r.get::<_, i64>(0))
+                .map(|n| n == 0)
+                .unwrap(),
+            "escolher de novo a unidade ativa não pode apagar os profissionais"
+        );
+        definir_minha(&p, "MS", &outra).unwrap();
+        assert_eq!(
+            minhas(&p),
+            vec![
+                ("MS".to_string(), meu.clone()),
+                ("MS".to_string(), outra.clone())
+            ]
+        );
+        assert_eq!(minha(&p), Some(("MS".to_string(), outra.clone())));
+        assert_eq!(situacao(&p)["unidades"].as_array().unwrap().len(), 2);
+        remover_unidade(&p, "MS", &outra).unwrap();
+        assert_eq!(
+            minha(&p),
+            Some(("MS".to_string(), meu.clone())),
+            "volta para a outra"
+        );
+        assert_eq!(minhas(&p).len(), 1);
+
         // 5. Não apaga a UF da unidade; esquecer a unidade tira os profissionais do banco.
-        assert!(apagar_uf(&p, "MS").unwrap_err().contains("sua unidade"));
+        assert!(apagar_uf(&p, "MS").unwrap_err().contains("sua lista"));
         limpar_minha(&p).unwrap();
         assert!(minha(&p).is_none());
+        assert!(minhas(&p).is_empty());
         assert!(
             !BancoCnes::abrir(&banco_cnes(&p, "MS"))
                 .unwrap()

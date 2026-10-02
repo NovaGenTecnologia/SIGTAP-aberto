@@ -184,7 +184,16 @@ def main():
         if cmd == "cnes_buscar": return cli_d("cnes-buscar", args["uf"], args["texto"])
         if cmd == "unidade_definir": return cli_d("unidade-definir", args["uf"], args["cnes"])
         if cmd == "unidade_limpar": return cli_d("unidade-limpar")
-        if cmd == "unidade_ver": return cli_d("unidade", *comp)
+        if cmd == "unidade_ver": return cli_d("unidade", *([args["uf"], args["cnes"]] if args.get("uf") and args.get("cnes") else []), *comp)
+        if cmd == "unidade_remover": return cli_d("unidade-remover", args["uf"], args["cnes"], texto=True) and None
+        if cmd == "marcadores": return cli_d("marcadores", *args["codigos"], *comp)
+        if cmd == "unidade_procedimentos": return cli_d("unidade-procedimentos", args["uf"], args["cnes"], *comp)
+        if cmd == "unidades_buscar": return cli_d("unidades-buscar", args["texto"])
+        if cmd == "cnes_verificar":
+            time.sleep(0.4)
+            if a.novidade and not estado.get("cnes_baixado"):
+                return {"novas": [{"uf": "MS", "atual": "202608", "nova": "202609", "bytes": 310_000}], "erro": None}
+            return {"novas": [], "erro": None}
         if cmd == "aptidao": return cli_d("aptidao", args["codigo"], *comp)
         if cmd == "rede": return cli_d("rede", args["codigo"], "--escopo", args.get("escopo") or "municipio", *comp)
         if cmd == "marcar_favorito": return cli_d("favorito", args["codigo"], "sim" if args["favorito"] else "nao")

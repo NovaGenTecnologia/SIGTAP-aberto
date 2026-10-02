@@ -99,12 +99,7 @@ const E = {
 function compInfo(c) { return E.comps.find((x) => x.competencia === c); }
 
 function rodape() {
-  const alvo = limpar($("rodape-fonte"));
-  const i = compInfo(E.comp);
-  if (!i) { alvo.textContent = "Sem tabela carregada"; return; }
-  alvo.append("Fonte: ",
-    el("button", { class: "link-rodape", type: "button", title: "Abrir o site oficial do SIGTAP no navegador", onclick: abrirSigtap }, "SIGTAP"),
-    ` (DATASUS), ${i.arquivo}${i.publicado_em ? `, publicado em ${i.publicado_em.replace(" ", " às ")}` : ""}`);
+  limpar($("rodape-fonte")).textContent = compInfo(E.comp) ? "" : "Sem tabela carregada";
 }
 
 function erro(msg) {
@@ -145,7 +140,7 @@ async function desenhar() {
       case "busca": await telaBusca(c, E.rota.texto); break;
       case "ficha": await telaFicha(c, E.rota.codigo, E.rota.aba || "Resumo"); break;
       case "mudou": $("ir-mudou").setAttribute("aria-current", "page"); await telaMudou(c); break;
-      case "unidade": $("ir-unidade").setAttribute("aria-current", "page"); await telaUnidade(c, E.rota.aba || "Habilitações"); break;
+      case "unidade": $("ir-unidade").setAttribute("aria-current", "page"); await telaUnidade(c, E.rota.aba); break;
       case "modulos": $("ir-modulos").setAttribute("aria-current", "page"); telaModulos(c); break;
       default: telaInicio(c);
     }
@@ -170,8 +165,9 @@ function moverSug(d) {
 }
 async function sugerir(texto) {
   const n = ++Sug.seq;
-  let r = null, falha = null;
+  let r = null, falha = null, unidades = [];
   try { r = await invoke("buscar", { competencia: E.comp, texto }); } catch (e) { falha = e; }
+  if (!falha && texto.length >= 3 && E.cnes && E.cnes.ufs.length) { try { unidades = await invoke("unidades_buscar", { texto }); } catch { /* sem unidades */ } }
   if (n !== Sug.seq || $("busca").value.trim() !== texto) return; // resposta de uma digitação antiga
   const box = limpar($("sugestoes"));
   Sug.itens = []; Sug.ativo = -1;
@@ -196,7 +192,13 @@ async function sugerir(texto) {
       for (const a of apoio) box.append(item([el("span", { class: "c", text: a.codigo.join(" ") }),
         el("span", { class: "t" }, el("span", { class: "n", text: a.nome }), el("small", { text: `${NOME_TABELA[a.tabela] || a.tabela}; ${a.procedimentos ? `${F.inteiro(a.procedimentos)} procedimento(s) ligados` : "nenhum procedimento ligado"}` }))], verTudo(a)));
     }
-    if (!procs.length && !apoio.length) box.append(el("p", { class: "sug-nada", text: `Nada encontrado para “${texto}” em ${F.competencia(E.comp)}.` }));
+    if (unidades.length) {
+      box.append(el("div", { class: "sug-cab" }, el("span", { text: "Unidades (CNES)" }), el("small", { text: F.inteiro(unidades.length) })));
+      for (const u of unidades) box.append(item([el("span", { class: "c", text: u.cnes }),
+        el("span", { class: "t" }, el("span", { class: "n", text: u.nome || "nome não carregado" }), el("small", { text: `${u.municipio_nome || u.municipio}, ${u.uf}` }))],
+        () => { fecharSug(); ir({ tipo: "unidade", uf: u.uf, cnes: u.cnes, aba: "Procedimentos" }); }));
+    }
+    if (!procs.length && !apoio.length && !unidades.length) box.append(el("p", { class: "sug-nada", text: `Nada encontrado para “${texto}” em ${F.competencia(E.comp)}.` }));
     else box.append(item(el("span", { class: "sug-todos" }, `Ver todos os resultados`, el("kbd", { text: "Enter" })), verTudo(null)));
   }
   box.hidden = false; $("busca").setAttribute("aria-expanded", "true");
@@ -239,6 +241,7 @@ async function preencherArvore(ul, pai) {
     nos = await invoke("arvore", { competencia: E.comp, pai: pai || null });
   } catch (e) { ul.append(el("li", {}, erro(e))); return; }
   const nivel = pai ? pai.length / 2 : 0;
+  const folhas = [];
   for (const no of nos) {
     const folha = no.nivel === "procedimento";
     // Sem recuo: o próprio código cria a escada (04, 04.06, 04.06.01, 04.06.01.054-4).
@@ -261,9 +264,11 @@ async function preencherArvore(ul, pai) {
     const li = el("li", {}, btn);
     btn.addEventListener("click", () => folha ? ir({ tipo: "ficha", codigo: no.codigo }) : abrirNo(li, no));
     ul.append(li);
+    if (folha) folhas.push(btn);
     // "Expandir tudo" abre grupos e subgrupos (a lista final de procedimentos fica fechada).
     if (!folha && (E.abertos.has(no.codigo) || (E.expandir && no.codigo.length <= 4))) { E.abertos.delete(no.codigo); await abrirNo(li, no); }
   }
+  if (folhas.length) marcarHabilitacao(folhas);
 }
 
 function pontuar(c) { return (c.match(/.{2}/g) || [c]).join("."); }
@@ -340,7 +345,7 @@ async function telaBusca(c, texto) {
     ? `${F.inteiro(r.total_procedimentos)} procedimento(s) com código começando em “${r.consulta}”`
     : `${F.inteiro(r.total_procedimentos)} procedimento(s) com “${r.consulta}” no nome`;
   pg.append(el("div", { class: "cab-linha" }, el("h1", { text: titulo }),
-    el("span", { class: "quieto", text: `em ${F.competencia(r.competencia)}; a busca ignora acentos e maiúsculas` }),
+    el("span", { class: "quieto", text: `em ${F.competencia(r.competencia)}` }),
     el("div", { class: "espaco" }),
     r.procedimentos.length ? botaoExportar("Exportar", async () => [`SIGTAP busca ${r.consulta}`, `Busca por "${r.consulta}", competência ${F.competencia(r.competencia)}`,
       [{ nome: "Procedimentos", colunas: ["Código", "Nome", "Instrumentos", "Complexidade", "Valor total (R$)"],
@@ -398,7 +403,16 @@ async function telaBusca(c, texto) {
     }
     pg.append(el("table", { class: "tabela" }, el("thead", {}, el("tr", {}, ["Tabela", "Código", "Nome", "Ligados"].map((h, i) => el("th", { class: i === 3 ? "num" : null, text: h })))), t));
   }
-  if (!r.procedimentos.length && !r.apoio.length)
+  let unidades = [];
+  if (texto.length >= 3 && E.cnes && E.cnes.ufs.length) { try { unidades = await invoke("unidades_buscar", { texto }); } catch { /* sem unidades */ } }
+  if (unidades.length) {
+    pg.append(el("h2", { text: "Unidades (CNES)" }), el("table", { class: "tabela" },
+      el("thead", {}, el("tr", {}, ["CNES", "Estabelecimento", "Município"].map((h) => el("th", { text: h })))),
+      el("tbody", {}, unidades.map((u) => el("tr", { class: "clicavel", tabindex: "0", onclick: () => ir({ tipo: "unidade", uf: u.uf, cnes: u.cnes, aba: "Procedimentos" }),
+        onkeydown: (ev) => { if (ev.key === "Enter") ir({ tipo: "unidade", uf: u.uf, cnes: u.cnes, aba: "Procedimentos" }); } },
+        el("td", { class: "cod", text: u.cnes }), el("td", { text: u.nome || "nome não carregado" }), el("td", { text: `${u.municipio_nome || u.municipio}, ${u.uf}` }))))));
+  }
+  if (!r.procedimentos.length && !r.apoio.length && !unidades.length)
     pg.append(el("p", { class: "quieto", text: "Nada encontrado. Confira a grafia, tente parte do nome ou o código com ou sem pontos." }));
   const ligar = E.rota.ligar && r.apoio.find((a) => a.tabela === E.rota.ligar.tabela && a.codigo.join() === E.rota.ligar.codigo.join());
   if (ligar && ligar.procedimentos) await ligados(pg, ligar);
@@ -618,8 +632,8 @@ function resumo(corpo, f, p, rel, codigo) {
     return b;
   };
   B.append(blocoItens("Incremento por habilitação", rel("rl_procedimento_incremento"), "co_habilitacao", (l) =>
-    ["vl_percentual_sh", "vl_percentual_sa", "vl_percentual_sp"].map((k) => [k.slice(-2).toUpperCase(), campoDe(l, k)?.valor || 0])
-      .filter(([, x]) => x).map(([k, x]) => `+${F.percentual(x)} ${k}`).join(", ")));
+    ["vl_percentual_sh", "vl_percentual_sa", "vl_percentual_sp"].map((k) => [{ sh: "serviço hospitalar", sa: "serviço ambulatorial", sp: "serviço profissional" }[k.slice(-2)], campoDe(l, k)?.valor || 0])
+      .filter(([, x]) => x).map(([k, x]) => `+${F.percentual(x)} no ${k}`).join("; ")));
   B.append(blocoItens("Regras condicionadas", rel("rl_procedimento_regra_cond"), "co_regra_condicionada"));
   B.append(blocoItens("Atributos complementares", rel("rl_procedimento_detalhe"), "co_detalhe"));
 }
@@ -845,11 +859,16 @@ function telaModulos(c) {
   const s = E.situacao || {};
   const pg = el("div", { class: "pagina modulos" });
   c.append(pg);
-  pg.append(botaoVoltar(), el("div", { class: "cab-linha" }, el("h1", { text: "Módulos e dados" }), el("span", { class: "quieto", text: `Pasta: ${s.pasta_dados || ""}` })));
+  const ABAS_MOD = ["Dados", "Baixar e importar", "Atualizações", "Armazenamento"];
+  const aba = ABAS_MOD.includes(E.rota.aba) ? E.rota.aba : "Dados";
+  pg.append(botaoVoltar(), el("div", { class: "cab-linha" }, el("h1", { text: "Módulos e dados" }), el("span", { class: "quieto", text: `Pasta: ${s.pasta_dados || ""}` })),
+    el("div", { class: "abas", role: "tablist" }, ABAS_MOD.map((n) => el("button", { class: "aba", role: "tab", type: "button", "aria-selected": String(n === aba),
+      onclick: () => ir({ tipo: "modulos", aba: n }, { substituir: true }) }, n,
+      n === "Atualizações" && Vigia && (pedidoDados() || novasCnes().length || (Vigia.versao && Vigia.versao.nova)) ? el("small", { text: "•" }) : null))));
   const ult = E.comps[E.comps.length - 1];
   const ter = s.territorio;
   const z = s.zips || {};
-  const linhas = [
+  const base = [
     ["Tabela de procedimentos (SIGTAP)", ult ? "carregada" : "não baixada", ult ? F.competencia(ult.competencia) : "—",
       ult ? `${ult.arquivo}${ult.publicado_em ? `, publicado em ${ult.publicado_em}` : ""}` : "ftp2.datasus.gov.br"],
     ["Histórico da tabela", `${E.comps.length} competência(s)`, E.comps.length ? `${F.competencia(E.comps[0].competencia)} a ${F.competencia(ult.competencia)}` : "—",
@@ -858,15 +877,20 @@ function telaModulos(c) {
       ter ? `IBGE: ${F.inteiro(ter.resumo.municipios_ibge)} municípios. Ministério da Saúde: ${F.inteiro(ter.resumo.municipios_saude)}, ${ter.resumo.regioes_saude} regiões de saúde.` +
         (ter.resumo.sem_regiao_saude.length ? ` Sem região de saúde na fonte: ${ter.resumo.sem_regiao_saude.join(", ")}.` : "") +
         ter.fontes.map((f) => ` ${f.fonte === "ibge" ? "IBGE" : "Ministério da Saúde"} obtido em ${f.origem.obtido_em}.`).join("") : "IBGE e Ministério da Saúde"],
-    linhaModuloCnes(),
-    ["Produção ambulatorial e hospitalar (SIA, SIH)", "próxima fase", "—", "por UF e competência; chega na fase 4"],
-    ["TUSS e TISS (ANS)", "próxima fase", "—", "correlação com o SIGTAP como apoio, sempre com a data da fonte"],
   ];
-  pg.append(el("table", { class: "tabela" },
-    el("thead", {}, el("tr", {}, ["Módulo", "Situação", "Competências", "Origem e frescor"].map((h) => el("th", { text: h })))),
-    el("tbody", {}, linhas.map((l) => el("tr", {}, el("td", {}, el("b", { text: l[0] })), l.slice(1).map((x) => el("td", { text: x })))))));
-
-  pg.append(secaoAtualizacoes());
+  const opcionais = [linhaModuloCnes()];
+  const embreve = [
+    ["Produção ambulatorial e hospitalar (SIA, SIH)", "em breve", "—", "por UF e competência"],
+    ["TUSS e TISS (ANS)", "em breve", "—", "correlação com o SIGTAP, com a data da fonte"],
+  ];
+  const grupo = (nome, ls) => [el("tr", { class: "grupo-linha" }, el("th", { colspan: "4", text: nome })),
+    ...ls.map((l) => el("tr", {}, el("td", {}, el("b", { text: l[0] })), l.slice(1).map((x) => el("td", { text: x }))))];
+  const quadro = el("table", { class: "tabela modulos-tab" },
+    el("thead", {}, el("tr", {}, ["Módulo", "Situação", "Competências", "Origem"].map((h) => el("th", { text: h })))),
+    el("tbody", {}, ...grupo("Base", base), ...grupo("Opcional", opcionais), ...grupo("Em breve", embreve)));
+  const pagina = { "Dados": [], "Baixar e importar": [], "Atualizações": [], "Armazenamento": [] };
+  pagina["Dados"].push(quadro);
+  pagina["Atualizações"].push(secaoAtualizacoes());
 
   // Baixar: escopo, apagar depois, progresso.
   const escolha = { escopo: "vigente" };
@@ -882,7 +906,7 @@ function telaModulos(c) {
   opcoesEscopo(escopos, "escopo-modulos", escolha, atualizarApagar);
   atualizarApagar();
   const ocupado = () => E.tarefa.ativa;
-  pg.append(el("section", { class: "bloco" },
+  pagina["Baixar e importar"].push(el("section", { class: "bloco" },
     el("div", { class: "cab-linha" }, el("h2", { text: "Baixar do DATASUS" }),
       el("small", { text: "um arquivo por vez; enquanto um baixa, o anterior já entra no banco" })),
     escopos, apagarRotulo,
@@ -892,7 +916,7 @@ function telaModulos(c) {
       el("button", { class: "botao", type: "button", onclick: () => invoke("cancelar") }, "Cancelar o que está em andamento")),
     painelProgresso()));
 
-  pg.append(secaoCnes());
+  pagina["Baixar e importar"].push(secaoCnes());
 
   // Espaço em disco: apagar ZIPs já carregados.
   const conf = el("div", { class: "aviso", hidden: true },
@@ -903,7 +927,7 @@ function telaModulos(c) {
       catch (e) { conf.replaceWith(erro(e)); }
     } }, "Apagar"),
     " ", el("button", { class: "link", type: "button", onclick: () => { conf.hidden = true; } }, "Não apagar"));
-  pg.append(el("section", { class: "bloco" },
+  pagina["Armazenamento"].push(el("section", { class: "bloco" },
     el("div", { class: "cab-linha" }, el("h2", { text: "Espaço em disco" }), el("small", { text: `${z.arquivos || 0} ZIP(s), ${F.mb(z.bytes || 0)}` })),
     z.apagaveis
       ? el("p", {}, `${z.apagaveis} ZIP(s) já estão no banco e podem ser apagados, liberando ${F.mb(z.bytes_apagaveis)}. O da competência mais recente (${F.competencia(z.mantida)}) fica sempre guardado.`)
@@ -913,7 +937,7 @@ function telaModulos(c) {
 
   // Importar de uma pasta.
   const caminho = el("input", { type: "text", class: "campo", placeholder: "Ex.: D:\\Downloads\\SIGTAP", "aria-label": "Pasta para importar" });
-  pg.append(el("section", { class: "bloco", id: "importar" }, el("h2", { text: "Importar de uma pasta" }),
+  pagina["Baixar e importar"].push(el("section", { class: "bloco", id: "importar" }, el("h2", { text: "Importar de uma pasta" }),
     el("p", { class: "quieto", text: "Sem internet ou com o FTP bloqueado? Baixe os arquivos por outro caminho, junte numa pasta e indique a pasta aqui. O programa confere cada arquivo antes de usar." }),
     el("div", { class: "acoes" }, caminho,
       el("button", { class: "botao", type: "button", onclick: async () => {
@@ -922,7 +946,8 @@ function telaModulos(c) {
       el("button", { class: "botao primario", type: "button", onclick: () => caminho.value.trim() ? importar(caminho.value.trim()) : caminho.focus() }, "Importar")),
     instrucoesManuais()));
 
-  pg.append(secaoSaude());
+  pagina["Armazenamento"].push(secaoSaude());
+  pg.append(...pagina[aba]);
 }
 
 /** Passo a passo para baixar à mão (rede que bloqueia FTP ou computador sem internet). */
@@ -1079,7 +1104,7 @@ function mostrarProgresso(p) {
 /** Barra no rodapé, à direita, quando a tela atual não mostra o progresso. */
 function atualizarRodapeProgresso() {
   const r = $("rodape-progresso");
-  const visivelNaTela = !$("primeira").hidden || E.rota.tipo === "modulos" || !!$("conteudo").querySelector("[data-tarefa]");
+  const visivelNaTela = !$("primeira").hidden || !!$("conteudo").querySelector("[data-tarefa]");
   const mostrar = !!E.tarefa.ultimo && (E.tarefa.ativa || E.tarefa.falhou || Date.now() < E.tarefa.ate) && !visivelNaTela;
   r.hidden = !mostrar;
   if (mostrar) { desenharProgresso(r, E.tarefa.ultimo); r.title = `${E.tarefa.ultimo.resumo || ""}\n${E.tarefa.ultimo.mensagem || ""}\nClique para ver em Módulos e dados`.trim(); }
@@ -1099,6 +1124,7 @@ async function comecar(cmd, args, msg) {
     E.tarefa = antes.ativa ? antes : { ...antes, ativa: false };
     for (const alvo of document.querySelectorAll("[data-tarefa]")) alvo.hidden = !E.tarefa.ultimo;
     atualizarRodapeProgresso();
+    E.aposPrimeira = null; E.fila = [];
     $("primeira-baixar").disabled = false;
     $("primeira").classList.remove("rodando");
     mostrarFalha(e);
@@ -1116,18 +1142,28 @@ async function fimTarefa(f) {
   E.tarefa.ativa = false;
   E.tarefa.falhou = !f.ok;
   E.tarefa.ate = Date.now() + 10000;
-  $("primeira").classList.remove("rodando");
-  $("primeira-baixar").disabled = false;
-  $("primeira-continuar").hidden = true;
+  // Primeira execução: terminado o obrigatório, segue para o CNES da UF escolhida.
+  const seguinte = E.aposPrimeira && !E.aposPrimeira.fase && f.ok ? E.aposPrimeira : null;
+  const fimCnes = E.aposPrimeira && E.aposPrimeira.fase === "cnes" ? E.aposPrimeira : null;
+  if (seguinte) {
+    seguinte.fase = "cnes";
+    comecar("cnes_baixar", { pedido: { uf: seguinte.uf, competencia: "" } }, `Baixando o CNES de ${seguinte.uf}`);
+  } else {
+    E.aposPrimeira = null;
+    $("primeira").classList.remove("rodando");
+    $("primeira-baixar").disabled = false;
+    $("primeira-continuar").hidden = true;
+  }
   await atualizarSituacao();
   await atualizarCnes();
   if (!$("arvore-raiz").querySelector(".no")) await desenharArvore();
-  mostrarProgresso({
+  if (!seguinte) mostrarProgresso({
     resumo: f.ok ? "Concluído." : f.cancelada ? "Cancelado." : "Não concluído.",
     mensagem: f.mensagem, fracao: f.ok ? 1 : antes.fracao, indeterminado: false, falhou: !f.ok,
   });
   if (!f.ok && !$("primeira").hidden) { $("primeira-erro").hidden = false; $("primeira-erro").textContent = f.mensagem; }
-  if (E.rota.tipo === "modulos" || E.rota.tipo === "inicio" || E.rota.tipo === "unidade") desenhar();
+  if (fimCnes && f.ok) { $("primeira").hidden = true; ir({ tipo: "unidade" }, { substituir: true }); }
+  else if (E.rota.tipo === "modulos" || E.rota.tipo === "inicio" || E.rota.tipo === "unidade") desenhar();
   carregarOfertasDeNovo();
   aposTarefa(f);
   if (f.ok) tirarAviso("recuperacao");
@@ -1169,15 +1205,29 @@ function primeiraExecucao() {
   caixa.querySelectorAll("label").forEach((x) => x.remove());
   opcoesEscopo(caixa, "escopo-primeira", escolha, atualizar, { vigente: "Agora não, só a competência mais recente" });
   atualizar();
+  // CNES da UF (opcional): depois do obrigatório, baixa o CNES e leva à escolha da unidade.
+  const usarCnes = $("primeira-cnes-usar"), ufCnes = $("primeira-cnes-uf");
+  usarCnes.addEventListener("change", async () => {
+    $("primeira-cnes-linha").hidden = !usarCnes.checked;
+    if (usarCnes.checked && !ufCnes.options.length) {
+      if (!E.cnes) await atualizarCnes();
+      let salva = null;
+      try { salva = localStorage.getItem("cnes-uf"); } catch { /* sem armazenamento */ }
+      for (const u of (E.cnes && E.cnes.ufs_disponiveis) || []) ufCnes.append(el("option", { value: u }, u));
+      if (salva) ufCnes.value = salva;
+    }
+  });
   $("primeira-baixar").addEventListener("click", () => {
     $("primeira-erro").hidden = true;
     $("primeira-baixar").disabled = true;
+    E.aposPrimeira = usarCnes.checked && ufCnes.value ? { uf: ufCnes.value } : null;
+    if (E.aposPrimeira) { try { localStorage.setItem("cnes-uf", ufCnes.value); } catch { /* vale só agora */ } }
     baixar({ sigtap: escolha.escopo, territorio: true, apagar_zips: $("primeira-apagar").checked });
   });
   $("primeira-cancelar").addEventListener("click", () => invoke("cancelar"));
   $("primeira-continuar").addEventListener("click", () => { $("primeira").hidden = true; $("primeira-continuar").hidden = true; desenhar(); });
   $("primeira-importar").addEventListener("click", () => {
-    $("primeira").hidden = true; ir({ tipo: "modulos" });
+    $("primeira").hidden = true; ir({ tipo: "modulos", aba: "Baixar e importar" });
     setTimeout(() => $("importar")?.scrollIntoView({ block: "start" }), 0);
   });
 }
@@ -1227,13 +1277,14 @@ async function iniciar() {
   });
   document.addEventListener("mouseup", (ev) => { if (ev.button === 3 && E.pilha.length) { ev.preventDefault(); voltar(); } });
   $("competencia").addEventListener("change", async (ev) => {
-    E.comp = ev.target.value; rodape(); desenharAvisoCnes(); await desenharArvore(); desenhar();
+    E.comp = ev.target.value; rodape(); await desenharArvore(); desenhar();
   });
   $("ir-inicio").addEventListener("click", irProcedimentos);
   $("ir-mudou").addEventListener("click", () => ir({ tipo: "mudou" }));
   $("ir-modulos").addEventListener("click", () => ir({ tipo: "modulos" }));
   iniciarUnidade();
-  $("rodape-progresso").addEventListener("click", () => ir({ tipo: "modulos" }));
+  $("rodape-sigtap").addEventListener("click", abrirSigtap);
+  $("rodape-progresso").addEventListener("click", () => ir({ tipo: "modulos", aba: "Baixar e importar" }));
   primeiraExecucao();
   await tauri.event.listen("progresso", (ev) => { if (E.tarefa.ativa) mostrarProgresso(ev.payload); });
   await tauri.event.listen("dados_atualizados", () => dadosAtualizados());

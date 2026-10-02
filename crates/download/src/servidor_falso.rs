@@ -6,23 +6,40 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Sobe o servidor em 127.0.0.1 numa porta livre e devolve a porta. `arquivos`: nome
 /// remoto → arquivo local.
 pub fn iniciar(arquivos: BTreeMap<String, PathBuf>) -> u16 {
+    iniciar_instavel(arquivos, 0).porta
+}
+
+/// Servidor que imita a falha medida no DATASUS: os primeiros `pasv_mortos` comandos PASV
+/// anunciam uma porta onde ninguém escuta (a conexão de dados é recusada).
+pub struct Instavel {
+    pub porta: u16,
+    /// Quantas conexões de controle foram abertas.
+    pub conexoes: Arc<AtomicUsize>,
+}
+
+pub fn iniciar_instavel(arquivos: BTreeMap<String, PathBuf>, pasv_mortos: usize) -> Instavel {
     let escuta = TcpListener::bind("127.0.0.1:0").expect("porta local");
     let porta = escuta.local_addr().expect("endereço").port();
     let arquivos = Arc::new(arquivos);
+    let conexoes = Arc::new(AtomicUsize::new(0));
+    let mortos = Arc::new(AtomicUsize::new(pasv_mortos));
+    let c2 = conexoes.clone();
     std::thread::spawn(move || {
         for s in escuta.incoming().flatten() {
-            let a = arquivos.clone();
-            std::thread::spawn(move || atender(s, &a));
+            c2.fetch_add(1, Ordering::SeqCst);
+            let (a, m) = (arquivos.clone(), mortos.clone());
+            std::thread::spawn(move || atender(s, &a, &m));
         }
     });
-    porta
+    Instavel { porta, conexoes }
 }
 
-fn atender(s: TcpStream, arquivos: &BTreeMap<String, PathBuf>) {
+fn atender(s: TcpStream, arquivos: &BTreeMap<String, PathBuf>, mortos: &AtomicUsize) {
     let Ok(mut w) = s.try_clone() else { return };
     let mut r = BufReader::new(s);
     let mut dados: Option<TcpListener> = None;
@@ -46,7 +63,14 @@ fn atender(s: TcpStream, arquivos: &BTreeMap<String, PathBuf>) {
                     return;
                 };
                 let p = d.local_addr().map(|a| a.port()).unwrap_or(0);
-                dados = Some(d);
+                if mortos
+                    .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                    .is_ok()
+                {
+                    drop(d); // ninguém escuta nesta porta: a conexão de dados é recusada
+                } else {
+                    dados = Some(d);
+                }
                 format!(
                     "227 Entering Passive Mode (127,0,0,1,{},{})\r\n",
                     p / 256,

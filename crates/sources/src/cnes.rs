@@ -52,6 +52,17 @@ impl Decodificador {
     }
 }
 
+/// Descrição de um código que as tabelas `.cnv` do DATASUS não trazem. Vale só onde o `.cnv`
+/// não decodifica; a `fonte` diz de onde veio a descrição.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ValorFixo {
+    /// Campo como em `Decodificador::chave` (por exemplo `ESFERA_A`).
+    pub campo: String,
+    pub codigo: String,
+    pub nome: String,
+    pub fonte: String,
+}
+
 /// Correspondência (não confirmada) entre tipo de leito do SIGTAP e leito do CNES.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Leito {
@@ -75,6 +86,8 @@ pub struct Manifesto {
     pub decodificadores: Vec<Decodificador>,
     #[serde(rename = "leito")]
     pub leitos: Vec<Leito>,
+    #[serde(rename = "valor_fixo", default)]
+    pub valores_fixos: Vec<ValorFixo>,
 }
 
 impl Manifesto {
@@ -120,6 +133,14 @@ impl Manifesto {
             }
         }
         Ok(m)
+    }
+
+    /// Descrição fixa do manifesto para um código de campo, se houver.
+    pub fn valor_fixo(&self, campo: &str, codigo: &str) -> Option<&str> {
+        self.valores_fixos
+            .iter()
+            .find(|v| v.campo == campo && v.codigo == codigo.trim())
+            .map(|v| v.nome.as_str())
     }
 
     /// O tipo com esse código (maiúsculas e minúsculas indiferentes).

@@ -32,6 +32,11 @@ impl fmt::Display for ErroFtp {
 
 impl std::error::Error for ErroFtp {}
 
+/// Quanto esperar o canal de dados abrir antes de pedir outra porta.
+const TEMPO_CANAL_DADOS: Duration = Duration::from_secs(10);
+/// Quantas portas pedir na mesma sessão antes de desistir dela.
+const TENTATIVAS_CANAL: u32 = 3;
+
 /// Entrada de uma listagem.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entrada {
@@ -45,6 +50,7 @@ pub struct Ftp {
     host: String,
     controle: BufReader<TcpStream>,
     tempo_limite: Duration,
+    reaproveitavel: bool,
 }
 
 impl Ftp {
@@ -63,6 +69,7 @@ impl Ftp {
             host: host.to_string(),
             controle: BufReader::new(s),
             tempo_limite,
+            reaproveitavel: false,
         };
         ftp.esperar(&[220], "conexão")?;
         let (c, _) = ftp.comando("USER anonymous")?;
@@ -136,32 +143,46 @@ impl Ftp {
         }
     }
 
+    /// Abre o canal de dados (modo passivo). O servidor do DATASUS às vezes anuncia uma porta
+    /// que não aceita a conexão (medido em 02/10/2026: cerca de metade das tentativas, com a
+    /// resposta chegando só depois de ~20 s). Falha rápido (`TEMPO_CANAL_DADOS`) e pede outra
+    /// porta na mesma sessão, em vez de derrubar a sessão inteira.
     fn abrir_dados(&mut self) -> Result<TcpStream, ErroFtp> {
-        let t = self.exigir("PASV", &[227])?;
-        let ini = t.find('(').ok_or_else(|| ErroFtp::Protocolo(t.clone()))?;
-        let fim = t[ini..]
-            .find(')')
-            .ok_or_else(|| ErroFtp::Protocolo(t.clone()))?
-            + ini;
-        let n: Vec<u16> = t[ini + 1..fim]
-            .split(',')
-            .map(|x| x.trim().parse::<u16>())
-            .collect::<Result<_, _>>()
-            .map_err(|_| ErroFtp::Protocolo(t.clone()))?;
-        if n.len() != 6 {
-            return Err(ErroFtp::Protocolo(t));
+        let mut ultimo = String::new();
+        for _ in 0..TENTATIVAS_CANAL {
+            let t = self.exigir("PASV", &[227])?;
+            let ini = t.find('(').ok_or_else(|| ErroFtp::Protocolo(t.clone()))?;
+            let fim = t[ini..]
+                .find(')')
+                .ok_or_else(|| ErroFtp::Protocolo(t.clone()))?
+                + ini;
+            let n: Vec<u16> = t[ini + 1..fim]
+                .split(',')
+                .map(|x| x.trim().parse::<u16>())
+                .collect::<Result<_, _>>()
+                .map_err(|_| ErroFtp::Protocolo(t.clone()))?;
+            if n.len() != 6 {
+                return Err(ErroFtp::Protocolo(t));
+            }
+            let porta = n[4] * 256 + n[5];
+            // Usa o mesmo host do controle (ignora o IP informado, que pode ser interno).
+            let endereco = (self.host.as_str(), porta)
+                .to_socket_addrs()
+                .map_err(|e| ErroFtp::Conexao(self.host.clone(), e.to_string()))?
+                .next()
+                .ok_or_else(|| ErroFtp::Conexao(self.host.clone(), "endereço de dados".into()))?;
+            match TcpStream::connect_timeout(&endereco, self.tempo_limite.min(TEMPO_CANAL_DADOS)) {
+                Ok(s) => {
+                    s.set_read_timeout(Some(self.tempo_limite)).ok();
+                    return Ok(s);
+                }
+                Err(e) => ultimo = e.to_string(),
+            }
         }
-        let porta = n[4] * 256 + n[5];
-        // Usa o mesmo host do controle (ignora o IP informado, que pode ser interno).
-        let endereco = (self.host.as_str(), porta)
-            .to_socket_addrs()
-            .map_err(|e| ErroFtp::Conexao(self.host.clone(), e.to_string()))?
-            .next()
-            .ok_or_else(|| ErroFtp::Conexao(self.host.clone(), "endereço de dados".into()))?;
-        let s = TcpStream::connect_timeout(&endereco, self.tempo_limite)
-            .map_err(|e| ErroFtp::Conexao(self.host.clone(), e.to_string()))?;
-        s.set_read_timeout(Some(self.tempo_limite)).ok();
-        Ok(s)
+        Err(ErroFtp::Conexao(
+            self.host.clone(),
+            format!("o servidor não abriu o canal de dados ({ultimo})"),
+        ))
     }
 
     /// Lista uma pasta (formatos Unix e Windows/IIS, os dois vistos no DATASUS).
@@ -184,7 +205,9 @@ impl Ftp {
     /// Tamanho de um arquivo (comando SIZE).
     pub fn tamanho(&mut self, caminho: &str) -> Result<u64, ErroFtp> {
         let t = self.exigir(&format!("SIZE {caminho}"), &[213])?;
-        t[4..].trim().parse().map_err(|_| ErroFtp::Protocolo(t))
+        let n = t[4..].trim().parse().map_err(|_| ErroFtp::Protocolo(t))?;
+        self.reaproveitavel = true;
+        Ok(n)
     }
 
     /// Baixa `caminho` a partir de `desde` bytes, escrevendo em `saida`. Devolve os bytes
@@ -226,16 +249,19 @@ impl Ftp {
         Ok(total)
     }
 
-    /// Baixa só um trecho de `caminho`: `quantos` bytes a partir de `desde`. A conexão é
-    /// encerrada em seguida (o servidor ainda estaria enviando o resto do arquivo), por isso o
-    /// método consome a conexão: cada trecho usa uma conexão própria, uma por vez.
+    /// Baixa só um trecho de `caminho`: `quantos` bytes a partir de `desde`. Depois de ler o
+    /// que precisa, fecha o canal de dados e lê a resposta do servidor (426, ou 226 se o trecho
+    /// foi até o fim), deixando a sessão pronta para o próximo trecho: assim o índice, o cadastro
+    /// e as tabelas saem de uma sessão só, em vez de uma por trecho. Se a resposta não vier, a
+    /// sessão fica marcada como não reaproveitável (`reaproveitavel`).
     pub fn baixar_trecho(
-        mut self,
+        &mut self,
         caminho: &str,
         desde: u64,
         quantos: u64,
         mut progresso: impl FnMut(u64),
     ) -> Result<Vec<u8>, ErroFtp> {
+        self.reaproveitavel = false;
         let mut dados = self.abrir_dados()?;
         if desde > 0 {
             self.exigir(&format!("REST {desde}"), &[350])?;
@@ -257,7 +283,26 @@ impl Ftp {
             progresso(saida.len() as u64);
         }
         let _ = dados.shutdown(Shutdown::Both);
+        drop(dados);
+        self.controle
+            .get_ref()
+            .set_read_timeout(Some(self.tempo_limite.min(TEMPO_CANAL_DADOS)))
+            .ok();
+        if let Ok((codigo, _)) = self.ler_resposta()
+            && matches!(codigo, 226 | 250 | 426 | 451)
+        {
+            self.reaproveitavel = true;
+        }
+        self.controle
+            .get_ref()
+            .set_read_timeout(Some(self.tempo_limite))
+            .ok();
         Ok(saida)
+    }
+
+    /// A sessão ainda serve para outro comando (o último trecho terminou limpo)?
+    pub fn reaproveitavel(&self) -> bool {
+        self.reaproveitavel
     }
 
     pub fn sair(mut self) {

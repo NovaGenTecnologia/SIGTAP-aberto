@@ -2,31 +2,42 @@
 // anotações e exportação. Usa os utilitários de app.js e extras.js (el, $, ir, invoke, F...).
 "use strict";
 
-// ---------- situação do CNES e aviso da competência na barra ----------
+// ---------- situação do CNES ----------
 async function atualizarCnes() {
   try { E.cnes = await invoke("cnes_situacao"); }
-  catch (e) { E.cnes = { ufs: [], minha: null, ufs_disponiveis: [], erro: String(e) }; }
-  desenharAvisoCnes();
+  catch (e) { E.cnes = { ufs: [], minha: null, unidades: [], ufs_disponiveis: [], erro: String(e) }; }
 }
 const cnesDaUf = (uf) => ((E.cnes && E.cnes.ufs) || []).find((x) => x.uf === uf);
 const minhaUnidade = () => (E.cnes && E.cnes.minha) || null;
-function competenciaCnes() {
-  const m = minhaUnidade();
-  const u = m && cnesDaUf(m.uf);
-  return u && u.resumo ? u.resumo.competencia : null;
+const minhasUnidades = () => (E.cnes && E.cnes.unidades) || [];
+
+/** Depois de trocar a unidade ativa: a lista da esquerda e a tela refletem a nova. */
+async function aposTrocarUnidade() {
+  await atualizarCnes();
+  desenharArvore();
+  desenhar();
 }
-/** Ao lado da competência do SIGTAP: de qual competência é o CNES usado na aptidão. */
-function desenharAvisoCnes() {
-  const b = $("cnes-comp");
-  const m = minhaUnidade(), c = competenciaCnes();
-  b.hidden = !(m && c);
-  if (b.hidden) return;
-  limpar(b).append(el("span", { text: `CNES ${m.uf}` }), el("b", { text: F.competencia(c) }));
-  const difere = E.comp && c !== E.comp;
-  b.classList.toggle("difere", !!difere);
-  b.title = `A aptidão e a rede usam o cadastro do CNES de ${F.competencia(c)}` +
-    (difere ? ` e as exigências do SIGTAP de ${F.competencia(E.comp)}. O DATASUS publica o CNES depois do SIGTAP; confira se o cadastro mudou desde então.` : ".") +
-    "\nClique para ver a sua unidade.";
+async function usarUnidade(uf, cnes) {
+  await invoke("unidade_definir", { uf, cnes });
+  await aposTrocarUnidade();
+}
+
+// ---------- marcador de habilitação na lista da esquerda ----------
+const ROTULO_HAB = { apta: "A sua unidade está habilitada", ressalva: "Habilitação confere; serviço a confirmar", nao: "A sua unidade não está habilitada" };
+/** Pontinho ao lado de cada procedimento: habilitada, a confirmar ou não habilitada. */
+async function marcarHabilitacao(botoes) {
+  const m = minhaUnidade();
+  if (!m || !botoes.length) return;
+  const comp = E.comp;
+  let r;
+  try { r = await invoke("marcadores", { competencia: comp, codigos: botoes.map((b) => b.dataset.codigo) }); } catch { return; }
+  const atual = minhaUnidade();
+  if (comp !== E.comp || !atual || atual.cnes !== m.cnes) return;
+  for (const b of botoes) {
+    const e = r[b.dataset.codigo];
+    if (!e || b.querySelector(".hab-marca")) continue;
+    b.append(el("span", { class: `hab-marca ${e}`, title: ROTULO_HAB[e], role: "img", "aria-label": ROTULO_HAB[e] }));
+  }
 }
 
 // ---------- exportação ----------
@@ -50,7 +61,7 @@ async function exportar(nome, titulo, abas) {
   } catch (e) { mostrarAviso("exportar", { nivel: "erro", texto: `Não foi possível exportar: ${e}` }); }
 }
 function botaoExportar(rotulo, montar) {
-  return el("button", { class: "botao pequeno exportar", type: "button", title: "Grava em Excel (.xlsx) ou em texto (.csv), na pasta que você escolher",
+  return el("button", { class: "botao pequeno exportar", type: "button", title: "Excel (.xlsx) ou texto (.csv)",
     onclick: async (ev) => { const b = ev.currentTarget; b.disabled = true; try { const [nome, titulo, abas] = await montar(); await exportar(nome, titulo, abas); } finally { b.disabled = false; } } },
     rotulo || "Exportar");
 }
@@ -93,7 +104,7 @@ function marcasDaFicha(topo, codigo) {
   const desenhar = (m) => {
     limpar(caixa);
     const estrela = el("button", { class: "marca-fav" + (m.favorito ? " ativa" : ""), type: "button", "aria-pressed": String(m.favorito),
-      title: m.favorito ? "Tirar dos favoritos" : "Guardar nos favoritos (ficam na aba Favoritos, à esquerda)",
+      title: m.favorito ? "Tirar dos favoritos" : "Guardar nos favoritos",
       onclick: async () => {
         try { desenhar(await invoke("marcar_favorito", { tipo: "procedimento", codigo, favorito: !m.favorito })); if (E.arvore === "fav") desenharFavoritos(); }
         catch (e) { avisoTopo(String(e)); }
@@ -108,7 +119,7 @@ function marcasDaFicha(topo, codigo) {
     const editar = () => {
       limpar(nota);
       const campo = el("textarea", { class: "campo nota-campo", rows: "3", maxlength: "4000", "aria-label": "Anotação deste procedimento",
-        placeholder: "Sua anotação sobre este procedimento. Fica só neste computador. Não escreva dados de paciente." });
+        placeholder: "Anotação" });
       campo.value = m.anotacao || "";
       const salvar = async (texto) => {
         try { desenhar(await invoke("anotar", { tipo: "procedimento", codigo, texto })); if (E.arvore === "fav") desenharFavoritos(); }
@@ -143,14 +154,13 @@ async function desenharFavoritos() {
   if (!itens.length) {
     raiz.append(el("li", { class: "fav-vazio" },
       el("p", { text: "Nenhum favorito ainda." }),
-      el("p", { class: "quieto pequeno", text: "Abra um procedimento e use Favoritar ou Anotar. Eles ficam aqui, guardados só neste computador." })));
+      el("p", { class: "quieto pequeno", text: "Use Favoritar ou Anotar na ficha de um procedimento." })));
     return;
   }
   $("arvore-total").textContent = String(itens.length);
   for (const m of itens) {
     raiz.append(el("li", {}, el("button", { class: "no fav" + (E.selecionado === m.codigo ? " selecionado" : ""), type: "button", "data-codigo": m.codigo,
       onclick: () => ir({ tipo: "ficha", codigo: m.codigo }) },
-      el("span", { class: "fav-marca", title: m.favorito ? "Favorito" : "Só anotação" }, m.favorito ? svgEstrela(true) : "✎"),
       el("span", { class: "cod", text: F.mascara(m.codigo) }),
       el("span", { class: "nome" }, m.existe ? m.nome : el("span", { class: "sem-nome", text: `não existe em ${F.competencia(E.comp)}` }),
         m.anotacao ? el("small", { class: "fav-nota", text: m.anotacao }) : null))));
@@ -163,11 +173,14 @@ async function desenharFavoritos() {
 const marca = (tem) => el("span", { class: "tem " + (tem ? "sim" : "nao"), "aria-label": tem ? "a unidade tem" : "a unidade não tem", text: tem ? "✓" : "✕" });
 function vereditoAptidao(a) {
   const semExigencia = !a.habilitacao.exige && !a.servico.exige && !a.leito.exige;
-  if (semExigencia) return ["livre", "Sem exigência de cadastro", "O SIGTAP não pede habilitação, serviço nem leito para este procedimento."];
-  if (!a.apta && a.habilitacao.atende) return ["ressalva", "Serviço não achado no cadastro", "A habilitação confere. O serviço exigido não está entre os serviços próprios do arquivo público; pode ser terceirizado."];
-  if (!a.apta) return ["nao", "Não apta pelo cadastro", "Pelo CNES carregado, falta o que está marcado com ✕."];
-  if (a.leito.exige && !a.leito.atende) return ["ressalva", "Apta, com ressalva de leito", "Habilitação e serviço conferem; o tipo de leito exigido não foi achado no cadastro."];
-  return ["apta", "Apta pelo cadastro", "O CNES carregado tem o que o SIGTAP exige."];
+  if (semExigencia) return ["livre", "Sem exigência de cadastro", ""];
+  if (!a.apta && a.habilitacao.atende) return ["ressalva", "Apta com ressalva", "habilitação confere; serviço não achado (pode ser terceirizado)"];
+  if (!a.apta) {
+    const falta = [!a.habilitacao.atende && a.habilitacao.exige ? "habilitação" : null, !a.servico.atende && a.servico.exige ? "serviço" : null, !a.leito.atende && a.leito.exige ? "leito" : null].filter(Boolean);
+    return ["nao", "Não apta", falta.length ? `falta ${falta.join(" e ")}` : ""];
+  }
+  if (a.leito.exige && !a.leito.atende) return ["ressalva", "Apta com ressalva", "tipo de leito não achado no cadastro"];
+  return ["apta", "Apta", ""];
 }
 function linhaExigida(codigo, nome, tem, obs) {
   return el("li", { class: tem ? "ok" : "falta" }, marca(tem), el("span", { class: "mono", text: codigo }), el("span", { text: nome || "sem nome na tabela oficial" }),
@@ -194,50 +207,66 @@ function alternativasHab(h) {
   }
   return [ul];
 }
+/** Uma linha: selo, unidade e motivo; "Detalhes" abre o confronto e a rede. */
 function blocoAptidao(codigo) {
   const sec = el("section", { class: "bloco aptidao" });
   const m = minhaUnidade();
   if (!m) {
     const temCnes = E.cnes && E.cnes.ufs.length;
-    sec.classList.add("convite");
-    sec.append(el("div", { class: "cab-linha" }, el("h2", { text: "Minha unidade pode cobrar este procedimento?" })),
-      el("p", { class: "quieto", text: temCnes
-        ? "Escolha a sua unidade para o programa comparar o cadastro dela no CNES com o que este procedimento exige."
-        : "Baixe o CNES da sua UF e escolha a sua unidade. O programa compara habilitações, serviços e leitos do cadastro com o que este procedimento exige." }),
-      el("button", { class: "link", type: "button", onclick: () => ir({ tipo: "unidade" }) }, temCnes ? "Escolher a minha unidade" : "Baixar o CNES e escolher a unidade"));
+    sec.classList.add("convite", "apt-compacto");
+    sec.append(el("span", { class: "quieto", text: "Minha unidade pode cobrar este procedimento?" }),
+      el("button", { class: "link", type: "button", onclick: () => ir({ tipo: "unidade" }) }, temCnes ? "Escolher a unidade" : "Baixar o CNES e escolher a unidade"));
     return sec;
   }
-  sec.append(carregando("Comparando com o cadastro da unidade…"));
+  sec.append(carregando("Comparando com o cadastro…"));
   invoke("aptidao", { competencia: E.comp, codigo }).then((a) => {
     limpar(sec);
-    if (!a) { sec.append(el("p", { class: "aviso", text: `A unidade ${m.cnes} não está no CNES de ${m.uf} carregado. Baixe o CNES de novo ou escolha a unidade outra vez em Minha unidade.` })); return; }
-    const [classe, titulo, explica] = vereditoAptidao(a);
+    if (!a) { sec.append(el("p", { class: "aviso", text: `A unidade ${m.cnes} não está no CNES de ${m.uf} carregado. Baixe o CNES de novo ou escolha a unidade outra vez.` })); return; }
+    const [classe, titulo, curto] = vereditoAptidao(a);
     sec.classList.add(classe);
-    sec.append(el("div", { class: "apt-cab" },
-      el("div", { class: "selo " + classe, text: titulo }),
-      el("div", { class: "apt-quem" },
-        el("button", { class: "link", type: "button", title: "Ver a unidade", onclick: () => ir({ tipo: "unidade" }) }, m.nome || `CNES ${m.cnes}`),
-        el("span", { class: "quieto pequeno", text: `CNES ${m.cnes} em ${F.competencia(a.competencia_cnes)}; SIGTAP de ${F.competencia(a.competencia_sigtap)}. ${explica}` })),
-      el("span", { class: "etiqueta ambar", title: "A regra foi montada com as tabelas do SIGTAP e do CNES e com as críticas descritas nos manuais do SIA e do SIH. Ainda não foi provada com um arquivo rejeitado e o retorno oficial. Use como apoio e confira antes de faturar.", text: "regra não confirmada" })));
-    if (classe === "livre") return; // nada a conferir no cadastro: uma linha basta
-    for (const t of a.motivos) sec.append(el("p", { class: "apt-motivo", text: t }));
-    const grade = el("div", { class: "apt-grade" });
-    sec.append(grade);
-    const col = (titulo, exige, atende, sub, ...corpo) => el("div", { class: "apt-col" },
-      el("h3", {}, exige ? marca(atende) : null, titulo), el("small", { class: "quieto", text: sub }), ...corpo);
-    grade.append(col("Habilitação", a.habilitacao.exige, a.habilitacao.atende,
-      a.habilitacao.exige ? (a.habilitacao.alternativas.length > 1 ? "basta uma das alternativas" : "exigida") : "não exigida",
-      ...(a.habilitacao.exige ? alternativasHab(a.habilitacao) : [])));
-    grade.append(col("Serviço e classificação", a.servico.exige, a.servico.atende,
-      a.servico.exige ? (a.servico.pares.length > 1 ? "basta um dos pares" : "exigido") : "não exigido",
-      a.servico.exige ? el("ul", { class: "exigidos" }, [...a.servico.pares].sort((x, y) => Number(y.tem) - Number(x.tem)).map((p) =>
-        linhaExigida(`${p.servico.codigo}/${p.classificacao.codigo}`, p.classificacao.nome || p.servico.nome, p.tem))) : null));
-    grade.append(col("Leito", a.leito.exige, a.leito.atende,
-      a.leito.exige ? "tipo de leito no cadastro" : "não exigido",
-      a.leito.exige ? el("ul", { class: "exigidos" }, a.leito.tipos.map((t) =>
-        linhaExigida(t.tipo.codigo, `${t.tipo.nome || ""}${t.tem ? `, ${F.inteiro(t.leitos_sus)} leito(s) SUS` : ""}`, t.tem))) : null));
-    for (const t of a.avisos) sec.append(el("p", { class: "aviso pequeno", text: t }));
-    sec.append(blocoRede(codigo));
+    const outras = minhasUnidades();
+    const quem = outras.length > 1
+      ? el("select", { class: "campo apt-sel", "aria-label": "Unidade", onchange: (ev) => { const [uf, cnes] = ev.target.value.split(":"); usarUnidade(uf, cnes); } },
+          outras.map((x) => el("option", { value: `${x.uf}:${x.cnes}`, selected: x.cnes === m.cnes && x.uf === m.uf }, x.nome || `CNES ${x.cnes}`)))
+      : el("button", { class: "link", type: "button", title: "Ver a unidade", onclick: () => ir({ tipo: "unidade" }) }, m.nome || `CNES ${m.cnes}`);
+    const linha = el("div", { class: "apt-linha" }, el("span", { class: "selo " + classe, text: titulo }), quem, curto ? el("span", { class: "quieto pequeno", text: curto }) : null);
+    sec.append(linha);
+    if (classe === "livre") return;
+    const detalhe = el("div", { class: "apt-detalhe" });
+    let montado = false;
+    const montar = () => {
+      montado = true;
+      detalhe.append(el("p", { class: "quieto pequeno", text: `CNES ${m.cnes} em ${F.competencia(a.competencia_cnes)}; SIGTAP de ${F.competencia(a.competencia_sigtap)}.` }));
+      for (const t of a.motivos) detalhe.append(el("p", { class: "apt-motivo", text: t }));
+      const grade = el("div", { class: "apt-grade" });
+      detalhe.append(grade);
+      const col = (titulo, exige, atende, sub, ...corpo) => el("div", { class: "apt-col" },
+        el("h3", {}, exige ? marca(atende) : null, titulo), el("small", { class: "quieto", text: sub }), ...corpo);
+      grade.append(col("Habilitação", a.habilitacao.exige, a.habilitacao.atende,
+        a.habilitacao.exige ? (a.habilitacao.alternativas.length > 1 ? "basta uma das alternativas" : "exigida") : "não exigida",
+        ...(a.habilitacao.exige ? alternativasHab(a.habilitacao) : [])));
+      grade.append(col("Serviço e classificação", a.servico.exige, a.servico.atende,
+        a.servico.exige ? (a.servico.pares.length > 1 ? "basta um dos pares" : "exigido") : "não exigido",
+        a.servico.exige ? el("ul", { class: "exigidos" }, [...a.servico.pares].sort((x, y) => Number(y.tem) - Number(x.tem)).map((p) =>
+          linhaExigida(`${p.servico.codigo}/${p.classificacao.codigo}`, p.classificacao.nome || p.servico.nome, p.tem))) : null));
+      grade.append(col("Leito", a.leito.exige, a.leito.atende,
+        a.leito.exige ? "tipo de leito no cadastro" : "não exigido",
+        a.leito.exige ? el("ul", { class: "exigidos" }, a.leito.tipos.map((t) =>
+          linhaExigida(t.tipo.codigo, `${t.tipo.nome || ""}${t.tem ? `, ${F.inteiro(t.leitos_sus)} leito(s) SUS` : ""}`, t.tem))) : null));
+      for (const t of a.avisos) detalhe.append(el("p", { class: "aviso pequeno", text: t }));
+      detalhe.append(blocoRede(codigo));
+    };
+    detalhe.hidden = !E.aptAberto;
+    if (E.aptAberto) montar();
+    const botao = el("button", { class: "link pequeno apt-mais", type: "button", "aria-expanded": String(!!E.aptAberto), onclick: () => {
+      E.aptAberto = detalhe.hidden;
+      detalhe.hidden = !E.aptAberto;
+      if (E.aptAberto && !montado) montar();
+      botao.setAttribute("aria-expanded", String(E.aptAberto));
+      botao.textContent = E.aptAberto ? "Ocultar" : "Detalhes";
+    } }, E.aptAberto ? "Ocultar" : "Detalhes");
+    linha.append(el("span", { class: "espaco" }), botao);
+    sec.append(detalhe);
   }).catch((e) => limpar(sec).append(erro(e)));
   return sec;
 }
@@ -249,14 +278,14 @@ function blocoRede(codigo) {
     const r = await invoke("rede", { competencia: E.comp, codigo, escopo });
     limpar(caixa).append(el("h3", { text: "Quem faz na rede" }));
     if (!r.exige) {
-      caixa.append(el("span", { class: "quieto", text: "Este procedimento não exige habilitação nem serviço: pelo cadastro, qualquer estabelecimento pode registrar. A lista não se aplica." }));
+      caixa.append(el("span", { class: "quieto", text: "Sem exigência de habilitação ou serviço." }));
       return;
     }
     const botao = (esc, rotulo, d) => d ? el("button", { class: "rede-n", type: "button", "aria-pressed": String(abrir && esc === escopo),
       title: `${F.inteiro(d.aptos)} de ${F.inteiro(d.estabelecimentos)} estabelecimentos. Clique para ver a lista.`,
       onclick: () => carregar(esc, !(abrir && esc === escopo)).catch((e) => limpar(lista).append(erro(e))) },
       el("b", { text: F.inteiro(d.aptos) }), el("span", { text: rotulo })) : null;
-    if (r.exige_servico) caixa.append(el("span", { class: "quieto pequeno", text: "Conta só quem tem o serviço como próprio: o arquivo público do CNES não traz serviço terceirizado." }));
+    if (r.exige_servico) caixa.append(el("span", { class: "quieto pequeno", text: "Só serviços próprios; terceirizados não constam no arquivo público." }));
     caixa.append(el("div", { class: "rede-ns" },
       (botao("municipio", r.municipio.nome || "no município", r.municipio)),
       (botao("regiao", r.regiao ? `região de saúde ${capitalizar(r.regiao.nome || "")}` : "", r.regiao)),
@@ -281,7 +310,7 @@ function blocoRede(codigo) {
 }
 
 // ---------- tela Minha unidade ----------
-const ABAS_UNIDADE = ["Habilitações", "Serviços", "Leitos", "Equipamentos", "Profissionais"];
+const ABAS_UNIDADE = ["Procedimentos", "Habilitações", "Serviços", "Leitos", "Equipamentos", "Profissionais"];
 const semAcento = (s) => String(s).toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[̀-ͯ]/g, "");
 /** Tabela com filtro por texto e limite de linhas desenhadas (listas grandes, como profissionais). */
 function tabelaFiltravel(colunas, linhas, opc) {
@@ -332,47 +361,76 @@ async function telaUnidade(c, aba) {
   c.append(pg);
   if (!E.cnes) await atualizarCnes();
   const m = minhaUnidade();
+  const alvo = E.rota.uf && E.rota.cnes ? { uf: E.rota.uf, cnes: E.rota.cnes } : null;
   if (!E.cnes.ufs.length) { telaSemCnes(pg); return; }
-  if (!m || E.rota.trocar) { telaEscolherUnidade(pg); return; }
+  if ((!m && !alvo) || E.rota.trocar) { telaEscolherUnidade(pg); return; }
   pg.append(carregando("Abrindo a unidade…"));
   let u;
-  try { u = await invoke("unidade_ver", { competencia: E.comp }); }
+  try { u = await invoke("unidade_ver", { competencia: E.comp, ...(alvo || {}) }); }
   catch (e) {
-    limpar(pg).append(el("h1", { text: "Minha unidade" }), erro(e),
+    limpar(pg).append(el("h1", { text: "Unidade" }), erro(e),
       el("div", { class: "acoes" }, el("button", { class: "botao", type: "button", onclick: () => ir({ tipo: "unidade", trocar: true }, { substituir: true }) }, "Escolher a unidade de novo"),
         el("button", { class: "botao", type: "button", onclick: () => ir({ tipo: "modulos" }) }, "Ver o CNES em Módulos e dados")));
     return;
   }
   limpar(pg);
+  aba = u.ativa || aba !== "Profissionais" ? (aba || "Procedimentos") : "Procedimentos";
   const hVig = u.habilitacoes.filter((h) => h.vigente).length;
   const leitosSus = u.leitos.reduce((s, l) => s + l.sus, 0), leitos = u.leitos.reduce((s, l) => s + l.existentes, 0);
+  const guardadas = minhasUnidades();
+  if (guardadas.length) pg.append(el("div", { class: "uni-troca", role: "group", "aria-label": "Minhas unidades" },
+    guardadas.map((g) => el("button", { class: "chip", type: "button", "aria-pressed": String(u.ativa && g.cnes === u.cnes && g.uf === u.uf),
+      title: g.nome || `CNES ${g.cnes}`, onclick: async () => { await usarUnidade(g.uf, g.cnes); ir({ tipo: "unidade", aba }, { substituir: true }); } },
+      g.nome || `CNES ${g.cnes}`)),
+    el("button", { class: "link pequeno", type: "button", onclick: () => ir({ tipo: "unidade", trocar: true }) }, "+ Adicionar unidade")));
   pg.append(el("div", { class: "uni-cab" },
     el("div", { class: "uni-id" },
-      el("span", { class: "quieto pequeno", text: "Minha unidade" }),
       el("h1", { text: u.nome || `CNES ${u.cnes}` }),
       el("p", { class: "quieto" }, el("span", { class: "mono", text: `CNES ${u.cnes}` }), `  ${u.municipio_nome || u.municipio}, ${u.uf}`,
         u.razao_social && u.razao_social !== u.nome ? `  ${u.razao_social}` : "")),
     el("div", { class: "acoes" },
       botaoExportar("Exportar unidade", async () => [`CNES ${u.cnes} ${u.competencia_cnes}`, `${u.nome}, CNES ${u.cnes}, competência ${F.competencia(u.competencia_cnes)}`, abasDaUnidade(u)]),
-      el("button", { class: "botao", type: "button", onclick: () => ir({ tipo: "unidade", trocar: true }) }, "Trocar de unidade"))));
-  const difere = u.competencia_cnes !== u.competencia_sigtap;
+      u.ativa ? (guardadas.length ? el("button", { class: "botao", type: "button", onclick: async (ev) => {
+        const b = ev.currentTarget;
+        if (b.dataset.certeza !== "1") { b.dataset.certeza = "1"; b.textContent = "Remover mesmo?"; return; }
+        try { await invoke("unidade_remover", { uf: u.uf, cnes: u.cnes }); await aposTrocarUnidade(); ir({ tipo: "unidade" }, { substituir: true }); } catch (e) { avisoTopo(String(e)); }
+      } }, "Remover") : null)
+        : el("button", { class: "botao primario", type: "button", onclick: async (ev) => { ev.currentTarget.disabled = true; try { await usarUnidade(u.uf, u.cnes); ir({ tipo: "unidade" }, { substituir: true }); } catch (e) { avisoTopo(String(e)); } } }, "Utilizar esta unidade"))));
   pg.append(el("dl", { class: "chave" },
-    el("div", {}, el("dt", { text: "Cadastro do CNES de" }), el("dd", { class: "valor", text: F.competencia(u.competencia_cnes) })),
+    el("div", {}, el("dt", { text: "CNES de" }), el("dd", { class: "valor", text: F.competencia(u.competencia_cnes) })),
     el("div", {}, el("dt", { text: "Habilitações vigentes" }), el("dd", { text: `${hVig} de ${u.habilitacoes.length}` })),
     el("div", {}, el("dt", { text: "Serviços e classificações" }), el("dd", { text: F.inteiro(u.servicos.length) })),
     el("div", {}, el("dt", { text: "Leitos SUS" }), el("dd", { text: `${F.inteiro(leitosSus)} de ${F.inteiro(leitos)}` })),
-    ...u.gerais.slice(0, 2).map(([r, cd]) => el("div", {}, el("dt", { text: r }), el("dd", { text: capitalizar(cd.nome || cd.codigo) })))));
-  if (difere) pg.append(el("p", { class: "quieto pequeno", text: `Nomes de habilitações, serviços e ocupações vêm do SIGTAP de ${F.competencia(u.competencia_sigtap)}; o cadastro é o do CNES de ${F.competencia(u.competencia_cnes)}, a competência mais recente que o DATASUS publicou quando o CNES foi baixado.` }));
-  if (u.pessoa_fisica) pg.append(el("p", { class: "aviso", text: "Estabelecimento de pessoa física: CPF, razão social e contatos do titular não são guardados pelo programa." }));
+    ...u.gerais.slice(0, 2).filter(([, cd]) => cd.nome || cd.codigo).map(([r, cd]) => el("div", {}, el("dt", { text: r }), el("dd", { text: capitalizar(cd.nome || cd.codigo) })))));
+  if (u.pessoa_fisica) pg.append(el("p", { class: "aviso", text: "Estabelecimento de pessoa física: dados do titular omitidos." }));
 
-  const contagem = { "Habilitações": u.habilitacoes.length, "Serviços": u.servicos.length, "Leitos": u.leitos.length, "Equipamentos": u.equipamentos.length,
+  const contagem = { "Procedimentos": null, "Habilitações": u.habilitacoes.length, "Serviços": u.servicos.length, "Leitos": u.leitos.length, "Equipamentos": u.equipamentos.length,
     "Profissionais": u.ocupacoes ? u.ocupacoes.reduce((s, o) => s + o.profissionais, 0) : null };
-  pg.append(el("div", { class: "abas uni-abas", role: "tablist" }, ABAS_UNIDADE.map((n) => el("button", { class: "aba", role: "tab", type: "button", "aria-selected": String(n === aba),
-    onclick: () => ir({ tipo: "unidade", aba: n }, { substituir: true }) }, n, contagem[n] === null ? null : el("small", { text: F.inteiro(contagem[n]) })))));
+  pg.append(el("div", { class: "abas uni-abas", role: "tablist" }, ABAS_UNIDADE.filter((n) => n !== "Profissionais" || u.ativa).map((n) => el("button", { class: "aba", role: "tab", type: "button", "aria-selected": String(n === aba),
+    onclick: () => ir({ tipo: "unidade", uf: alvo && alvo.uf, cnes: alvo && alvo.cnes, aba: n }, { substituir: true }) }, n, contagem[n] === null ? null : el("small", { text: F.inteiro(contagem[n]) })))));
   const corpo = el("div", { class: "uni-corpo" });
   pg.append(corpo);
   const vazio = (t) => corpo.append(el("p", { class: "quieto", text: t }));
-  if (aba === "Habilitações") {
+  if (aba === "Procedimentos") {
+    corpo.append(carregando("Conferindo os procedimentos…"));
+    let lista;
+    try { lista = await invoke("unidade_procedimentos", { competencia: E.comp, uf: u.uf, cnes: u.cnes }); }
+    catch (e) { limpar(corpo).append(erro(e)); lista = null; }
+    if (lista) {
+      limpar(corpo);
+      const ROT = { apta: "habilitada", ressalva: "a confirmar" };
+      const so = lista;
+      if (!so.length) corpo.append(el("p", { class: "quieto", text: "Nenhum procedimento habilitado pelo cadastro." }));
+      else corpo.append(...tabelaFiltravel([["Código"], ["Procedimento"], ["Situação"]],
+        so.map((p) => linhaT(`${p.codigo} ${p.nome}`, () => [
+          el("td", { class: "cod" }, el("button", { class: "link mono", type: "button", onclick: () => ir({ tipo: "ficha", codigo: p.codigo }) }, F.mascara(p.codigo))),
+          el("td", { text: p.nome }),
+          el("td", {}, el("span", { class: `hab-marca ${p.estado} em-linha`, "aria-hidden": "true" }), ROT[p.estado])])),
+        { dica: "Filtrar por código ou nome",
+          exportar: botaoExportar("Exportar lista", async () => [`Procedimentos CNES ${u.cnes} ${E.comp}`, `Procedimentos de ${u.nome}, CNES ${u.cnes}, SIGTAP ${F.competencia(E.comp)}`,
+            [{ nome: "Procedimentos", colunas: ["Código", "Procedimento", "Situação"], linhas: so.map((p) => [p.codigo, p.nome, ROT[p.estado]]) }]]) }));
+    }
+  } else if (aba === "Habilitações") {
     if (!u.habilitacoes.length) vazio("O cadastro não tem habilitações para esta unidade.");
     else corpo.append(...tabelaFiltravel([["Código"], ["Habilitação"], ["Situação"], ["Vigência"], ["Portaria"], ["Leitos", "num"]],
       u.habilitacoes.map((h) => linhaT(`${h.codigo} ${h.nome || ""} ${h.portaria}`, () => [
@@ -408,7 +466,7 @@ async function telaUnidade(c, aba) {
     if (!u.ocupacoes) {
       corpo.append(el("section", { class: "bloco convite" },
         el("h2", { text: "Os profissionais desta unidade ainda não foram baixados" }),
-        el("p", { class: "quieto", text: `O arquivo de profissionais do CNES traz todas as pessoas da UF. O programa baixa, guarda só os vínculos desta unidade (sem CPF e sem CNS) e apaga o arquivo em seguida.` }),
+        el("p", { class: "quieto", text: `Guarda só os vínculos desta unidade e apaga o arquivo baixado em seguida.` }),
         el("div", { class: "acoes" }, el("button", { class: "botao primario", type: "button", disabled: E.tarefa.ativa,
           onclick: () => comecar("cnes_baixar", { pedido: { uf: u.uf, competencia: u.competencia_cnes } }, `Baixando os profissionais de ${u.uf}`) }, "Baixar os profissionais")),
         painelProgresso()));
@@ -417,7 +475,7 @@ async function telaUnidade(c, aba) {
       corpo.append(el("div", { class: "filtros" },
         el("button", { class: "chip", type: "button", "aria-pressed": String(modo === "cbo"), onclick: () => ir({ tipo: "unidade", aba }, { substituir: true }) }, `Por ocupação (CBO) ${u.ocupacoes.length}`),
         el("button", { class: "chip", type: "button", "aria-pressed": String(modo === "pessoas"), onclick: () => ir({ tipo: "unidade", aba, pessoas: true }, { substituir: true }) }, `Vínculos ${F.inteiro(u.profissionais.length)}`),
-        el("span", { class: "quieto pequeno", text: "CPF e CNS dos profissionais não são guardados." })));
+        ));
       if (modo === "cbo") corpo.append(...tabelaFiltravel([["CBO"], ["Ocupação"], ["Vínculos", "num"], ["Atendem SUS", "num"]],
         u.ocupacoes.map((o) => linhaT(`${o.cbo.codigo} ${o.cbo.nome || ""}`, () => [
           el("td", { class: "cod" }, el("button", { class: "link mono", type: "button", title: "Ver os procedimentos que aceitam este CBO",
@@ -433,11 +491,12 @@ async function telaUnidade(c, aba) {
         { dica: "Filtrar por nome ou CBO", limite: 200 }));
     }
   }
-  if (u.gerais.length > 2) pg.append(el("section", { class: "bloco" }, el("h2", { text: "Cadastro geral" }),
-    u.gerais.map(([r, cd]) => el("div", { class: "par" }, el("span", { class: "k", text: r }), el("span", { class: "v", text: capitalizar(cd.nome || "") || cd.codigo }),
-      el("span", { class: "n", text: cd.nome ? `código ${cd.codigo}` : "código sem descrição na tabela do DATASUS" })))));
-  pg.append(el("p", { class: "quieto pequeno" }, "Fonte: CNES (DATASUS), arquivos de disseminação. Confira no ",
-    el("button", { class: "link pequeno", type: "button", onclick: () => abrirSite("https://cnes.datasus.gov.br/") }, "site oficial do CNES"), " antes de decidir."));
+  const gerais = u.gerais.filter(([, cd]) => cd.nome || cd.codigo);
+  if (gerais.length > 2) pg.append(el("section", { class: "bloco" }, el("h2", { text: "Cadastro geral" }),
+    gerais.map(([r, cd]) => el("div", { class: "par" }, el("span", { class: "k", text: r }), el("span", { class: "v", text: capitalizar(cd.nome || "") || cd.codigo }),
+      cd.nome ? el("span", { class: "n", text: `código ${cd.codigo}` }) : null))));
+  pg.append(el("p", { class: "quieto pequeno" }, "Confira no ",
+    el("button", { class: "link pequeno", type: "button", onclick: () => abrirSite("https://cnes.datasus.gov.br/") }, "CNES oficial"), " antes de decidir."));
 }
 
 function seletorUf(valor, lista) {
@@ -481,33 +540,31 @@ function formImportarCnes() {
 
 function telaSemCnes(pg) {
   pg.append(el("h1", { text: "Minha unidade" }),
-    el("p", { class: "lide", text: "Diga qual é o seu estabelecimento e o programa passa a responder, em cada procedimento, se o cadastro dele no CNES tem a habilitação, o serviço e o leito que o SIGTAP exige, e quem mais faz o procedimento na sua região." }),
+    el("p", { class: "lide", text: "Baixe o CNES da sua UF e escolha a unidade para ver, em cada procedimento, se ela está habilitada." }),
     el("section", { class: "bloco destaque" },
-      el("div", { class: "cab-linha" }, el("h2", { text: "Primeiro, baixe o CNES da sua UF" }), el("small", { text: "do FTP do DATASUS; de 1 a 30 MB conforme a UF" })),
-      formBaixarCnes(), painelProgresso(),
-      el("p", { class: "quieto pequeno", text: "Baixa estabelecimentos, habilitações, serviços, leitos e equipamentos da UF, um arquivo por vez. Profissionais só entram para a unidade que você escolher, sem CPF e sem CNS." }),
-      formImportarCnes()));
+      el("div", { class: "cab-linha" }, el("h2", { text: "CNES da UF" }), el("small", { text: "de 1 a 30 MB conforme a UF" })),
+      formBaixarCnes(), painelProgresso(), formImportarCnes()));
 }
 
 function telaEscolherUnidade(pg) {
   const m = minhaUnidade();
   const ufs = E.cnes.ufs.filter((x) => x.resumo).map((x) => x.uf);
-  if (E.rota.trocar && m) pg.append(botaoVoltar());
-  pg.append(el("h1", { text: m ? "Trocar de unidade" : "Qual é a sua unidade?" }),
-    el("p", { class: "lide", text: "Procure pelo nome fantasia ou pelo número do CNES. A escolha fica só neste computador." }));
+  if (m) pg.append(botaoVoltar());
+  pg.append(el("h1", { text: m ? "Adicionar unidade" : "Qual é a sua unidade?" }),
+    el("p", { class: "lide", text: "Nome fantasia ou número do CNES." }));
   const uf = seletorUf(m ? m.uf : ufs[0], ufs);
-  const campo = el("input", { type: "search", class: "campo busca-uni", placeholder: "Nome do estabelecimento ou CNES (7 dígitos)", "aria-label": "Procurar estabelecimento", autocomplete: "off", spellcheck: "false" });
+  const campo = el("input", { type: "search", class: "campo busca-uni", placeholder: "Nome do estabelecimento ou CNES", "aria-label": "Procurar estabelecimento", autocomplete: "off", spellcheck: "false" });
   const saida = el("div", { class: "uni-resultados" });
   let seq = 0, timer = null;
   const procurar = async () => {
     const texto = campo.value.trim();
     const meu = ++seq;
-    if (texto.length < 3) { limpar(saida).append(el("p", { class: "quieto", text: "Digite pelo menos 3 letras ou o número do CNES." })); return; }
+    if (texto.length < 3) { limpar(saida).append(el("p", { class: "quieto", text: "Digite ao menos 3 letras ou o CNES." })); return; }
     try {
       const r = await invoke("cnes_buscar", { uf: uf.value, texto });
       if (meu !== seq) return;
       limpar(saida);
-      if (!r.length) { saida.append(el("p", { class: "quieto", text: `Nenhum estabelecimento de ${uf.value} com “${texto}”. Confira a grafia ou tente o número do CNES.` })); return; }
+      if (!r.length) { saida.append(el("p", { class: "quieto", text: `Nenhum estabelecimento de ${uf.value} com “${texto}”.` })); return; }
       saida.append(el("table", { class: "tabela" },
         el("thead", {}, el("tr", {}, ["CNES", "Estabelecimento", "Município", "Tipo", ""].map((h) => el("th", { text: h })))),
         el("tbody", {}, r.map((e) => el("tr", {},
@@ -515,21 +572,16 @@ function telaEscolherUnidade(pg) {
           el("td", { text: e.municipio_nome || e.municipio }), el("td", { class: "quieto", text: capitalizar(e.tipo_nome || e.tipo) }),
           el("td", { class: "acao" }, el("button", { class: "botao pequeno", type: "button", onclick: async (ev) => {
             ev.currentTarget.disabled = true; ev.currentTarget.textContent = "Gravando…";
-            try { await invoke("unidade_definir", { uf: uf.value, cnes: e.cnes }); await atualizarCnes(); ir({ tipo: "unidade" }, { substituir: true }); }
+            try { await invoke("unidade_definir", { uf: uf.value, cnes: e.cnes }); await aposTrocarUnidade(); ir({ tipo: "unidade" }, { substituir: true }); }
             catch (x) { limpar(saida).append(erro(x)); }
-          } }, "É esta")))))));
+          } }, "Utilizar este")))))));
       if (r.length >= 30) saida.append(el("p", { class: "quieto pequeno", text: "Mostrando os 30 primeiros. Digite mais para afinar." }));
     } catch (e) { if (meu === seq) limpar(saida).append(erro(e)); }
   };
   campo.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(procurar, 220); });
   uf.addEventListener("change", procurar);
   pg.append(el("div", { class: "acoes escolher" }, ufs.length > 1 ? el("label", { class: "rotulo-campo" }, "UF", uf) : el("span", { class: "etiqueta verde", text: `CNES de ${ufs[0]}` }), campo), saida);
-  if (m) pg.append(el("section", { class: "bloco" }, el("h2", { text: "Não usar mais uma unidade" }),
-    el("p", { class: "quieto", text: `Hoje a unidade é ${m.nome || m.cnes} (CNES ${m.cnes}, ${m.uf}). Ao esquecer, os profissionais dela saem do banco; favoritos e anotações ficam.` }),
-    el("div", { class: "acoes" }, el("button", { class: "botao", type: "button", onclick: async () => {
-      try { await invoke("unidade_limpar"); await atualizarCnes(); ir({ tipo: "unidade" }, { substituir: true }); } catch (e) { avisoTopo(String(e)); }
-    } }, "Esquecer a unidade"))));
-  pg.append(el("p", { class: "quieto pequeno" }, "A unidade é de outra UF? ", el("button", { class: "link pequeno", type: "button", onclick: () => ir({ tipo: "modulos" }) }, "Baixe o CNES dela em Módulos e dados"), "."));
+  pg.append(el("p", { class: "quieto pequeno" }, "Outra UF? ", el("button", { class: "link pequeno", type: "button", onclick: () => ir({ tipo: "modulos" }) }, "Baixe o CNES dela em Módulos e dados"), "."));
   campo.focus();
   procurar();
 }
@@ -538,38 +590,38 @@ function telaEscolherUnidade(pg) {
 function linhaModuloCnes() {
   const ufs = (E.cnes && E.cnes.ufs) || [];
   const boas = ufs.filter((x) => x.resumo);
-  if (!ufs.length) return ["Estabelecimentos (CNES)", "não baixado", "—", "por UF, do FTP do DATASUS; baixe abaixo ou em Minha unidade"];
+  if (!ufs.length) return ["Estabelecimentos (CNES)", "não baixado", "—", "por UF, do FTP do DATASUS"];
   const m = minhaUnidade();
   return ["Estabelecimentos (CNES)", ufs.length === boas.length ? `${boas.length} UF(s)` : "com problema",
     boas.map((x) => `${x.uf} ${F.competencia(x.resumo.competencia)}`).join("; ") || "—",
-    `${F.inteiro(boas.reduce((s, x) => s + x.resumo.estabelecimentos, 0))} estabelecimentos. ${m ? `Minha unidade: ${m.nome || m.cnes} (${m.uf}).` : "Nenhuma unidade escolhida."}`];
+    `${F.inteiro(boas.reduce((s, x) => s + x.resumo.estabelecimentos, 0))} estabelecimentos${m ? `; unidade: ${m.nome || m.cnes} (${m.uf})` : ""}`];
 }
 function secaoCnes() {
   const ufs = (E.cnes && E.cnes.ufs) || [];
-  const m = minhaUnidade();
+  const guardadas = minhasUnidades();
   const sec = el("section", { class: "bloco", id: "sec-cnes" },
     el("div", { class: "cab-linha" }, el("h2", { text: "CNES por UF" }),
-      el("small", { text: "estabelecimentos, habilitações, serviços, leitos e equipamentos; profissionais só da sua unidade" })));
+      el("small", { text: "profissionais só da unidade em uso" })));
   if (ufs.length) {
     sec.append(el("table", { class: "tabela" },
       el("thead", {}, el("tr", {}, ["UF", "Competência", "Estabelecimentos", "Arquivos carregados", "Tamanho", ""].map((h) => el("th", { text: h })))),
       el("tbody", {}, ufs.map((x) => x.erro
         ? el("tr", {}, el("td", {}, el("b", { text: x.uf })), el("td", { colspan: "5" }, erro(x.erro)))
         : el("tr", {},
-          el("td", {}, el("b", { text: x.uf }), m && m.uf === x.uf ? el("span", { class: "etiqueta verde", text: "minha unidade" }) : null),
+          el("td", {}, el("b", { text: x.uf }), guardadas.some((g) => g.uf === x.uf) ? el("span", { class: "etiqueta verde", text: guardadas.filter((g) => g.uf === x.uf).length > 1 ? `${guardadas.filter((g) => g.uf === x.uf).length} unidades` : "minha unidade" }) : null),
           el("td", { class: "mono", text: F.competencia(x.resumo.competencia) }),
           el("td", { class: "num", text: F.inteiro(x.resumo.estabelecimentos) }),
           el("td", { class: "quieto", text: ["ST", "CAD", "HB", "SR", "LT", "EQ", "PF"].filter((t) => x.resumo.arquivos.some((a) => a.tipo === t)).map((t) => NOME_ARQ_CNES[t]).join(", ") + (x.resumo.tem_nomes ? "" : " (sem nomes dos estabelecimentos)") }),
           el("td", { class: "num", text: F.mb(x.bytes) }),
           el("td", { class: "acao" },
             el("button", { class: "link pequeno", type: "button", title: "Baixa a competência mais recente desta UF", onclick: () => comecar("cnes_baixar", { pedido: { uf: x.uf, competencia: "" } }, `Baixando o CNES de ${x.uf}`) }, "atualizar"),
-            " ", m && m.uf === x.uf ? null : el("button", { class: "link pequeno perigo", type: "button", onclick: async (ev) => {
+            " ", guardadas.some((g) => g.uf === x.uf) ? null : el("button", { class: "link pequeno perigo", type: "button", onclick: async (ev) => {
               const b = ev.currentTarget;
               if (b.dataset.certeza !== "1") { b.dataset.certeza = "1"; b.textContent = `apagar o CNES de ${x.uf}?`; return; }
               try { const msg = await invoke("cnes_apagar", { uf: x.uf }); await atualizarCnes(); desenhar(); setTimeout(() => avisoTopo(msg), 0); } catch (e) { avisoTopo(String(e)); }
             } }, "apagar")))))));
   } else {
-    sec.append(el("p", { class: "quieto", text: "Nenhuma UF baixada. Com o CNES, a ficha de cada procedimento mostra se a sua unidade está apta e quem mais faz na rede." }));
+    sec.append(el("p", { class: "quieto", text: "Nenhuma UF baixada." }));
   }
   sec.append(formBaixarCnes(ufs.length ? "Baixar outra UF ou competência" : "Baixar o CNES"), formImportarCnes());
   return sec;
@@ -578,6 +630,5 @@ function secaoCnes() {
 // ---------- ligação com o resto da interface ----------
 function iniciarUnidade() {
   $("ir-unidade").addEventListener("click", () => ir({ tipo: "unidade" }));
-  $("cnes-comp").addEventListener("click", () => ir({ tipo: "unidade" }));
   $("aba-fav").addEventListener("click", () => E.arvore !== "fav" && escolherArvore("fav"));
 }

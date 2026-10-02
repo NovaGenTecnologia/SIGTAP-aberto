@@ -441,6 +441,15 @@ async fn cnes_competencias(uf: String) -> Result<serde_json::Value, String> {
         .map_err(|e| format!("falha interna ao listar o servidor ({e})"))?
 }
 
+/// Há CNES mais novo no servidor para as UFs carregadas?
+#[tauri::command]
+async fn cnes_verificar(s: Estado<'_>) -> Result<serde_json::Value, String> {
+    let p = unidade::local(&s.pastas);
+    tauri::async_runtime::spawn_blocking(move || unidade::verificar_cnes(&p))
+        .await
+        .map_err(|e| format!("falha interna ao consultar o servidor ({e})"))
+}
+
 #[tauri::command]
 async fn cnes_apagar(s: Estado<'_>, uf: String) -> Result<String, String> {
     if s.ocupado.load(Ordering::SeqCst) {
@@ -477,15 +486,65 @@ async fn unidade_limpar(s: Estado<'_>) -> Result<(), String> {
     unidade::limpar_minha(&unidade::local(&s.pastas))
 }
 
+/// Tira uma unidade da lista de troca rápida.
+#[tauri::command]
+async fn unidade_remover(s: Estado<'_>, uf: String, cnes: String) -> Result<(), String> {
+    if s.ocupado.load(Ordering::SeqCst) {
+        return Err("há uma tarefa em andamento. Espere terminar e tente de novo.".into());
+    }
+    unidade::remover_unidade(&unidade::local(&s.pastas), &uf, &cnes)
+}
+
+/// Uma unidade completa: a indicada (UF e CNES) ou, sem indicação, a ativa.
 #[tauri::command]
 async fn unidade_ver(
     s: Estado<'_>,
     competencia: Option<String>,
+    uf: Option<String>,
+    cnes: Option<String>,
 ) -> Result<serde_json::Value, String> {
     s.com_consulta(|q| {
         let c = s.competencia(q, competencia.as_deref())?;
-        unidade::unidade(&unidade::local(&s.pastas), q, c)
+        let alvo = uf.as_deref().zip(cnes.as_deref());
+        unidade::unidade(&unidade::local(&s.pastas), q, c, alvo)
     })
+}
+
+/// Marcador de habilitação da unidade ativa para uma lista de procedimentos.
+#[tauri::command]
+async fn marcadores(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    codigos: Vec<String>,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|q| {
+        let c = s.competencia(q, competencia.as_deref())?;
+        unidade::marcadores(&unidade::local(&s.pastas), q, c, &codigos)
+    })
+}
+
+/// Procedimentos que uma unidade pode cobrar pelo cadastro.
+#[tauri::command]
+async fn unidade_procedimentos(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    uf: String,
+    cnes: String,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|q| {
+        let c = s.competencia(q, competencia.as_deref())?;
+        unidade::procedimentos_da_unidade(&unidade::local(&s.pastas), q, c, &uf, &cnes)
+    })
+}
+
+/// Estabelecimentos por nome ou número, em todas as UFs carregadas (busca da barra).
+#[tauri::command]
+async fn unidades_buscar(s: Estado<'_>, texto: String) -> Result<serde_json::Value, String> {
+    Ok(unidade::buscar_unidades(
+        &unidade::local(&s.pastas),
+        &texto,
+        8,
+    ))
 }
 
 /// "Minha unidade está apta?" para um procedimento. `null` sem unidade escolhida.
@@ -743,10 +802,15 @@ fn main() {
             cnes_importar,
             cnes_competencias,
             cnes_apagar,
+            cnes_verificar,
             cnes_buscar,
             unidade_definir,
             unidade_limpar,
             unidade_ver,
+            unidade_remover,
+            marcadores,
+            unidade_procedimentos,
+            unidades_buscar,
             aptidao,
             rede,
             marcar_favorito,

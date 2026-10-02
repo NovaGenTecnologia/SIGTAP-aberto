@@ -178,6 +178,46 @@ fn auxiliares_baixam_so_os_trechos_necessarios_do_zip() {
     let _ = std::fs::remove_dir_all(&d);
 }
 
+/// Falha medida no DATASUS: o servidor anuncia portas de dados que recusam a conexão. O
+/// download tem de pedir outra porta na mesma sessão e usar uma sessão só para todos os trechos.
+#[test]
+fn auxiliares_sobrevivem_a_portas_de_dados_recusadas_numa_sessao_so() {
+    let d = pasta("instavel");
+    let zip = tab_cnes();
+    std::fs::write(d.join("TAB_CNES.zip"), &zip).unwrap();
+    let srv = sa_download::servidor_falso::iniciar_instavel(
+        [("TAB_CNES.zip".to_string(), d.join("TAB_CNES.zip"))].into(),
+        2,
+    );
+    let f = Fonte {
+        servidor: "127.0.0.1".into(),
+        pasta_dados: "/dados".into(),
+        tab_cnes: "/aux/TAB_CNES.zip".into(),
+        cortesia: Cortesia {
+            pausa_entre_arquivos: Duration::from_millis(5),
+            espera_inicial: Duration::from_millis(5),
+            porta: srv.porta,
+            ..Cortesia::default()
+        },
+    };
+    let a = cnes::baixar_auxiliares(
+        &f,
+        "MS",
+        &["TP_ESTAB.CNV".into()],
+        &d.join("destino"),
+        &AtomicBool::new(false),
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(a.cnv.len(), 1);
+    assert_eq!(
+        srv.conexoes.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "índice, cadastro e tabelas saem da mesma sessão"
+    );
+    let _ = std::fs::remove_dir_all(&d);
+}
+
 #[test]
 fn importacao_manual_aceita_arquivos_soltos_ou_o_zip_inteiro() {
     let d = pasta("manual");

@@ -667,6 +667,7 @@ fn cmd_unidade(cmd: &str, o: &Opcoes) -> Result<(), String> {
             Ok(())
         }
         "cnes-situacao" => mostrar(un::situacao(&p)),
+        "cnes-verificar" => mostrar(un::verificar_cnes(&p)),
         "cnes-buscar" => mostrar(un::buscar_estabelecimentos(
             &p,
             arg(0, "a UF")?,
@@ -682,10 +683,32 @@ fn cmd_unidade(cmd: &str, o: &Opcoes) -> Result<(), String> {
             arg(1, "o número do CNES")?,
         )?),
         "unidade-limpar" => un::limpar_minha(&p),
+        "unidade-remover" => un::remover_unidade(&p, arg(0, "a UF")?, arg(1, "o número do CNES")?),
         "unidade" => {
             let (q, c) = sigtap()?;
-            mostrar(un::unidade(&p, &q, c)?)
+            // Sem argumentos: a unidade ativa. Com UF e CNES: aquela unidade.
+            let alvo = livres
+                .first()
+                .zip(livres.get(1))
+                .map(|(u, n)| (u.as_str(), n.as_str()));
+            mostrar(un::unidade(&p, &q, c, alvo)?)
         }
+        "marcadores" => {
+            let (q, c) = sigtap()?;
+            let codigos: Vec<String> = livres.clone();
+            mostrar(un::marcadores(&p, &q, c, &codigos)?)
+        }
+        "unidade-procedimentos" => {
+            let (q, c) = sigtap()?;
+            mostrar(un::procedimentos_da_unidade(
+                &p,
+                &q,
+                c,
+                arg(0, "a UF")?,
+                arg(1, "o número do CNES")?,
+            )?)
+        }
+        "unidades-buscar" => mostrar(un::buscar_unidades(&p, &livres.join(" "), 8)),
         "aptidao" => {
             let (q, c) = sigtap()?;
             mostrar(un::aptidao(&p, &q, c, arg(0, "o código do procedimento")?)?)
@@ -777,11 +800,26 @@ fn main() -> ExitCode {
         "ficha" | "buscar" | "arvore" | "arvore-cid" | "ligados" | "historico" | "mudou" => {
             cmd_consulta(cmd.as_str(), &o)
         }
-        "cnes-competencias" | "cnes-baixar" | "cnes-importar" | "cnes-situacao" | "cnes-buscar"
-        | "cnes-apagar" | "unidade-definir" | "unidade-limpar" | "unidade" | "aptidao" | "rede"
-        | "favorito" | "anotar" | "marcado" | "marcados" | "exportar" => {
-            cmd_unidade(cmd.as_str(), &o)
-        }
+        "cnes-competencias"
+        | "cnes-baixar"
+        | "cnes-importar"
+        | "cnes-situacao"
+        | "cnes-buscar"
+        | "cnes-apagar"
+        | "unidade-definir"
+        | "unidade-limpar"
+        | "unidade-remover"
+        | "unidade"
+        | "marcadores"
+        | "unidade-procedimentos"
+        | "unidades-buscar"
+        | "aptidao"
+        | "rede"
+        | "favorito"
+        | "anotar"
+        | "marcado"
+        | "marcados"
+        | "exportar" => cmd_unidade(cmd.as_str(), &o),
         "ajuda" | "--help" | "-h" => {
             print!("{AJUDA}");
             Ok(())

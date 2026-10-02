@@ -65,38 +65,99 @@ function desenharAvisos() {
   }
 }
 
+// Capítulos da CID-10 por letra (OMS; tradução da edição brasileira). Fixo no código.
+const CAPITULO_CID = { A: "Doenças infecciosas e parasitárias", B: "Doenças infecciosas e parasitárias", C: "Neoplasias (tumores)",
+  D: "Neoplasias in situ e benignas; doenças do sangue e imunitárias", E: "Doenças endócrinas, nutricionais e metabólicas", F: "Transtornos mentais e comportamentais",
+  G: "Doenças do sistema nervoso", H: "Doenças do olho e do ouvido", I: "Doenças do aparelho circulatório", J: "Doenças do aparelho respiratório",
+  K: "Doenças do aparelho digestivo", L: "Doenças da pele e do tecido subcutâneo", M: "Doenças do sistema osteomuscular e do tecido conjuntivo",
+  N: "Doenças do aparelho geniturinário", O: "Gravidez, parto e puerpério", P: "Afecções originadas no período perinatal",
+  Q: "Malformações congênitas e anomalias cromossômicas", R: "Sintomas, sinais e achados anormais", S: "Lesões e traumatismos",
+  T: "Envenenamento e outras consequências de causas externas", U: "Códigos para propósitos especiais", V: "Causas externas de morbidade e de mortalidade",
+  W: "Causas externas de morbidade e de mortalidade", X: "Causas externas de morbidade e de mortalidade", Y: "Causas externas de morbidade e de mortalidade",
+  Z: "Fatores que influenciam o estado de saúde e o contato com os serviços de saúde" };
+
 // ---------- vigia: dados novos e versão nova ----------
 const Vigia = { dados: null, quandoDados: null, erroDados: null, ocupadoDados: false,
+  cnes: null, quandoCnes: null, erroCnes: null, ocupadoCnes: false,
   versao: null, quandoVersao: null, erroVersao: null, ocupadoVersao: false };
 const hora = (d) => d ? d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
 
-async function conferirDados(manual) {
-  if (Vigia.ocupadoDados) return;
+const ocupadoGeral = () => Vigia.ocupadoDados || Vigia.ocupadoCnes || Vigia.ocupadoVersao;
+const semConferir = (manual) => {
   // Cortesia com o servidor: uma conexão por vez. Não confere no meio de um download.
-  if (E.tarefa.ativa) { if (manual) avisoTopo("Há um download em andamento. Verifique de novo quando ele terminar."); return; }
-  if (E.situacao && E.situacao.primeira_execucao) return;
+  if (E.tarefa.ativa) { if (manual) avisoTopo("Há um download em andamento. Verifique de novo quando ele terminar."); return true; }
+  return !!(E.situacao && E.situacao.primeira_execucao);
+};
+async function conferirDados(manual) {
+  if (Vigia.ocupadoDados || semConferir(manual)) return;
   Vigia.ocupadoDados = true; atualizarSecaoAtualizacoes();
-  try {
-    Vigia.dados = await invoke("verificar_dados"); Vigia.erroDados = null;
-  } catch (e) { Vigia.erroDados = String(e); }
+  try { Vigia.dados = await invoke("verificar_dados"); Vigia.erroDados = null; }
+  catch (e) { Vigia.erroDados = String(e); }
   Vigia.quandoDados = new Date(); Vigia.ocupadoDados = false;
-  aplicarAvisoDados(); atualizarSecaoAtualizacoes();
+  atualizarIcone(); atualizarSecaoAtualizacoes();
 }
-function aplicarAvisoDados() {
-  const r = Vigia.dados;
-  if (!r || !r.novos.length) { tirarAviso("dados"); return; }
-  const partes = r.novos.map((n) => `${F.competencia(n.competencia)} (${n.motivo === "nova" ? "nova" : "republicada"})`);
-  mostrarAviso("dados", {
-    nivel: "info",
-    texto: `Há dados novos no DATASUS: ${partes.join(", ")}. Para baixar, são cerca de ${F.mb(r.bytes)}.`,
-    acoes: [{ rotulo: "Baixar agora", primaria: true, fn: baixarNovidades }, { rotulo: "Ver em Módulos e dados", fn: () => ir({ tipo: "modulos" }) }],
-  });
+async function conferirCnes(manual) {
+  if (Vigia.ocupadoCnes || semConferir(manual)) return;
+  if (!E.cnes || !E.cnes.ufs.length) { Vigia.cnes = null; atualizarIcone(); return; }
+  Vigia.ocupadoCnes = true; atualizarSecaoAtualizacoes();
+  try {
+    const r = await invoke("cnes_verificar");
+    Vigia.cnes = r; Vigia.erroCnes = r.erro || null;
+  } catch (e) { Vigia.erroCnes = String(e); }
+  Vigia.quandoCnes = new Date(); Vigia.ocupadoCnes = false;
+  atualizarIcone(); atualizarSecaoAtualizacoes();
+}
+async function conferirTudo(manual) {
+  await conferirDados(manual);
+  await conferirCnes(manual);
+  await conferirVersao(manual);
 }
 function baixarNovidades() {
   const r = Vigia.dados;
   if (!r || !r.escopo) return;
-  tirarAviso("dados");
   baixar({ sigtap: r.escopo, territorio: false, apagar_zips: false });
+}
+const novasCnes = () => (Vigia.cnes && Vigia.cnes.novas) || [];
+const pedidoDados = () => Vigia.dados && Vigia.dados.novos.length && Vigia.dados.escopo
+  ? { cmd: "baixar", args: { pedido: { sigtap: Vigia.dados.escopo, territorio: false, apagar_zips: false } }, msg: "Atualizando a tabela de procedimentos" } : null;
+const pedidoCnes = (n) => ({ cmd: "cnes_baixar", args: { pedido: { uf: n.uf, competencia: n.nova } }, msg: `Atualizando o CNES de ${n.uf}` });
+
+/** Ícone no cabeçalho: aparece quando há algo novo. */
+function atualizarIcone() {
+  const n = (pedidoDados() ? 1 : 0) + novasCnes().length + (Vigia.versao && Vigia.versao.nova ? 1 : 0);
+  const b = $("ir-atualizacoes");
+  b.hidden = !n;
+  $("atualizacoes-n").textContent = n ? String(n) : "";
+  b.title = n ? `${n} atualização(ões) disponível(is)` : "Atualizações";
+}
+/** Fila de downloads do "Atualizar tudo": um por vez, na ordem. */
+function andarNaFila() {
+  const p = E.fila && E.fila.shift();
+  if (p) comecar(p.cmd, p.args, p.msg);
+  return !!p;
+}
+function abrirAtualizacoes() {
+  const dados = pedidoDados(), cnes = novasCnes(), nova = Vigia.versao && Vigia.versao.nova;
+  const ocupada = E.tarefa.ativa;
+  const linha = (titulo, detalhe, botao) => el("div", { class: "linha-atu" },
+    el("div", {}, el("b", { text: titulo }), el("br"), el("span", { class: "quieto", text: detalhe })),
+    el("div", { class: "acoes" }, botao));
+  const baixarBtn = (p) => el("button", { class: "botao", type: "button", disabled: ocupada, onclick: () => { fecharModal(); comecar(p.cmd, p.args, p.msg); } }, "Baixar");
+  const linhas = [];
+  if (dados) linhas.push(linha("Tabela de procedimentos (SIGTAP)",
+    `${Vigia.dados.novos.map((n) => `${F.competencia(n.competencia)} ${n.motivo === "nova" ? "nova" : "republicada"}`).join(", ")}; cerca de ${F.mb(Vigia.dados.bytes)}`, baixarBtn(dados)));
+  for (const n of cnes) linhas.push(linha(`CNES de ${n.uf}`, `${F.competencia(n.atual)} para ${F.competencia(n.nova)}; ${F.mb(n.bytes)}`, baixarBtn(pedidoCnes(n))));
+  if (nova) linhas.push(linha(`Programa, versão ${nova.versao}`, `você usa a ${Vigia.versao.atual}`,
+    Vigia.versao.automatica === false
+      ? el("button", { class: "botao", type: "button", onclick: () => abrirSite(nova.pagina) }, "Ver a versão")
+      : el("button", { class: "botao", type: "button", disabled: ocupada, onclick: () => { fecharModal(); confirmarAtualizacao(nova); } }, "Atualizar")));
+  const fila = [...(dados ? [dados] : []), ...cnes.map(pedidoCnes)];
+  abrirModal("Atualizações", [
+    ...(linhas.length ? linhas : [el("p", { class: "quieto", text: "Tudo em dia." })]),
+    el("div", { class: "acoes" }, el("div", { class: "espaco" }),
+      el("button", { class: "botao", type: "button", onclick: fecharModal }, "Fechar"),
+      fila.length > 1 ? el("button", { class: "botao primario", type: "button", disabled: ocupada, onclick: () => { fecharModal(); E.fila = fila; andarNaFila(); } }, "Atualizar tudo") : null),
+  ]);
 }
 
 async function conferirVersao(manual) {
@@ -105,18 +166,7 @@ async function conferirVersao(manual) {
   try { Vigia.versao = await invoke("consultar_atualizacao"); Vigia.erroVersao = null; }
   catch (e) { Vigia.erroVersao = String(e); }
   Vigia.quandoVersao = new Date(); Vigia.ocupadoVersao = false;
-  const n = Vigia.versao && Vigia.versao.nova;
-  if (n) {
-    mostrarAviso("versao", {
-      nivel: "info",
-      texto: `Nova versão do programa: ${n.versao} (você usa a ${Vigia.versao.atual}).`,
-      // Fora do Windows o programa ainda não se troca sozinho: leva à página para baixar.
-      acoes: Vigia.versao.automatica === false
-        ? [{ rotulo: "Ver a versão nova", primaria: true, fn: () => abrirSite(n.pagina) }]
-        : [{ rotulo: "Atualizar agora", primaria: true, fn: () => confirmarAtualizacao(n) }, { rotulo: "Ver novidades", fn: () => abrirSite(n.pagina) }],
-    });
-  } else tirarAviso("versao");
-  atualizarSecaoAtualizacoes();
+  atualizarIcone(); atualizarSecaoAtualizacoes();
 }
 
 function confirmarAtualizacao(n) {
@@ -134,41 +184,56 @@ function confirmarAtualizacao(n) {
 /** Depois de cada tarefa: um download concluído muda o que há de novo. */
 function aposTarefa(f) {
   if (!f.ok && !f.cancelada) mostrarAviso("falha", { nivel: "erro", texto: f.mensagem });
-  if (f.ok) { Vigia.dados = null; tirarAviso("dados"); setTimeout(() => conferirDados(false), 3000); }
+  if (!f.ok) E.fila = [];
+  if (f.ok) { Vigia.dados = null; Vigia.cnes = null; atualizarIcone(); if (!andarNaFila()) setTimeout(() => conferirTudo(false), 3000); }
 }
 
 function iniciarVigia() {
-  // Confere pouco depois de abrir e a cada 6 horas enquanto o programa estiver aberto.
-  setTimeout(() => { conferirDados(false); conferirVersao(false); }, 20000);
-  setInterval(() => { conferirDados(false); conferirVersao(false); }, SEIS_HORAS);
+  $("ir-atualizacoes").addEventListener("click", abrirAtualizacoes);
+  // Confere logo depois de abrir e a cada 6 horas enquanto o programa estiver aberto.
+  setTimeout(() => conferirTudo(false), 5000);
+  setInterval(() => conferirTudo(false), SEIS_HORAS);
 }
 
 // Seção "Atualizações" de Módulos e dados.
 function textoStatusDados() {
   if (Vigia.ocupadoDados) return "Consultando o servidor do DATASUS…";
   if (Vigia.erroDados) return `Não foi possível consultar o servidor agora (${Vigia.erroDados}). Tente mais tarde.`;
-  if (!Vigia.quandoDados) return "Ainda não conferido nesta abertura do programa.";
+  if (!Vigia.quandoDados) return "Ainda não conferido.";
   const r = Vigia.dados;
   if (r && r.novos.length) return `${r.novos.length} novidade(s): ${r.novos.map((n) => `${F.competencia(n.competencia)} ${n.motivo === "nova" ? "nova" : "republicada"}`).join(", ")}. Conferido às ${hora(Vigia.quandoDados)}.`;
-  return `Tudo em dia: nenhuma competência nova nem republicada. Conferido às ${hora(Vigia.quandoDados)}.`;
+  return `Em dia. Conferido às ${hora(Vigia.quandoDados)}.`;
+}
+function textoStatusCnes() {
+  if (Vigia.ocupadoCnes) return "Consultando o servidor do DATASUS…";
+  if (!E.cnes || !E.cnes.ufs.length) return "Nenhuma UF baixada.";
+  if (Vigia.erroCnes) return `Não foi possível consultar o servidor agora (${Vigia.erroCnes}).`;
+  if (!Vigia.quandoCnes) return "Ainda não conferido.";
+  const n = novasCnes();
+  return n.length ? `${n.map((x) => `${x.uf} ${F.competencia(x.atual)} para ${F.competencia(x.nova)}`).join("; ")}. Conferido às ${hora(Vigia.quandoCnes)}.` : `Em dia. Conferido às ${hora(Vigia.quandoCnes)}.`;
 }
 function textoStatusVersao() {
   if (Vigia.ocupadoVersao) return "Consultando o GitHub…";
   if (Vigia.erroVersao) return `Não foi possível consultar o GitHub agora (${Vigia.erroVersao}).`;
-  if (!Vigia.quandoVersao) return "Ainda não conferida nesta abertura do programa.";
+  if (!Vigia.quandoVersao) return "Ainda não conferida.";
   const n = Vigia.versao && Vigia.versao.nova;
-  return n ? `Há uma versão nova: ${n.versao}. Conferido às ${hora(Vigia.quandoVersao)}.` : `Nenhuma versão mais nova publicada. Conferido às ${hora(Vigia.quandoVersao)}.`;
+  return n ? `Há uma versão nova: ${n.versao}. Conferido às ${hora(Vigia.quandoVersao)}.` : `Em dia. Conferido às ${hora(Vigia.quandoVersao)}.`;
 }
 function conteudoAtualizacoes() {
   const novoDados = Vigia.dados && Vigia.dados.novos.length && Vigia.dados.escopo;
   const nova = Vigia.versao && Vigia.versao.nova;
   return [
-    el("div", { class: "cab-linha" }, el("h2", { text: "Atualizações" }), el("small", { text: "o programa confere sozinho a cada 6 horas enquanto está aberto" })),
+    el("div", { class: "cab-linha" }, el("h2", { text: "Atualizações" }), el("small", { text: "conferido ao abrir e a cada 6 horas" })),
     el("div", { class: "linha-atu" },
       el("div", {}, el("b", { text: "Dados do SIGTAP" }), el("br"), el("span", { class: "quieto", text: textoStatusDados() })),
       el("div", { class: "acoes" },
         novoDados ? el("button", { class: "botao primario", type: "button", disabled: E.tarefa.ativa, onclick: baixarNovidades }, "Baixar novidades") : null,
         el("button", { class: "botao", type: "button", disabled: Vigia.ocupadoDados, onclick: () => conferirDados(true) }, "Verificar agora"))),
+    el("div", { class: "linha-atu" },
+      el("div", {}, el("b", { text: "CNES" }), el("br"), el("span", { class: "quieto", text: textoStatusCnes() })),
+      el("div", { class: "acoes" },
+        novasCnes().length ? el("button", { class: "botao primario", type: "button", disabled: E.tarefa.ativa, onclick: () => { E.fila = novasCnes().map(pedidoCnes); andarNaFila(); } }, "Baixar novidades") : null,
+        el("button", { class: "botao", type: "button", disabled: Vigia.ocupadoCnes, onclick: () => conferirCnes(true) }, "Verificar agora"))),
     el("div", { class: "linha-atu" },
       el("div", {}, el("b", { text: `Programa, versão ${(E.info && E.info.versao) || ""}` }), el("br"), el("span", { class: "quieto", text: textoStatusVersao() })),
       el("div", { class: "acoes" },
@@ -339,7 +404,7 @@ async function preencherArvoreCid(ul, pai) {
     const folha = no.nivel === "subcategoria";
     const completo = no.codigo_mascarado;
     const corte = no.nivel === "letra" ? 0 : no.nivel === "categoria" ? 1 : 4;
-    const rotuloNome = no.nivel === "letra" ? `CIDs que começam com ${no.codigo}` : no.nome;
+    const rotuloNome = no.nivel === "letra" ? (CAPITULO_CID[no.codigo] || no.codigo) : no.nome;
     const btn = el("button", {
       class: "no" + (folha ? " folha" : "") + (folha && no.codigo === E.selecionadoCid ? " selecionado" : ""),
       type: "button", role: "treeitem", "data-cid": no.codigo, "aria-level": String(nivel + 1),

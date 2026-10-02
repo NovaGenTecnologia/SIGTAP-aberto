@@ -6,7 +6,7 @@
 //! pastas `Dados/<TIPO>/<TIPO><UF><AAMM>.dbc` e `Auxiliar/TAB_CNES.zip`.
 
 use crate::cortesia::{Cortesia, ErroDownload, Evento, Pedido, baixar_lista};
-use crate::ftp::Ftp;
+use crate::ftp::{ErroFtp, Ftp};
 use sa_core::Competencia;
 use sa_sources::zip_parcial::{self, Entrada};
 use sa_sources::{dbc, dbf};
@@ -86,13 +86,13 @@ pub fn interpretar(nome: &str) -> Option<(String, String, Competencia)> {
 /// Competências disponíveis no servidor para uma UF (pela pasta dos estabelecimentos, ST), da
 /// mais antiga para a mais recente, com o tamanho do arquivo ST.
 pub fn competencias(fonte: &Fonte, uf: &str) -> Result<Vec<(Competencia, u64)>, ErroDownload> {
-    let mut f = Ftp::conectar(
-        &fonte.servidor,
-        fonte.cortesia.porta,
-        fonte.cortesia.tempo_limite,
-    )?;
-    let lista = f.listar(&format!("{}/ST", fonte.pasta_dados.trim_end_matches('/')))?;
-    f.sair();
+    let pasta = format!("{}/ST", fonte.pasta_dados.trim_end_matches('/'));
+    let nunca = AtomicBool::new(false);
+    let mut sessao = Sessao::nova(fonte);
+    let lista = sessao.com_tentativas("lista de competências", &nunca, &mut |_| {}, |f, _| {
+        f.listar(&pasta)
+    })?;
+    sessao.sair();
     let mut v: Vec<(Competencia, u64)> = lista
         .iter()
         .filter_map(|e| {
@@ -123,25 +123,22 @@ pub fn baixar(
     cancelar: &AtomicBool,
     progresso: impl FnMut(Evento),
 ) -> Result<Vec<PathBuf>, ErroDownload> {
-    // Tamanhos: uma conexão, um SIZE por arquivo.
-    let mut f = Ftp::conectar(
-        &fonte.servidor,
-        fonte.cortesia.porta,
-        fonte.cortesia.tempo_limite,
-    )?;
+    // Tamanhos: uma sessão, um SIZE por arquivo (com novas tentativas se o servidor falhar).
+    let mut progresso = progresso;
+    let mut sessao = Sessao::nova(fonte);
     let base = fonte.pasta_dados.trim_end_matches('/');
     let mut pedidos = Vec::new();
     for t in tipos {
         let n = nome(t, uf, competencia);
         let pasta = format!("{base}/{t}");
-        let tamanho = f.tamanho(&format!("{pasta}/{n}"))?;
+        let tamanho = sessao.tamanho(&format!("{pasta}/{n}"), cancelar, &mut progresso)?;
         pedidos.push(Pedido {
             pasta_remota: pasta,
             nome: n,
             tamanho,
         });
     }
-    f.sair();
+    sessao.sair();
     std::thread::sleep(fonte.cortesia.pausa_entre_arquivos);
     baixar_lista(
         &fonte.servidor,
@@ -167,60 +164,110 @@ pub struct Auxiliares {
     pub tamanho_do_zip: u64,
 }
 
-fn trecho(
-    fonte: &Fonte,
-    desde: u64,
-    quantos: u64,
-    rotulo: &str,
-    cancelar: &AtomicBool,
-    progresso: &mut impl FnMut(Evento),
-) -> Result<Vec<u8>, ErroDownload> {
-    let mut tentativa = 0;
-    loop {
-        if cancelar.load(Ordering::Relaxed) {
-            return Err(ErroDownload::Cancelado);
+/// Sessão FTP reaproveitada entre os trechos e os SIZE. Se cair (ou o servidor não abrir o
+/// canal de dados), reabre e repete, com espera crescente.
+struct Sessao<'a> {
+    fonte: &'a Fonte,
+    ftp: Option<Ftp>,
+}
+
+impl<'a> Sessao<'a> {
+    fn nova(fonte: &'a Fonte) -> Self {
+        Self { fonte, ftp: None }
+    }
+
+    /// Roda `op` na sessão, reabrindo-a quantas vezes a cortesia permitir.
+    fn com_tentativas<T>(
+        &mut self,
+        rotulo: &str,
+        cancelar: &AtomicBool,
+        progresso: &mut impl FnMut(Evento),
+        mut op: impl FnMut(&mut Ftp, &mut dyn FnMut(Evento)) -> Result<T, ErroFtp>,
+    ) -> Result<T, ErroDownload> {
+        let c = &self.fonte.cortesia;
+        let mut tentativa = 0;
+        loop {
+            if cancelar.load(Ordering::Relaxed) {
+                return Err(ErroDownload::Cancelado);
+            }
+            let r = match self.ftp.take() {
+                Some(f) => Ok(f),
+                None => Ftp::conectar(&self.fonte.servidor, c.porta, c.tempo_limite),
+            }
+            .and_then(|mut f| {
+                let r = op(&mut f, &mut *progresso);
+                if r.is_ok() && f.reaproveitavel() {
+                    self.ftp = Some(f);
+                }
+                r
+            });
+            match r {
+                Ok(v) => return Ok(v),
+                Err(e) => {
+                    tentativa += 1;
+                    if tentativa >= c.tentativas {
+                        return Err(e.into());
+                    }
+                    let espera = c.espera(tentativa);
+                    progresso(Evento::NovaTentativa {
+                        arquivo: rotulo.to_string(),
+                        tentativa: tentativa + 1,
+                        espera_s: espera.as_secs(),
+                        motivo: e.to_string(),
+                    });
+                    std::thread::sleep(espera);
+                }
+            }
         }
+    }
+
+    fn tamanho(
+        &mut self,
+        caminho: &str,
+        cancelar: &AtomicBool,
+        progresso: &mut impl FnMut(Evento),
+    ) -> Result<u64, ErroDownload> {
+        let caminho = caminho.to_string();
+        let r = self.com_tentativas("tamanho do arquivo", cancelar, progresso, |f, _| {
+            f.tamanho(&caminho)
+        })?;
+        // O SIZE não deixa a sessão marcada como reaproveitável; é reaproveitável de fato.
+        Ok(r)
+    }
+
+    fn trecho(
+        &mut self,
+        desde: u64,
+        quantos: u64,
+        rotulo: &str,
+        cancelar: &AtomicBool,
+        progresso: &mut impl FnMut(Evento),
+    ) -> Result<Vec<u8>, ErroDownload> {
+        let caminho = self.fonte.tab_cnes.clone();
         progresso(Evento::Iniciando {
             arquivo: rotulo.to_string(),
             total: quantos,
             retomando_de: 0,
         });
-        let r = Ftp::conectar(
-            &fonte.servidor,
-            fonte.cortesia.porta,
-            fonte.cortesia.tempo_limite,
-        )
-        .and_then(|f| {
-            f.baixar_trecho(&fonte.tab_cnes, desde, quantos, |feito| {
-                progresso(Evento::Progresso {
+        let b = self.com_tentativas(rotulo, cancelar, progresso, |f, prog| {
+            f.baixar_trecho(&caminho, desde, quantos, |feito| {
+                prog(Evento::Progresso {
                     arquivo: rotulo.to_string(),
                     feito,
                     total: quantos,
                 });
             })
+        })?;
+        progresso(Evento::Concluido {
+            arquivo: rotulo.to_string(),
         });
-        match r {
-            Ok(b) => {
-                progresso(Evento::Concluido {
-                    arquivo: rotulo.to_string(),
-                });
-                std::thread::sleep(fonte.cortesia.pausa_entre_arquivos);
-                return Ok(b);
-            }
-            Err(e) => {
-                tentativa += 1;
-                if tentativa >= fonte.cortesia.tentativas {
-                    return Err(e.into());
-                }
-                let espera = fonte.cortesia.espera_inicial * 3u32.pow(tentativa - 1);
-                progresso(Evento::NovaTentativa {
-                    arquivo: rotulo.to_string(),
-                    tentativa: tentativa + 1,
-                    espera_s: espera.as_secs(),
-                    motivo: e.to_string(),
-                });
-                std::thread::sleep(espera);
-            }
+        std::thread::sleep(self.fonte.cortesia.pausa_entre_arquivos);
+        Ok(b)
+    }
+
+    fn sair(mut self) {
+        if let Some(f) = self.ftp.take() {
+            f.sair();
         }
     }
 }
@@ -254,20 +301,13 @@ pub fn baixar_auxiliares(
     mut progresso: impl FnMut(Evento),
 ) -> Result<Auxiliares, ErroDownload> {
     let invalido = |m: String| ErroDownload::Invalido("TAB_CNES.zip".into(), m);
-    let mut f = Ftp::conectar(
-        &fonte.servidor,
-        fonte.cortesia.porta,
-        fonte.cortesia.tempo_limite,
-    )?;
-    let total = f.tamanho(&fonte.tab_cnes)?;
-    f.sair();
-    std::thread::sleep(fonte.cortesia.pausa_entre_arquivos);
+    let mut sessao = Sessao::nova(fonte);
+    let total = sessao.tamanho(&fonte.tab_cnes, cancelar, &mut progresso)?;
     let mut baixados = 0u64;
 
     // 1. Índice (fim do arquivo).
     let mut desde = total.saturating_sub(CAUDA);
-    let mut cauda = trecho(
-        fonte,
+    let mut cauda = sessao.trecho(
         desde,
         total - desde,
         "índice do TAB_CNES.zip",
@@ -279,8 +319,7 @@ pub fn baixar_auxiliares(
         Ok(i) => i,
         Err(zip_parcial::ErroZipParcial::IndiceIncompleto { a_partir_de }) => {
             desde = a_partir_de;
-            cauda = trecho(
-                fonte,
+            cauda = sessao.trecho(
                 desde,
                 total - desde,
                 "índice do TAB_CNES.zip",
@@ -301,14 +340,7 @@ pub fn baixar_auxiliares(
         .get(&nome_cad.to_ascii_lowercase())
         .ok_or_else(|| invalido(format!("não traz {nome_cad}")))?;
     let pedir = cad.bytes_necessarios().min(total - cad.posicao);
-    let b = trecho(
-        fonte,
-        cad.posicao,
-        pedir,
-        &nome_cad,
-        cancelar,
-        &mut progresso,
-    )?;
+    let b = sessao.trecho(cad.posicao, pedir, &nome_cad, cancelar, &mut progresso)?;
     baixados += b.len() as u64;
     let conteudo =
         zip_parcial::extrair(&b, cad, MAX_CADASTRO).map_err(|e| invalido(e.to_string()))?;
@@ -334,8 +366,7 @@ pub fn baixar_auxiliares(
             .max(),
     ) {
         let pedir = (fim - ini).min(total - ini);
-        let b = trecho(
-            fonte,
+        let b = sessao.trecho(
             ini,
             pedir,
             "tabelas de conversão do CNES",
@@ -355,6 +386,7 @@ pub fn baixar_auxiliares(
             cnv.push(alvo);
         }
     }
+    sessao.sair();
     Ok(Auxiliares {
         cadastro,
         cnv,

@@ -26,11 +26,20 @@ impl Default for Cortesia {
     fn default() -> Self {
         Self {
             pausa_entre_arquivos: Duration::from_secs(2),
-            tentativas: 4,
-            espera_inicial: Duration::from_secs(5),
+            tentativas: 6,
+            espera_inicial: Duration::from_secs(3),
             tempo_limite: Duration::from_secs(60),
             porta: 21,
         }
+    }
+}
+
+impl Cortesia {
+    /// Espera antes da nova tentativa número `tentativa` (1 = a primeira repetição): dobra a
+    /// cada vez, com teto de 30 s.
+    pub fn espera(&self, tentativa: u32) -> Duration {
+        let f = 2u32.saturating_pow(tentativa.saturating_sub(1).min(8));
+        (self.espera_inicial * f).min(Duration::from_secs(30).max(self.espera_inicial))
     }
 }
 
@@ -200,7 +209,7 @@ where
                     if tentativa >= cortesia.tentativas {
                         return Err(e);
                     }
-                    let espera = cortesia.espera_inicial * 3u32.pow(tentativa - 1);
+                    let espera = cortesia.espera(tentativa);
                     progresso(Evento::NovaTentativa {
                         arquivo: p.nome.clone(),
                         tentativa: tentativa + 1,

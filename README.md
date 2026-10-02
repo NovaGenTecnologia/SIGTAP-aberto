@@ -49,7 +49,7 @@ Baixe a versão mais recente na página de [lançamentos](../../releases/latest)
 | Linux | `SIGTAP-Aberto-v…-linux-x64.AppImage` ou `-linux-arm64.AppImage` |
 | macOS (Intel e Apple) | `SIGTAP-Aberto-v…-macos-universal.zip` |
 
-1. Ponha o arquivo numa pasta sua (por exemplo, `D:\SIGTAP Aberto`). O programa grava os dados ao lado dele.
+1. Coloque o arquivo numa pasta sua (por exemplo, `D:\SIGTAP Aberto`). O programa grava os dados ao lado dele.
 2. Abra. Na primeira vez ele baixa a Tabela Unificada vigente e o território (IBGE e regiões de saúde).
 3. Se a rede do hospital bloquear o download, a tela **Módulos e dados** tem o passo a passo para baixar os arquivos à mão e importar.
 

@@ -84,3 +84,8 @@ Nenhum documento achado descreve a regra completa. O que sustenta a leitura adot
 - Wiki do SIGTAP (`wiki.saude.gov.br/sigtap`) e perguntas frequentes (`webatendimento.saude.gov.br/faq/sigtap`).
 
 Falta, para confirmar: um arquivo rejeitado por habilitação ou serviço com o retorno oficial.
+
+## Esfera administrativa e falhas de FTP (conferido em 02/10/2026)
+
+- `ESFERA_A` em MS 08/2026 coincide linha a linha com `TPGESTAO` (D=45, E=48, M=7.015); o `EsferAdm.CNV` descreve outra codificação (01 a 04) e não bate com os dados. O programa mostra os nomes fixos do manifesto; a esfera jurídica real está em `NAT_JUR` (`ESFERAJUR.CNV`).
+- O FTP `ftp.datasus.gov.br` anuncia, de forma intermitente, portas PASV sem escuta: cerca de metade das sessões novas falha em ~20 s (EOF ao enviar `REST`/`RETR` ou conexão recusada). Reaproveitar a sessão entre trechos e repetir PASV na mesma sessão evita o custo de abrir sessões novas.

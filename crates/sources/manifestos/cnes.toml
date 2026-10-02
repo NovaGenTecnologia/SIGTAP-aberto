@@ -235,3 +235,38 @@ base = "Leito Dia / Geriatria = CODLEITO 72 GERIATRIA (Hospital/DIA)"
 sigtap = "14"
 codleito = ["73"]
 base = "Leito Dia / Saúde Mental = CODLEITO 73 SAUDE MENTAL (Hospital/DIA)"
+
+# Descrições fixas (valem onde o .cnv do DATASUS não decodifica o código).
+#
+# ESFERA_A: o EsferAdm.CNV oficial descreve 01 a 04 e -99, mas o arquivo ST de disseminação
+# traz D, E e M (conferido em 02/10/2026 nas 7.108 linhas de MS: em todas, ESFERA_A é igual a
+# TPGESTAO). As letras abaixo vêm do TPGESTAO.CNV (Estabelecimento.def: Tipo de Gestão).
+[[valor_fixo]]
+campo = "ESFERA_A"
+codigo = "D"
+nome = "Dupla"
+fonte = "TPGESTAO.CNV: D = DUPLA"
+
+[[valor_fixo]]
+campo = "ESFERA_A"
+codigo = "E"
+nome = "Estadual"
+fonte = "TPGESTAO.CNV: E = ESTADUAL"
+
+[[valor_fixo]]
+campo = "ESFERA_A"
+codigo = "M"
+nome = "Municipal"
+fonte = "TPGESTAO.CNV: M = MUNICIPAL"
+
+[[valor_fixo]]
+campo = "ESFERA_A"
+codigo = "S"
+nome = "Sem gestão"
+fonte = "TPGESTAO.CNV: S = SEM GESTÃO"
+
+[[valor_fixo]]
+campo = "ESFERA_A"
+codigo = "Z"
+nome = "Sem gestão"
+fonte = "TPGESTAO.CNV: Z = SEM GESTÃO"

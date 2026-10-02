@@ -604,3 +604,26 @@ body { grid-template-rows: 48px auto 1fr 26px; }
   .apt-col:nth-child(3) { grid-column: 1 / 3; border-left: 0; padding-left: 0; border-top: 1px solid var(--linha); }
 }
 .tabela .etiqueta { white-space: nowrap; }
+
+/* ---------- unidade: marcador na lista, aptidão resumida, troca rápida ---------- */
+.hab-marca { flex: none; width: 8px; height: 8px; border-radius: 50%; margin-left: auto; align-self: center; box-sizing: border-box; }
+.hab-marca.apta { background: var(--ent); }
+.hab-marca.ressalva { background: var(--ambar); }
+.hab-marca.nao { background: transparent; border: 1.5px solid var(--tinta2); opacity: .7; }
+.hab-marca.em-linha { display: inline-block; margin: 0 7px 1px 0; vertical-align: middle; }
+.aptidao.apt-compacto { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-top: 8px; padding-bottom: 8px; }
+.apt-linha { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.apt-linha .selo { font-size: 13px; padding: 3px 10px; }
+.apt-linha > .link { font-size: 14px; }
+.apt-sel { max-width: 320px; }
+.apt-detalhe { margin-top: 10px; }
+.apt-detalhe[hidden] { display: none; }
+.uni-troca { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.uni-troca .chip { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icone-barra { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 0; border-radius: 5px; background: none; color: #fff; cursor: pointer; }
+.icone-barra:hover { background: rgba(255,255,255,.14); }
+.icone-barra .selo-n { position: absolute; top: -2px; right: -3px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: var(--verm); color: #fff; font-size: 10px; line-height: 15px; text-align: center; font-weight: 700; }
+.link-rodape.forte { font-weight: 700; color: inherit; text-decoration: underline; }
+#primeira-cnes .linha-mod { display: flex; align-items: center; gap: 10px; }
+.modulos-tab .grupo-linha th { text-align: left; background: var(--papel); font-weight: 600; font-size: 12.5px; color: var(--tinta2); }
+.uni-corpo td:last-child { white-space: nowrap; }

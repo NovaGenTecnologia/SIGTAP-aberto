@@ -381,6 +381,14 @@ fn cruzamentos_de_ms_reproduzem_os_numeros_de_referencia() {
             .is_none()
     );
     assert!(q.unidade(&sig, c09, "9999999").unwrap().is_none());
+    // Esfera administrativa: o arquivo traz D/E/M e o .cnv oficial não os descreve; o manifesto sim.
+    assert!(
+        u.gerais
+            .iter()
+            .any(|(r, c)| r == "Esfera administrativa" && c.nome.is_some()),
+        "{:?}",
+        u.gerais
+    );
 
     // 4. Aptidão da unidade em todos os procedimentos com exigência: igual à conta independente.
     let (mut aptos, mut conferidos) = (0, 0);
@@ -439,6 +447,46 @@ fn cruzamentos_de_ms_reproduzem_os_numeros_de_referencia() {
             .all(|e| e.municipio == u.municipio)
     );
     assert!(!q.rede(&sig, c09, &livre, None, 10).unwrap().exige);
+
+    // 5b. Marcador da lista: `estados` (uma passada) tem de dar o mesmo veredito de `aptidao`
+    // (procedimento a procedimento) para todos os procedimentos com exigência, em duas unidades.
+    {
+        use sa_query::cnes::Estado;
+        let outra = sig_outro(&q, &meu);
+        for unidade in [meu.as_str(), outra.as_str()] {
+            let estados = q.estados(&sig, c09, unidade).unwrap().unwrap();
+            assert!(estados.len() > 3000, "{}", estados.len());
+            let mut contagem = [0usize; 3];
+            for (proc_, est) in &estados {
+                let a = q.aptidao(&sig, c09, proc_, unidade).unwrap().unwrap();
+                let esperado = if a.apta {
+                    Estado::Apta
+                } else if a.habilitacao.atende {
+                    Estado::Ressalva
+                } else {
+                    Estado::Nao
+                };
+                assert_eq!(*est, esperado, "{proc_} em {unidade}");
+                contagem[match est {
+                    Estado::Apta => 0,
+                    Estado::Ressalva => 1,
+                    _ => 2,
+                }] += 1;
+            }
+            let lista = q
+                .procedimentos_da_unidade(&sig, c09, unidade)
+                .unwrap()
+                .unwrap();
+            assert_eq!(lista.len(), contagem[0] + contagem[1]);
+            assert!(lista.windows(2).all(|w| w[0].codigo < w[1].codigo));
+            assert!(lista.iter().all(|p| !p.nome.is_empty()));
+            eprintln!(
+                "{unidade}: aptos {} ressalva {} não {}",
+                contagem[0], contagem[1], contagem[2]
+            );
+        }
+        assert!(q.estados(&sig, c09, "9999999").unwrap().is_none());
+    }
 
     // 6. Busca de estabelecimento por número e por nome.
     assert_eq!(q.buscar(&meu, 10).unwrap()[0].cnes, meu);

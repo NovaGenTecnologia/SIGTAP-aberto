@@ -136,11 +136,18 @@ Ver o diário do projeto (registro de 01/10/2026).
 - **Linux (computador do cliente):** download real do CNES de MS.
 - **Não testado:** nada desta fase no Windows (janela, "Salvar como", tempo de resposta, portabilidade com `dados\cnes` e `usuario.db`); UFs grandes (SP: ST e PF muito maiores; tempo de carga e de aptidão por medir); leitura parcial do `TAB_CNES.zip` em rede com FTP instável; competências antigas do CNES na tela.
 
+### 2.8 Revisão de 02/10/2026
+
+- **Download do CNES.** Medido no FTP real (`ftp.datasus.gov.br`, IP único): cerca de metade das sessões novas falha em 19,5 a 21 s, por EOF no controle ao enviar `REST`/`RETR` ou por conexão recusada na porta PASV anunciada. O servidor anuncia portas de dados mortas, de forma intermitente. O código antigo abria uma sessão nova por trecho (~5 por download dos auxiliares) e cada uma precisava vencer 4 tentativas, o que dava ~27% de downloads falhos. Correção: uma sessão por arquivo, reaproveitada entre trechos; PASV repetido na mesma sessão com tempo curto (10 s, 3 vezes); tentativas 6 com espera 3 s dobrando até 30 s. Provado com servidor FTP falso (portas mortas, uma só conexão de controle); **não provado** contra o servidor real nem no Windows.
+- **Interface.** Primeira execução oferece o CNES da UF; "Utilizar este"; várias unidades com troca rápida; marcador de habilitação na lista da esquerda; aptidão resumida na ficha, com "Detalhes"; busca por unidade lista os procedimentos habilitados; ícone de atualizações (SIGTAP, CNES por UF, programa) com "Baixar" e "Atualizar tudo"; Módulos e dados em abas (Dados, Baixar e importar, Atualizações, Armazenamento), já com lugar para SIA/SIH e TUSS/TISS; CID por capítulo; textos curtos; "regra não confirmada" saiu da tela (o aviso geral de ferramenta não oficial permanece).
+- **Esfera administrativa (`ESFERA_A`).** Nas 7.108 linhas de MS é idêntica a `TPGESTAO` (D=45, E=48, M=7.015). O `EsferAdm.CNV` oficial descreve 01 Federal, 02 Estadual, 03 Municipal, 04 Privada, o que contradiz os dados reais. Os nomes (Dupla, Estadual, Municipal, Sem gestão) ficam fixos no manifesto (`[[valor_fixo]]`), conforme os valores de gestão. A esfera jurídica de fato vem de `NAT_JUR`.
+- **"Incentivo de SP".** Não existe dado com esse nome no SIGTAP nem no CNES. "SP" na ficha é Serviço Profissional (valores e incremento); as siglas passaram a ser escritas por extenso. Nenhuma ocultação por UF foi criada sem evidência de dado que varie por UF.
+
 ## 3. Riscos que seguem
 
 1. Regra de aptidão e correspondência de leitos **não confirmadas**.
 2. Serviços terceirizados fora do arquivo público (2.3).
 3. CNES publicado depois do SIGTAP: a aptidão cruza competências diferentes (a tela avisa).
 4. Arquivos oficiais guardados com CPF de titulares pessoa física (1.3).
-5. `TP_UNID` 16 e a esfera administrativa "M" não têm descrição nas tabelas do DATASUS (mostrados como código).
+5. `TP_UNID` 16 não tem descrição nas tabelas do DATASUS (mostrado como código).
 6. Prova no Windows pendente.

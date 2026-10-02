@@ -72,8 +72,8 @@ jobs:
             linha "Linux ARM" "SIGTAP-Aberto-${TAG}-linux-arm64.AppImage"
             linha "macOS (Intel e Apple)" "SIGTAP-Aberto-${TAG}-macos-universal.zip"
             echo
-            echo "- **Windows:** baixe o \`.exe\`, ponha numa pasta sua (ex.: \`D:\\SIGTAP Aberto\`) e abra. Se aparecer o aviso azul do Windows: *Mais informações* → *Executar assim mesmo* (o programa ainda não tem assinatura digital). Prefere com instruções? Baixe o \`.zip\` do mesmo sistema: ele traz o LEIAME."
-            echo "- **Linux:** baixe o \`.AppImage\`, ponha numa pasta sua, marque como executável (\`chmod +x\`) e abra. Em distribuições sem FUSE 2, instale \`libfuse2\` ou rode com \`--appimage-extract-and-run\`."
+            echo "- **Windows:** baixe o \`.exe\`, coloque numa pasta sua (ex.: \`D:\\SIGTAP Aberto\`) e abra. Se aparecer o aviso azul do Windows: *Mais informações* → *Executar assim mesmo* (o programa ainda não tem assinatura digital). Prefere com instruções? Baixe o \`.zip\` do mesmo sistema: ele traz o LEIAME."
+            echo "- **Linux:** baixe o \`.AppImage\`, coloque numa pasta sua, marque como executável (\`chmod +x\`) e abra. Em distribuições sem FUSE 2, instale \`libfuse2\` ou rode com \`--appimage-extract-and-run\`."
             echo "- **macOS:** extraia o \`.zip\`, arraste a pasta *SIGTAP Aberto* para Documentos e abra o app com botão direito → *Abrir* (o programa ainda não tem assinatura da Apple)."
             echo
             echo "O programa grava os dados ao lado de si mesmo, nunca em pastas do sistema. Confira o download pelo \`SHA256SUMS.txt\`."
