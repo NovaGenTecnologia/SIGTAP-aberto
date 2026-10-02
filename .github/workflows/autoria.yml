@@ -29,7 +29,8 @@ jobs:
           if [ "$EVENTO" = "pull_request" ]; then faixa="$BASE_PR..$DEPOIS"
           elif echo "$ANTES" | grep -qE '^0+$'; then faixa="$DEPOIS"
           else faixa="$ANTES..$DEPOIS"; fi
-          ruins=$(git log --format='%h %ae %ce' "$faixa" | awk -v re="$permitidos" '$2 !~ re || $3 !~ re { print $1 }')
+          export permitidos
+          ruins=$(git log --format='%h %ae %ce' "$faixa" | awk 'BEGIN { re = ENVIRON["permitidos"] } $2 !~ re || $3 !~ re { print $1 }')
           if [ -n "$ruins" ]; then
             echo "Commits com autor ou committer fora da lista permitida:"
             echo "$ruins"

@@ -100,7 +100,7 @@ jobs:
         run: rustup show
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
       - name: Compilar e montar o AppImage
         working-directory: crates/app
         run: npx --yes @tauri-apps/cli@2 build --bundles appimage --config '{"bundle":{"active":true}}'
@@ -138,7 +138,7 @@ jobs:
           rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
       - name: Compilar e montar o app universal
         working-directory: crates/app
         run: npx --yes @tauri-apps/cli@2 build --target universal-apple-darwin --bundles app --config '{"bundle":{"active":true}}'
