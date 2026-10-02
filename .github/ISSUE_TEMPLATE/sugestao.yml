@@ -1,0 +1,21 @@
+name: Sugestão
+description: Uma ideia para o programa
+labels: ["sugestao"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Nunca cole dado de paciente** (nome, CPF, CNS, número de AIH ou APAC, trechos de arquivos reais de BPA, APAC, AIH ou TISS). Para mostrar a estrutura de um arquivo, diga o tamanho do registro, as posições e as contagens, nunca os valores.
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qual problema do seu dia a dia isso resolveria?
+      description: Conte como você faz hoje.
+    validations:
+      required: true
+  - type: textarea
+    id: ideia
+    attributes:
+      label: O que você gostaria que o programa fizesse?
+    validations:
+      required: true

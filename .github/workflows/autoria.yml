@@ -1,0 +1,39 @@
+# Confere a autoria dos commits de branches deste repositório: só os e-mails da lista abaixo passam.
+# PRs de fork não são conferidos (quem contribui de fora usa o próprio e-mail).
+name: autoria
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  autoria:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Autor e committer dos commits novos
+        env:
+          EVENTO: ${{ github.event_name }}
+          BASE_PR: ${{ github.event.pull_request.base.sha }}
+          ANTES: ${{ github.event.before }}
+          DEPOIS: ${{ github.sha }}
+        run: |
+          permitidos='^(novagen@novagentecnologia\.com\.br|noreply@anthropic\.com|noreply@github\.com|[0-9]+\+dependabot\[bot\]@users\.noreply\.github\.com)$'
+          if [ "$EVENTO" = "pull_request" ]; then faixa="$BASE_PR..$DEPOIS"
+          elif echo "$ANTES" | grep -qE '^0+$'; then faixa="$DEPOIS"
+          else faixa="$ANTES..$DEPOIS"; fi
+          ruins=$(git log --format='%h %ae %ce' "$faixa" | awk -v re="$permitidos" '$2 !~ re || $3 !~ re { print $1 }')
+          if [ -n "$ruins" ]; then
+            echo "Commits com autor ou committer fora da lista permitida:"
+            echo "$ruins"
+            echo "Refaça esses commits com: git config user.email novagen@novagentecnologia.com.br"
+            exit 1
+          fi
+          echo "Autoria conferida."

@@ -80,10 +80,15 @@ jobs:
             echo
             cat "../docs/lancamentos/${TAG}.md"
           } > ../notas.md
-      - name: Publicar
+      - name: Criar o rascunho com os arquivos
         uses: softprops/action-gh-release@v2
         with:
+          draft: true
           body_path: notas.md
           files: |
             pacotes/SIGTAP-Aberto-*
             pacotes/SHA256SUMS.txt
+      - name: Publicar (os arquivos já estão anexados; depois disso a release não muda)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --draft=false
