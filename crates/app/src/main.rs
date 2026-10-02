@@ -166,6 +166,13 @@ async fn verificar_dados(s: Estado<'_>) -> Result<serde_json::Value, String> {
         .map_err(|e| format!("falha interna na verificação ({e})"))?
 }
 
+/// Perfil de usuário do GitHub (`https://github.com/<login>`), usado na lista de contribuidores.
+fn perfil_github(u: &str) -> bool {
+    u.strip_prefix("https://github.com/").is_some_and(|l| {
+        !l.is_empty() && l.len() <= 39 && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    })
+}
+
 /// Endereços que o programa abre no navegador: o site do SIGTAP e o repositório do projeto
 /// (feedback, lançamentos, apoio). A interface não abre endereço qualquer.
 fn url_permitida(u: &str) -> bool {
@@ -181,6 +188,11 @@ fn url_permitida(u: &str) -> bool {
             || u.starts_with(&format!("{repo}/"))
             || u.starts_with(&format!("{repo}?"))
             || u.starts_with("https://github.com/sponsors/")
+            || perfil_github(u)
+            || u == "https://cnes.datasus.gov.br/"
+            || u.starts_with("https://cnes.datasus.gov.br/")
+            || u == "https://novagentecnologia.com.br"
+            || u.starts_with("https://novagentecnologia.com.br/")
             || u.starts_with("mailto:"))
 }
 
@@ -493,6 +505,21 @@ async fn unidade_remover(s: Estado<'_>, uf: String, cnes: String) -> Result<(), 
         return Err("há uma tarefa em andamento. Espere terminar e tente de novo.".into());
     }
     unidade::remover_unidade(&unidade::local(&s.pastas), &uf, &cnes)
+}
+
+/// Cadastra um terceiro contratado pela unidade.
+#[tauri::command]
+async fn terceiro_adicionar(
+    s: Estado<'_>,
+    uf: String,
+    cnes: String,
+) -> Result<serde_json::Value, String> {
+    unidade::adicionar_terceiro(&unidade::local(&s.pastas), &uf, &cnes)
+}
+
+#[tauri::command]
+async fn terceiro_remover(s: Estado<'_>, uf: String, cnes: String) -> Result<(), String> {
+    unidade::remover_terceiro(&unidade::local(&s.pastas), &uf, &cnes)
 }
 
 /// Uma unidade completa: a indicada (UF e CNES) ou, sem indicação, a ativa.
@@ -809,6 +836,8 @@ fn main() {
             unidade_ver,
             unidade_remover,
             marcadores,
+            terceiro_adicionar,
+            terceiro_remover,
             unidade_procedimentos,
             unidades_buscar,
             aptidao,
@@ -899,6 +928,9 @@ mod testes {
             format!("{repo}/issues/new?title=a%20b&body=c%0Ad&labels=bug"),
             repo.clone(),
             "https://github.com/sponsors/alguem".to_string(),
+            "https://github.com/alguem-1".to_string(),
+            "https://cnes.datasus.gov.br/".to_string(),
+            "https://novagentecnologia.com.br".to_string(),
             "mailto:contato@exemplo.com.br?subject=Oi%20mundo".to_string(),
         ] {
             assert!(url_permitida(&ok), "{ok}");

@@ -10,6 +10,7 @@ async function atualizarCnes() {
 const cnesDaUf = (uf) => ((E.cnes && E.cnes.ufs) || []).find((x) => x.uf === uf);
 const minhaUnidade = () => (E.cnes && E.cnes.minha) || null;
 const minhasUnidades = () => (E.cnes && E.cnes.unidades) || [];
+const meusTerceiros = () => (E.cnes && E.cnes.terceiros) || [];
 
 /** Depois de trocar a unidade ativa: a lista da esquerda e a tela refletem a nova. */
 async function aposTrocarUnidade() {
@@ -23,8 +24,8 @@ async function usarUnidade(uf, cnes) {
 }
 
 // ---------- marcador de habilitação na lista da esquerda ----------
-const ROTULO_HAB = { apta: "A sua unidade está habilitada", ressalva: "Habilitação confere; serviço a confirmar", nao: "A sua unidade não está habilitada" };
-/** Pontinho ao lado de cada procedimento: habilitada, a confirmar ou não habilitada. */
+const ROTULO_HAB = { apta: "A sua unidade está habilitada", terceiro: "Um terceiro contratado pode realizar", ressalva: "Apta com ressalva", nao: "A sua unidade não está habilitada" };
+/** Pontinho ao lado de cada procedimento: verde (a unidade faz), azul (terceiro contratado), amarelo (ressalva) ou vazio (não apta). */
 async function marcarHabilitacao(botoes) {
   const m = minhaUnidade();
   if (!m || !botoes.length) return;
@@ -222,7 +223,12 @@ function blocoAptidao(codigo) {
   invoke("aptidao", { competencia: E.comp, codigo }).then((a) => {
     limpar(sec);
     if (!a) { sec.append(el("p", { class: "aviso", text: `A unidade ${m.cnes} não está no CNES de ${m.uf} carregado. Baixe o CNES de novo ou escolha a unidade outra vez.` })); return; }
-    const [classe, titulo, curto] = vereditoAptidao(a);
+    let [classe, titulo, curto] = vereditoAptidao(a);
+    const porTerceiro = (a.terceiros || []).filter((t) => t.apta);
+    if ((classe === "nao" || classe === "ressalva") && porTerceiro.length) {
+      classe = "terceiro"; titulo = "Apta por terceiro";
+      curto = `${porTerceiro.map((t) => t.nome || `CNES ${t.cnes}`).join(", ")} (confirme o contrato)`;
+    }
     sec.classList.add(classe);
     const outras = minhasUnidades();
     const quem = outras.length > 1
@@ -383,6 +389,17 @@ async function telaUnidade(c, aba) {
       title: g.nome || `CNES ${g.cnes}`, onclick: async () => { await usarUnidade(g.uf, g.cnes); ir({ tipo: "unidade", aba }, { substituir: true }); } },
       g.nome || `CNES ${g.cnes}`)),
     el("button", { class: "link pequeno", type: "button", onclick: () => ir({ tipo: "unidade", trocar: true }) }, "+ Adicionar unidade")));
+  if (u.ativa) {
+    const terc = meusTerceiros();
+    pg.append(el("div", { class: "uni-troca terceiros", role: "group", "aria-label": "Terceiros contratados" },
+      el("span", { class: "rotulo-terc", text: "Terceiros contratados" }),
+      terc.map((t) => el("span", { class: "chip terc" },
+        el("button", { class: "link", type: "button", title: `Ver ${t.nome || `CNES ${t.cnes}`}`, onclick: () => ir({ tipo: "unidade", uf: t.uf, cnes: t.cnes }) }, t.nome || `CNES ${t.cnes}`),
+        el("button", { class: "x", type: "button", "aria-label": `Remover ${t.nome || t.cnes}`, title: "Remover", onclick: async () => {
+          try { await invoke("terceiro_remover", { uf: t.uf, cnes: t.cnes }); await aposTrocarUnidade(); } catch (e) { avisoTopo(String(e)); }
+        } }, "×"))),
+      el("button", { class: "link pequeno", type: "button", onclick: () => ir({ tipo: "unidade", trocar: true, terceiro: true }) }, "+ Adicionar terceiro")));
+  }
   pg.append(el("div", { class: "uni-cab" },
     el("div", { class: "uni-id" },
       el("h1", { text: u.nome || `CNES ${u.cnes}` }),
@@ -549,9 +566,10 @@ function telaSemCnes(pg) {
 function telaEscolherUnidade(pg) {
   const m = minhaUnidade();
   const ufs = E.cnes.ufs.filter((x) => x.resumo).map((x) => x.uf);
+  const terceiro = !!E.rota.terceiro;
   if (m) pg.append(botaoVoltar());
-  pg.append(el("h1", { text: m ? "Adicionar unidade" : "Qual é a sua unidade?" }),
-    el("p", { class: "lide", text: "Nome fantasia ou número do CNES." }));
+  pg.append(el("h1", { text: terceiro ? "Adicionar terceiro contratado" : m ? "Adicionar unidade" : "Qual é a sua unidade?" }),
+    el("p", { class: "lide", text: terceiro ? "Estabelecimento que presta serviço para a sua unidade. Nome fantasia ou número do CNES." : "Nome fantasia ou número do CNES." }));
   const uf = seletorUf(m ? m.uf : ufs[0], ufs);
   const campo = el("input", { type: "search", class: "campo busca-uni", placeholder: "Nome do estabelecimento ou CNES", "aria-label": "Procurar estabelecimento", autocomplete: "off", spellcheck: "false" });
   const saida = el("div", { class: "uni-resultados" });
@@ -572,9 +590,9 @@ function telaEscolherUnidade(pg) {
           el("td", { text: e.municipio_nome || e.municipio }), el("td", { class: "quieto", text: capitalizar(e.tipo_nome || e.tipo) }),
           el("td", { class: "acao" }, el("button", { class: "botao pequeno", type: "button", onclick: async (ev) => {
             ev.currentTarget.disabled = true; ev.currentTarget.textContent = "Gravando…";
-            try { await invoke("unidade_definir", { uf: uf.value, cnes: e.cnes }); await aposTrocarUnidade(); ir({ tipo: "unidade" }, { substituir: true }); }
+            try { await invoke(terceiro ? "terceiro_adicionar" : "unidade_definir", { uf: uf.value, cnes: e.cnes }); await aposTrocarUnidade(); ir({ tipo: "unidade" }, { substituir: true }); }
             catch (x) { limpar(saida).append(erro(x)); }
-          } }, "Utilizar este")))))));
+          } }, terceiro ? "Cadastrar como terceiro" : "Utilizar este")))))));
       if (r.length >= 30) saida.append(el("p", { class: "quieto pequeno", text: "Mostrando os 30 primeiros. Digite mais para afinar." }));
     } catch (e) { if (meu === seq) limpar(saida).append(erro(e)); }
   };

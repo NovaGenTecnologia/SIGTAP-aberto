@@ -53,6 +53,8 @@ pub type Emissor<'a> = &'a (dyn Fn(Progresso) + Sync);
 const CHAVE_UNIDADE: &str = "minha_unidade";
 /// Unidades guardadas para troca rápida: "UF:CNES,UF:CNES". A de `CHAVE_UNIDADE` é a ativa.
 const CHAVE_UNIDADES: &str = "minhas_unidades";
+/// Terceiros contratados pela unidade: "UF:CNES,UF:CNES".
+const CHAVE_TERCEIROS: &str = "terceiros_contratados";
 /// Tipos sempre baixados; PF só quando a unidade do usuário é da UF.
 const TIPOS_BASE: [&str; 5] = ["ST", "HB", "SR", "LT", "EQ"];
 
@@ -123,6 +125,84 @@ pub fn minhas(p: &Pastas) -> Vec<(String, String)> {
         v.insert(0, ativa);
     }
     v
+}
+
+/// Terceiros contratados cadastrados pelo usuário (na ordem de cadastro).
+pub fn terceiros(p: &Pastas) -> Vec<(String, String)> {
+    let mut v: Vec<(String, String)> = Vec::new();
+    if banco_usuario(p).exists()
+        && let Ok(u) = usuario(p)
+        && let Ok(Some(lista)) = u.config(CHAVE_TERCEIROS)
+    {
+        for par in lista.split(',').filter_map(ler_par) {
+            if !v.contains(&par) {
+                v.push(par);
+            }
+        }
+    }
+    v
+}
+
+fn gravar_terceiros(p: &Pastas, v: &[(String, String)]) -> Result<(), String> {
+    let texto = v
+        .iter()
+        .map(|(u, c)| format!("{u}:{c}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    usuario(p)?
+        .gravar_config(
+            CHAVE_TERCEIROS,
+            (!texto.is_empty()).then_some(texto.as_str()),
+        )
+        .map_err(|e| e.to_string())
+}
+
+fn nome_da_unidade(p: &Pastas, uf: &str, cnes: &str) -> String {
+    consulta_cnes(p, uf)
+        .ok()
+        .and_then(|q| q.buscar(cnes, 1).ok())
+        .and_then(|v| v.into_iter().find(|e| e.cnes == cnes))
+        .map(|e| e.nome)
+        .unwrap_or_default()
+}
+
+/// Terceiros com o nome (vazio se o CNES da UF não está carregado).
+pub fn terceiros_com_nome(p: &Pastas) -> serde_json::Value {
+    let v: Vec<serde_json::Value> = terceiros(p)
+        .into_iter()
+        .map(|(uf, cnes)| {
+            let nome = nome_da_unidade(p, &uf, &cnes);
+            json!({ "uf": uf, "cnes": cnes, "nome": nome })
+        })
+        .collect();
+    json!(v)
+}
+
+/// Cadastra um terceiro contratado. O CNES tem de estar no cadastro da UF carregada.
+pub fn adicionar_terceiro(p: &Pastas, uf: &str, cnes: &str) -> Result<serde_json::Value, String> {
+    exigir_uf(uf)?;
+    let q = consulta_cnes(p, uf)?;
+    let achado = q
+        .buscar(cnes, 5)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|e| e.cnes == cnes)
+        .ok_or_else(|| format!("o CNES {cnes} não está no cadastro de {uf} carregado. Confira o número ou baixe o CNES de {uf}"))?;
+    drop(q);
+    let mut lista = terceiros(p);
+    let par = (uf.to_string(), cnes.to_string());
+    if !lista.contains(&par) {
+        lista.push(par);
+    }
+    gravar_terceiros(p, &lista)?;
+    Ok(json!({ "uf": uf, "cnes": cnes, "nome": achado.nome }))
+}
+
+pub fn remover_terceiro(p: &Pastas, uf: &str, cnes: &str) -> Result<(), String> {
+    let par = (uf.to_string(), cnes.to_string());
+    let mut lista = terceiros(p);
+    lista.retain(|x| x != &par);
+    gravar_terceiros(p, &lista)
 }
 
 fn gravar_unidades(p: &Pastas, v: &[(String, String)]) -> Result<(), String> {
@@ -313,7 +393,7 @@ fn carregar(
         msg.push_str(" Atenção: os arquivos são de competências diferentes; baixe o CNES de novo para alinhar.");
     }
     if !cad.exists() {
-        msg.push_str(" Os nomes dos estabelecimentos não foram carregados (falta o cadastro).");
+        msg.push_str(" Nomes dos estabelecimentos e descrições de órgão responsável indisponíveis no momento (arquivo auxiliar do DATASUS não baixado); tente \"Baixar de novo\" mais tarde.");
     }
     Ok(msg)
 }
@@ -455,7 +535,7 @@ pub fn baixar_cnes_de(
         }
         // Sem os auxiliares o CNES ainda serve (códigos sem nome): avisa em vez de falhar.
         Some(Err(e)) => format!(
-            " Os nomes dos estabelecimentos não puderam ser baixados agora ({e}); tente \"Baixar de novo\" mais tarde."
+            " Os nomes dos estabelecimentos e as descrições de órgão responsável, natureza jurídica e esfera estão indisponíveis no momento: o servidor do DATASUS não entregou o arquivo auxiliar ({e}). Não é falha do programa; tente \"Baixar de novo\" mais tarde."
         ),
     };
     emitir(
@@ -560,7 +640,7 @@ pub fn situacao(p: &Pastas) -> serde_json::Value {
             json!({ "uf": uf, "cnes": cnes, "nome": nome })
         })
         .collect();
-    json!({ "ufs": ufs, "minha": minha, "unidades": unidades, "ufs_disponiveis": dl::UFS })
+    json!({ "ufs": ufs, "minha": minha, "unidades": unidades, "terceiros": terceiros_com_nome(p), "ufs_disponiveis": dl::UFS })
 }
 
 /// Escolhe a unidade ativa (e a guarda na lista de troca rápida). Carrega os profissionais dela
@@ -691,11 +771,37 @@ pub fn aptidao(
     let a = q
         .aptidao(sig, comp, procedimento, &cnes)
         .map_err(|e| e.to_string())?;
-    serde_json::to_value(&a).map_err(|e| e.to_string())
+    drop(q);
+    let mut v = serde_json::to_value(&a).map_err(|e| e.to_string())?;
+    if a.as_ref().is_some_and(|a| !a.apta) {
+        let mut dos_terceiros = Vec::new();
+        for (tuf, tcnes) in terceiros(p) {
+            if !banco_cnes(p, &tuf).exists() {
+                continue;
+            }
+            let tq = consulta_cnes(p, &tuf)?;
+            if let Ok(Some(t)) = tq.aptidao(sig, comp, procedimento, &tcnes) {
+                let nome = tq
+                    .buscar(&tcnes, 1)
+                    .ok()
+                    .and_then(|l| l.into_iter().find(|e| e.cnes == tcnes))
+                    .map(|e| e.nome)
+                    .unwrap_or_default();
+                dos_terceiros.push(json!({
+                    "uf": tuf, "cnes": tcnes, "nome": nome,
+                    "apta": t.apta, "motivos": t.motivos,
+                }));
+            }
+        }
+        v["terceiros"] = json!(dos_terceiros);
+    }
+    Ok(v)
 }
 
-type CacheEstados = (String, Arc<HashMap<String, Estado>>);
-static CACHE_ESTADOS: Mutex<Option<CacheEstados>> = Mutex::new(None);
+type CacheEstados = Vec<(String, Arc<HashMap<String, Estado>>)>;
+static CACHE_ESTADOS: Mutex<CacheEstados> = Mutex::new(Vec::new());
+/// A unidade ativa e os terceiros cabem juntos; passou disso, sai a mais antiga.
+const ENTRADAS_CACHE: usize = 8;
 
 /// Estados de uma unidade diante dos procedimentos, com cache de uma entrada (a lista da
 /// esquerda chama a cada grupo aberto). A chave inclui a data do banco do CNES, então um
@@ -719,8 +825,7 @@ fn estados_da_unidade(
         .unwrap_or(0);
     let chave = format!("{uf}:{cnes}:{comp}:{mtime}");
     if let Ok(g) = CACHE_ESTADOS.lock()
-        && let Some((k, v)) = g.as_ref()
-        && *k == chave
+        && let Some((_, v)) = g.iter().find(|(k, _)| *k == chave)
     {
         return Ok(Some(v.clone()));
     }
@@ -730,7 +835,11 @@ fn estados_da_unidade(
     };
     let m = Arc::new(m);
     if let Ok(mut g) = CACHE_ESTADOS.lock() {
-        *g = Some((chave, m.clone()));
+        g.retain(|(k, _)| *k != chave);
+        if g.len() >= ENTRADAS_CACHE {
+            g.remove(0);
+        }
+        g.push((chave, m.clone()));
     }
     Ok(Some(m))
 }
@@ -749,13 +858,26 @@ pub fn marcadores(
     let Some(estados) = estados_da_unidade(p, sig, comp, &uf, &cnes)? else {
         return Ok(json!({}));
     };
+    // Estados de cada terceiro contratado (UFs sem banco carregado ficam de fora).
+    let mut dos_terceiros = Vec::new();
+    for (tuf, tcnes) in terceiros(p) {
+        if let Ok(Some(e)) = estados_da_unidade(p, sig, comp, &tuf, &tcnes) {
+            dos_terceiros.push(e);
+        }
+    }
     let mut m = serde_json::Map::new();
     for c in codigos {
         if let Some(e) = estados.get(c) {
-            m.insert(
-                c.clone(),
-                serde_json::to_value(e).map_err(|e| e.to_string())?,
-            );
+            let por_terceiro = matches!(e, Estado::Nao | Estado::Ressalva)
+                && dos_terceiros
+                    .iter()
+                    .any(|t| t.get(c) == Some(&Estado::Apta));
+            let v = if por_terceiro {
+                json!("terceiro")
+            } else {
+                serde_json::to_value(e).map_err(|e| e.to_string())?
+            };
+            m.insert(c.clone(), v);
         }
     }
     Ok(serde_json::Value::Object(m))
@@ -1063,6 +1185,36 @@ mod testes {
     use std::io::Write;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
+
+    #[test]
+    fn terceiros_sao_guardados_sem_duplicar_e_removidos() {
+        let d = std::env::temp_dir().join(format!("sa-terc-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let p = Pastas { dados: d.clone() };
+        assert!(terceiros(&p).is_empty());
+        gravar_terceiros(
+            &p,
+            &[
+                ("MS".into(), "1234567".into()),
+                ("SP".into(), "7654321".into()),
+                ("MS".into(), "1234567".into()),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            terceiros(&p),
+            vec![
+                ("MS".to_string(), "1234567".to_string()),
+                ("SP".to_string(), "7654321".to_string())
+            ]
+        );
+        remover_terceiro(&p, "MS", "1234567").unwrap();
+        assert_eq!(
+            terceiros(&p),
+            vec![("SP".to_string(), "7654321".to_string())]
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     fn ambiente() -> Option<(PathBuf, PathBuf, PathBuf)> {
         let cnes = PathBuf::from(std::env::var("SA_CNES_DBC").ok()?);
