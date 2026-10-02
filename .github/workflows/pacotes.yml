@@ -34,6 +34,11 @@ jobs:
           - { arq: arm64, alvo: aarch64-pc-windows-msvc, maquina: "AA64" }
     steps:
       - uses: actions/checkout@v4
+      - name: Top 10 de contribuidores (tela Sobre)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/pacote/contribuidores.sh
       - name: Rust e alvo ${{ matrix.alvo }}
         run: |
           rustup show
@@ -82,6 +87,11 @@ jobs:
       APPIMAGE_EXTRACT_AND_RUN: "1"
     steps:
       - uses: actions/checkout@v4
+      - name: Top 10 de contribuidores (tela Sobre)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/pacote/contribuidores.sh
       - name: Dependências do WebKitGTK e do AppImage
         run: |
           sudo apt-get update
@@ -117,6 +127,11 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Top 10 de contribuidores (tela Sobre)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/pacote/contribuidores.sh
       - name: Rust e alvos das duas arquiteturas
         run: |
           rustup show

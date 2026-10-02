@@ -467,6 +467,20 @@ function painelApoio() {
       APOIO.sponsors ? el("button", { class: "botao pequeno", type: "button", onclick: () => abrirSite(`https://github.com/sponsors/${APOIO.sponsors}`) }, "GitHub Sponsors") : null),
     el("p", { class: "quieto pequeno", text: "Voluntário: não gera recibo nem libera recurso extra. O programa é completo sem isso." }));
 }
+function abrirContribuidores() {
+  const c = (typeof CONTRIBUIDORES !== "undefined" && CONTRIBUIDORES) || { lista: [] };
+  const corpo = c.lista.length
+    ? [el("ol", { class: "contribuidores" }, c.lista.map((x) => el("li", {},
+        el("button", { class: "link", type: "button", onclick: () => abrirSite(`https://github.com/${encodeURIComponent(x.login)}`) }, x.login),
+        el("span", { class: "quieto pequeno", text: ` ${x.contribuicoes} ${x.contribuicoes === 1 ? "contribuição" : "contribuições"}` })))),
+      el("p", { class: "quieto pequeno", text: `Situação em ${c.geradoEm || "?"}, na versão ${c.versao || "?"}.` })]
+    : [el("p", { class: "quieto", text: "A lista é gerada no lançamento de cada versão e ainda não está disponível nesta." })];
+  abrirModal("Top 10 contribuidores", [...corpo,
+    el("div", { class: "acoes" },
+      el("button", { class: "botao", type: "button", onclick: () => { fecharModal(); abrirSobre(); } }, "Voltar"),
+      el("div", { class: "espaco" }),
+      el("button", { class: "botao primario", type: "button", onclick: fecharModal }, "Fechar"))], {});
+}
 const PROMESSAS = [
   ["Gratuito e aberto", "Pode copiar, instalar e distribuir à vontade. O código é público (AGPL-3.0) e vai continuar público."],
   ["Fica no seu computador", "Nada seu ou de paciente sai daqui. Não há cadastro, conta nem telemetria."],
@@ -479,10 +493,14 @@ function abrirSobre() {
     el("div", { class: "sobre-grade" },
       el("section", { class: "sobre-texto" },
         el("p", { class: "agradece", text: "Obrigado por usar." }),
+        el("p", { class: "feito-por" }, "Projeto feito e mantido pela ",
+          el("button", { class: "link", type: "button", onclick: () => abrirSite("https://novagentecnologia.com.br") }, "NovaGen Tecnologia"),
+          " e seus contribuidores."),
         el("p", { class: "missao", text: "Este programa existe para ajudar quem fatura no SUS: consultar a Tabela de Procedimentos com o histórico de cada competência, conferir as regras de cobrança e evitar glosas." }),
         el("dl", { class: "promessas" }, PROMESSAS.flatMap(([t, d]) => [el("dt", { text: t }), el("dd", { text: d })])),
         el("div", { class: "sobre-links" },
           el("button", { class: "link", type: "button", onclick: () => abrirSite(urlRepo()) }, "Código-fonte no GitHub"),
+          el("button", { class: "link", type: "button", onclick: abrirContribuidores }, "Top 10 contribuidores"),
           el("button", { class: "link", type: "button", onclick: () => { fecharModal(); ir({ tipo: "modulos" }); } }, "Procurar atualizações"))),
       painelApoio()),
     el("div", { class: "acoes" },
