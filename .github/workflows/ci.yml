@@ -43,3 +43,15 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check licenses
+
+  monitor:
+    name: monitor das fontes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Testes do monitor
+        run: npm test
+        working-directory: ferramentas/monitor-fontes

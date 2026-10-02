@@ -1,0 +1,14 @@
+{
+  "name": "monitor-fontes",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Verifica se as fontes de dados do SIGTAP Aberto estão no ar e guarda o histórico (uso local, sem dependências).",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test \"testes/*.test.mjs\"",
+    "verificar": "node monitor.mjs verificar",
+    "relatorio": "node monitor.mjs relatorio --abrir"
+  },
+  "license": "AGPL-3.0-only"
+}

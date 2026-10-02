@@ -1,0 +1,243 @@
+[
+  {
+    "id": "sigtap-ftp",
+    "nome": "SIGTAP: FTP da Tabela Unificada",
+    "grupo": "DATASUS (FTP)",
+    "uso": "Download da Tabela Unificada de Procedimentos",
+    "tipo": "ftp",
+    "host": "ftp2.datasus.gov.br",
+    "comando": {
+      "cwd": "/pub/sistemas/tup/downloads"
+    },
+    "dados": {
+      "listar": "/pub/sistemas/tup/downloads",
+      "contem": "TabelaUnificada_"
+    }
+  },
+  {
+    "id": "sigtap-mapeamento",
+    "nome": "SIGTAP: Mapeamento TUSS x SIGTAP",
+    "grupo": "DATASUS (FTP)",
+    "uso": "Arquivo de correlação TUSS (só consulta de tamanho)",
+    "tipo": "ftp",
+    "host": "ftp2.datasus.gov.br",
+    "comando": {
+      "size": "/pub/sistemas/tup/downloads/Mapeamento_TUSS_SIGTAP.zip"
+    }
+  },
+  {
+    "id": "sigtap-notas",
+    "nome": "SIGTAP: notas técnicas mensais",
+    "grupo": "DATASUS (FTP)",
+    "uso": "Notas técnicas de cada competência (fase 2, para a tela de mudanças)",
+    "tipo": "ftp",
+    "host": "ftp2.datasus.gov.br",
+    "comando": {
+      "cwd": "/pub/sistemas/tup/downloads/notastecnicas"
+    }
+  },
+  {
+    "id": "cnes-ftp-dados",
+    "nome": "CNES: arquivos .dbc por UF",
+    "grupo": "DATASUS (FTP)",
+    "uso": "Download dos estabelecimentos, habilitações, serviços, leitos e equipamentos",
+    "tipo": "ftp",
+    "host": "ftp.datasus.gov.br",
+    "comando": {
+      "size": "/dissemin/publicos/CNES/200508_/Dados/ST/STMS2608.dbc"
+    },
+    "dados": {
+      "parcial": {
+        "caminho": "/dissemin/publicos/CNES/200508_/Dados/ST/STMS2608.dbc",
+        "inicio": 0,
+        "bytes": 4096
+      }
+    }
+  },
+  {
+    "id": "cnes-ftp-auxiliar",
+    "nome": "CNES: tabelas auxiliares (TAB_CNES.zip)",
+    "grupo": "DATASUS (FTP)",
+    "uso": "Leitura parcial do ZIP de 127 MB (nomes dos estabelecimentos e tabelas de conversão)",
+    "tipo": "ftp",
+    "host": "ftp.datasus.gov.br",
+    "comando": {
+      "size": "/dissemin/publicos/CNES/200508_/Auxiliar/TAB_CNES.zip"
+    },
+    "dados": {
+      "parcial": {
+        "caminho": "/dissemin/publicos/CNES/200508_/Auxiliar/TAB_CNES.zip",
+        "inicio": 1000000,
+        "bytes": 4096
+      }
+    }
+  },
+  {
+    "id": "sia-ftp",
+    "nome": "SIA: tabelas auxiliares",
+    "grupo": "DATASUS (FTP)",
+    "uso": "Fonte prevista da produção ambulatorial (só consulta de tamanho)",
+    "tipo": "ftp",
+    "host": "ftp.datasus.gov.br",
+    "comando": {
+      "size": "/dissemin/publicos/SIASUS/200801_/Auxiliar/TAB_SIA.zip"
+    }
+  },
+  {
+    "id": "sih-ftp",
+    "nome": "SIH: tabelas auxiliares",
+    "grupo": "DATASUS (FTP)",
+    "uso": "Fonte prevista da produção hospitalar e dos motivos de rejeição (só consulta de tamanho)",
+    "tipo": "ftp",
+    "host": "ftp.datasus.gov.br",
+    "comando": {
+      "size": "/dissemin/publicos/SIHSUS/200801_/Auxiliar/TAB_SIH.zip"
+    }
+  },
+  {
+    "id": "sigtap-site",
+    "nome": "SIGTAP: site oficial",
+    "grupo": "Sites",
+    "uso": "Conferência manual e link do programa",
+    "tipo": "http",
+    "url": "http://sigtap.datasus.gov.br/tabela-unificada/app/sec/inicio.jsp"
+  },
+  {
+    "id": "cnes-site",
+    "nome": "CNES: site oficial",
+    "grupo": "Sites",
+    "uso": "Conferência dos serviços terceirizados e link do programa",
+    "tipo": "http",
+    "url": "https://cnes.datasus.gov.br/"
+  },
+  {
+    "id": "sia-site",
+    "nome": "SIA: portal e leiautes",
+    "grupo": "Sites",
+    "uso": "Leiautes de exportação BPA, APAC e RAAS",
+    "tipo": "http",
+    "url": "http://sia.datasus.gov.br"
+  },
+  {
+    "id": "sihd-site",
+    "nome": "SIHD: portal e leiautes",
+    "grupo": "Sites",
+    "uso": "Leiaute da AIH",
+    "tipo": "http",
+    "url": "http://www2.datasus.gov.br/SIHD/"
+  },
+  {
+    "id": "ibge-api",
+    "nome": "IBGE: localidades (municípios)",
+    "grupo": "APIs",
+    "uso": "Território: UF e municípios",
+    "tipo": "http",
+    "url": "https://servicodados.ibge.gov.br/api/v1/localidades/municipios?view=nivelado",
+    "json": true,
+    "min_itens": 5000,
+    "limite_lento_ms": 8000
+  },
+  {
+    "id": "demas-api",
+    "nome": "DEMAS: regiões de saúde por município",
+    "grupo": "APIs",
+    "uso": "Território: região e macrorregião de saúde, população",
+    "tipo": "http",
+    "url": "https://apidadosabertos.saude.gov.br/macrorregiao-e-regiao-de-saude/municipio?limit=1&offset=0",
+    "json": true
+  },
+  {
+    "id": "github-releases",
+    "nome": "GitHub: última versão do programa",
+    "grupo": "APIs",
+    "uso": "Aviso de atualização do programa (404 é normal enquanto não há release)",
+    "tipo": "http",
+    "url": "https://api.github.com/repos/NovaGenTecnologia/SIGTAP-aberto/releases/latest",
+    "aceitar": [
+      200,
+      404
+    ],
+    "json": true
+  },
+  {
+    "id": "sia-ftp-dados",
+    "nome": "SIA: produção ambulatorial (pasta de dados)",
+    "grupo": "Fontes futuras",
+    "futuro": true,
+    "fase": 4,
+    "uso": "Arquivos PA por UF e mês (só confere que a pasta existe)",
+    "tipo": "ftp",
+    "host": "ftp.datasus.gov.br",
+    "comando": {
+      "cwd": "/dissemin/publicos/SIASUS/200801_/Dados"
+    }
+  },
+  {
+    "id": "sih-ftp-dados",
+    "nome": "SIH: AIH reduzida e serviços profissionais (pasta de dados)",
+    "grupo": "Fontes futuras",
+    "futuro": true,
+    "fase": 4,
+    "uso": "Arquivos RD, SP e ER por UF e mês (só confere que a pasta existe)",
+    "tipo": "ftp",
+    "host": "ftp.datasus.gov.br",
+    "comando": {
+      "cwd": "/dissemin/publicos/SIHSUS/200801_/Dados"
+    }
+  },
+  {
+    "id": "demas-raiz",
+    "nome": "DEMAS: API de dados abertos (produção SIA e SIH)",
+    "grupo": "Fontes futuras",
+    "futuro": true,
+    "fase": 4,
+    "uso": "Produção agregada por CNES e procedimento (alcançabilidade do servidor)",
+    "tipo": "http",
+    "url": "https://apidadosabertos.saude.gov.br/",
+    "aceitar_ate": 499
+  },
+  {
+    "id": "bps-api",
+    "nome": "Banco de Preços em Saúde (API DEMAS)",
+    "grupo": "Fontes futuras",
+    "futuro": true,
+    "fase": 7,
+    "uso": "Preços de referência (sem parâmetros a API responde erro de pedido; o que importa é o servidor responder)",
+    "tipo": "http",
+    "url": "https://apidadosabertos.saude.gov.br/economia-da-saude/bps",
+    "aceitar_ate": 499
+  },
+  {
+    "id": "ans-portal",
+    "nome": "ANS: portal (TUSS e padrão TISS)",
+    "grupo": "Fontes futuras",
+    "futuro": true,
+    "fase": 6,
+    "uso": "Terminologia TUSS, XSD do TISS e compatibilização TUSS x SIGTAP (monitora só o portal; acrescente as páginas exatas em fontes.json)",
+    "tipo": "http",
+    "url": "https://www.gov.br/ans/pt-br",
+    "aceitar_ate": 399
+  },
+  {
+    "id": "dadosgov",
+    "nome": "dados.gov.br: portal de dados abertos",
+    "grupo": "Fontes futuras",
+    "futuro": true,
+    "fase": 3,
+    "uso": "Licença e descrição do conjunto CNES",
+    "tipo": "http",
+    "url": "https://dados.gov.br/",
+    "aceitar_ate": 399
+  },
+  {
+    "id": "ses-sp-sus-paulista",
+    "nome": "SES-SP: Tabela SUS Paulista",
+    "grupo": "Fontes futuras",
+    "futuro": true,
+    "fase": "a definir",
+    "uso": "Complementação estadual de SP (resoluções e anexos de valores)",
+    "tipo": "http",
+    "url": "https://saude.sp.gov.br/ses/perfil/cidadao/homepage/outros-destaques/tabela-sus-paulista",
+    "aceitar_ate": 399
+  }
+]
