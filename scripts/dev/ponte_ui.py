@@ -9,7 +9,7 @@ Uso: python3 scripts/dev/ponte_ui.py --cli target/release/sigtap-aberto-cli --ba
 Download, importação e apagar ZIPs são SIMULADOS (eventos de progresso falsos; nada é baixado
 nem apagado): servem só para ver as telas. A prova real está nos testes do sa-app.
 """
-import argparse, json, subprocess, sqlite3, http.server, pathlib, urllib.parse, threading, time, re
+import argparse, json, os, subprocess, sqlite3, http.server, pathlib, urllib.parse, threading, time, re
 
 RAIZ = pathlib.Path(__file__).resolve().parents[2] / "crates" / "app" / "ui"
 SHIM = r"""<script>
@@ -201,8 +201,12 @@ def main():
         if cmd == "marcado": return cli_d("marcado", args["codigo"])
         if cmd == "marcados": return cli_d("marcados", *comp)
         if cmd == "exportar":
-            destino = f"/tmp/ponte_export/{re.sub(r'[^A-Za-z0-9_.-]', '_', args['nome'])}.xlsx"
-            pathlib.Path(destino).parent.mkdir(exist_ok=True)
+            raiz_export = os.path.realpath("/tmp/ponte_export")
+            nome = re.sub(r"[^A-Za-z0-9_.-]", "_", str(args["nome"]))
+            destino = os.path.normpath(os.path.join(raiz_export, nome + ".xlsx"))
+            if not destino.startswith(raiz_export + os.sep):
+                raise RuntimeError("nome de arquivo inválido")
+            os.makedirs(raiz_export, exist_ok=True)
             return cli_d("exportar", "--saida", destino, entrada=json.dumps(args["planilha"]), texto=True)
         raise RuntimeError(f"comando sem simulação na ponte: {cmd}")
 
