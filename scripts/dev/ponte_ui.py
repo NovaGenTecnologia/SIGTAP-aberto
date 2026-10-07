@@ -30,6 +30,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cli", required=True); ap.add_argument("--banco", required=True)
     ap.add_argument("--porta", type=int, default=8765)
+    ap.add_argument("--raiz", help="pasta da interface a servir (padrão: crates/app/ui; para a interface nova: crates/app/web/dist)")
     ap.add_argument("--zips", help="pasta com ZIPs oficiais (só para listar nomes e tamanhos na simulação)")
     ap.add_argument("--primeira", action="store_true", help="simula a primeira execução")
     ap.add_argument("--novidade", action="store_true", help="simula dados novos no servidor")
@@ -41,6 +42,7 @@ def main():
     ap.add_argument("--dados", help="pasta de dados para CNES, unidade e favoritos (comandos reais do CLI)")
     ap.add_argument("--cnes-origem", help="pasta com .dbc do CNES: 'baixar' na ponte simula o progresso e importa daqui")
     a = ap.parse_args()
+    raiz = pathlib.Path(a.raiz).resolve() if a.raiz else RAIZ
     eventos, trava = [], threading.Lock()
     estado = {"primeira": a.primeira, "ocupado": False, "cancelar": False}
 
@@ -211,11 +213,15 @@ def main():
         raise RuntimeError(f"comando sem simulação na ponte: {cmd}")
 
     class H(http.server.SimpleHTTPRequestHandler):
-        def __init__(s, *x, **k): super().__init__(*x, directory=str(RAIZ), **k)
+        def __init__(s, *x, **k): super().__init__(*x, directory=str(raiz), **k)
         def log_message(s, *x): pass
         def do_GET(s):
             if s.path in ("/", "/index.html"):
-                html = (RAIZ / "index.html").read_text(encoding="utf-8").replace('<script src="formatos.js">', SHIM + '<script src="formatos.js">')
+                html = (raiz / "index.html").read_text(encoding="utf-8")
+                if '<script src="formatos.js">' in html:
+                    html = html.replace('<script src="formatos.js">', SHIM + '<script src="formatos.js">')
+                else:  # interface nova (Vite): o shim entra antes de qualquer script do módulo
+                    html = html.replace("<head>", "<head>" + SHIM, 1)
                 b = html.encode(); s.send_response(200); s.send_header("Content-Type", "text/html; charset=utf-8"); s.end_headers(); s.wfile.write(b); return
             super().do_GET()
         def do_POST(s):

@@ -1,0 +1,24 @@
+.tabela { border: 1px solid var(--cor-linha); border-radius: var(--raio-bloco); background: var(--cor-superficie); overflow: hidden; }
+.tabela__grade { width: 100%; height: 100%; overflow: auto; outline: none; }
+.tabela__cabeca { background: var(--cor-pagina); }
+.tabela__coluna { padding: 0 var(--esp-3); text-align: left; font-size: var(--texto-12); font-weight: 700; color: var(--cor-texto-2); cursor: default; }
+.tabela__coluna[data-allows-sorting] { cursor: pointer; }
+.tabela__coluna--num { text-align: right; }
+.tabela__coluna[data-focus-visible] { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: -3px; }
+.tabela__linha { border-top: 1px solid var(--cor-linha); cursor: default; }
+.tabela__linha[data-hovered] { background: var(--cor-pagina); }
+.tabela__linha[data-selected] { background: var(--cor-info-fundo); }
+.tabela__linha[data-focus-visible] { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: -3px; }
+.tabela__celula { padding: 0 var(--esp-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tabela__celula--num { text-align: right; }
+.tabela__vazia { padding: var(--esp-5); color: var(--cor-texto-2); }
+
+.arvore { outline: none; }
+.arvore__item { display: block; outline: none; }
+.arvore__linha { display: flex; align-items: baseline; gap: var(--esp-1); min-height: var(--altura-controle); padding: 0 var(--esp-2); border-radius: var(--raio-controle); cursor: pointer; }
+.arvore__item[data-hovered] > .arvore__linha, .arvore__item[data-focused] > .arvore__linha { background: var(--cor-pagina); }
+.arvore__item[data-selected] > .arvore__linha { background: var(--cor-info-fundo); font-weight: 700; }
+.arvore__item[data-focus-visible] { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: -3px; }
+.arvore__seta { display: inline-block; width: 14px; color: var(--cor-texto-2); }
+.arvore__item[aria-level="2"] .arvore__linha { padding-left: var(--esp-5); }
+.arvore__item[aria-level="3"] .arvore__linha { padding-left: calc(var(--esp-5) * 2); }

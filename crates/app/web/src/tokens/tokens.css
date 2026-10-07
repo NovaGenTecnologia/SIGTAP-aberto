@@ -1,0 +1,65 @@
+:root {
+  /* Casco: topo */
+  --cor-casco: #0A3D91;
+  --cor-casco-escuro: #082C6C;
+  --cor-casco-texto: #FFFFFF;
+  /* Página e superfícies */
+  --cor-pagina: #F2F4F7;
+  --cor-superficie: #FFFFFF;
+  /* Texto em três níveis */
+  --cor-texto: #14202B;
+  --cor-texto-2: #3F4C59;
+  --cor-texto-3: #56626E;
+  /* Linhas: decorativa e de controle (3:1) */
+  --cor-linha: #D9DEE4;
+  --cor-linha-controle: #76828F;
+  /* Ação, foco e item ativo do trilho */
+  --cor-acao: #0B4FB3;
+  --cor-acao-escura: #083C8C;
+  --cor-foco: #0B4FB3;
+  --cor-foco-sobre-casco: #FFFFFF;
+  --cor-item-ativo: #E6EEFA;
+  /* Estados: forte, fundo, texto */
+  --cor-ok: #1B7F3B;
+  --cor-ok-fundo: #E3F4E8;
+  --cor-ok-texto: #0F5A27;
+  --cor-atencao: #B26A00;
+  --cor-atencao-fundo: #FFF1D6;
+  --cor-atencao-texto: #7A4700;
+  --cor-rejeicao: #C0262D;
+  --cor-rejeicao-fundo: #FDE7E8;
+  --cor-rejeicao-texto: #8E1A20;
+  --cor-info: #0A77A6;
+  --cor-info-fundo: #E0F1FB;
+  --cor-info-texto: #07557F;
+  --cor-nconf: #5F6B77;
+  --cor-nconf-fundo: #E8ECF0;
+  --cor-nconf-texto: #3F4C59;
+
+  /* Tipografia (escala fixa) */
+  --fonte: "Public Sans Variable", "Segoe UI", system-ui, sans-serif;
+  --texto-12: 12px;
+  --texto-14: 14px;
+  --texto-16: 16px;
+  --texto-18: 18px;
+  --texto-22: 22px;
+  --texto-28: 28px;
+  --altura-linha: 1.45;
+
+  /* Espaço (grade de 4 px) */
+  --esp-1: 4px;
+  --esp-2: 8px;
+  --esp-3: 12px;
+  --esp-4: 16px;
+  --esp-5: 24px;
+  --esp-6: 32px;
+
+  /* Forma e movimento */
+  --raio-controle: 4px;
+  --raio-bloco: 6px;
+  --mov-curto: 120ms;
+  --mov-medio: 200ms;
+  --altura-controle: 32px;
+  --anel-foco: 3px;
+  --sombra-flutuante: 0 4px 16px rgb(20 32 43 / 0.18);
+}

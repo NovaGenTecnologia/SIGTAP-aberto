@@ -11,13 +11,14 @@
     compilar.bat -Atualizar    antes, traz do GitHub a versão mais nova (só se a pasta não tiver alterações)
     compilar.bat -SemTestes    pula os testes (mais rápido; não serve como prova)
     compilar.bat -SemPausa     não espera Enter no fim (para uso em outros scripts)
+    compilar.bat -UiNova       compila com a interface nova (crates\app\web); exige Node 24 ou mais novo
 
   Nunca apaga nada fora de saida\pacote (pasta temporária deste script). A pasta saida\SIGTAP-Aberto
   pode ter dados\ de quem usou o programa por ali: este script só substitui os executáveis e os textos.
   Registro completo: compilar.log, nesta pasta.
 #>
 [CmdletBinding()]
-param([switch]$Atualizar, [switch]$SemTestes, [switch]$SemPausa)
+param([switch]$Atualizar, [switch]$SemTestes, [switch]$SemPausa, [switch]$UiNova)
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version 2.0
@@ -159,7 +160,27 @@ if ($SemTestes) {
 
 # ---------------------------------------------------------------- 4. compilação
 Etapa 4 "Compilando o programa (release)"
-if ((Rodar "cargo build --release --locked -p sa-app -p sa-cli") -ne 0) {
+$env:TAURI_CONFIG = $null
+if ($UiNova) {
+  $Web = Join-Path $Raiz "crates\app\web"
+  $nodeV = Ler "node --version"
+  if (-not $nodeV -or [int](($nodeV.TrimStart('v')) -split '\.')[0] -lt 24) { Falhar "a interface nova precisa do Node 24 ou mais novo (achei: $nodeV)." "Instale o Node 24 LTS em https://nodejs.org e abra um terminal novo." }
+  Ok "Node $nodeV"
+  Push-Location $Web
+  try {
+    if ((Rodar "npm ci") -ne 0) { Falhar "o npm não conseguiu instalar as dependências da interface." "Procure 'ERR' em $Log." }
+    if (-not $SemTestes) {
+      if ((Rodar "npm test") -ne 0) { Falhar "algum teste da interface falhou." "Procure 'FAIL' em $Log." }
+      if ((Rodar "npm run licencas") -ne 0) { Falhar "uma dependência da interface tem licença fora da lista permitida." "Veja o trecho em $Log; não acrescente a licença à lista sem decidir." }
+    }
+    if ((Rodar "npm run build") -ne 0) { Falhar "a interface nova não compilou." "Procure 'error' em $Log." }
+  } finally { Pop-Location }
+  Ok "interface nova em crates\app\web\dist"
+  $env:TAURI_CONFIG = '{"build":{"frontendDist":"web/dist"}}'
+}
+$codigoCargo = Rodar "cargo build --release --locked -p sa-app -p sa-cli"
+$env:TAURI_CONFIG = $null
+if ($codigoCargo -ne 0) {
   Falhar "o cargo não conseguiu compilar." "Procure 'error' em $Log e me mande o trecho. Se for falta de memória ou de disco, feche outros programas e rode de novo."
 }
 $Exe = Join-Path $Raiz "target\release\sigtap-aberto.exe"

@@ -55,3 +55,9 @@ desktop.ini
 crates/app/gen/
 saida/
 _sincronizacao/
+
+# Interface nova (front)
+node_modules/
+crates/app/web/dist/
+crates/app/web/test-results/
+crates/app/web/playwright-report/
