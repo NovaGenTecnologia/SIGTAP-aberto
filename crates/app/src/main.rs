@@ -1237,14 +1237,23 @@ fn main() {
             para_eventos.ligar_eventos(move |f| {
                 let _ = h.emit("tarefa_fim", f);
             });
-            WebviewWindowBuilder::new(app, "principal", WebviewUrl::App("index.html".into()))
+            let janela = WebviewWindowBuilder::new(app, "principal", WebviewUrl::App("index.html".into()))
                 .title(format!("SIGTAP Aberto {}", sa_core::VERSAO))
                 .inner_size(1360.0, 860.0)
                 .min_inner_size(1024.0, 640.0)
                 // Mesma cor de fundo da página: sem o flash preto do WebView2 antes do primeiro quadro.
                 .background_color(Color(242, 244, 247, 255))
-                .data_directory(dados_webview.clone())
-                .build()?;
+                .data_directory(dados_webview.clone());
+            #[cfg(all(windows, feature = "depuracao-remota"))]
+            let janela = match std::env::var("SA_DEPURACAO_PORTA").ok().and_then(|p| p.parse::<u16>().ok()) {
+                // Só em compilação de desenvolvimento: o WebView2 recente ignora a variável de ambiente do
+                // próprio WebView2, então a porta vai pelo mesmo canal dos argumentos que o Tauri já usa.
+                Some(porta) => janela.additional_browser_args(&format!(
+                    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required --remote-debugging-port={porta}"
+                )),
+                None => janela,
+            };
+            janela.build()?;
             Ok(())
         })
         .run(tauri::generate_context!());

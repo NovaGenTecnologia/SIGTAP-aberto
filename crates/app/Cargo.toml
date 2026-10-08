@@ -34,6 +34,8 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # Serve a interface embutida no executável (sem servidor de desenvolvimento).
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+# Só desenvolvimento (nunca nos pacotes): com SA_DEPURACAO_PORTA, abre a porta de depuração remota do WebView2.
+depuracao-remota = []
 
 [lints]
 workspace = true
