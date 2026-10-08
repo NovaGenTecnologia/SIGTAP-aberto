@@ -8,6 +8,9 @@
 //!   traz todas as pessoas da UF, então é apagado logo depois de carregar a unidade escolhida;
 //! - `dados\usuario.db`: favoritos, anotações e a unidade escolhida.
 
+pub mod faturamento;
+pub mod producao;
+
 use sa_core::Competencia;
 use sa_download::cnes as dl;
 use sa_download::cortesia::Evento;
@@ -20,7 +23,7 @@ use sa_query::cnes::{ConsultaCnes, Estado};
 use sa_sources::cnes::{Manifesto, ler_cnv};
 use sa_sources::{dbc, latin1};
 use serde_json::json;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -59,7 +62,7 @@ fn chave_terceiros(uf: &str, cnes: &str) -> String {
     format!("terceiros:{uf}:{cnes}")
 }
 /// Tipos sempre baixados; PF só quando a unidade do usuário é da UF.
-const TIPOS_BASE: [&str; 5] = ["ST", "HB", "SR", "LT", "EQ"];
+const TIPOS_BASE: [&str; 9] = ["ST", "HB", "SR", "LT", "EQ", "RC", "IN", "GM", "EF"];
 
 pub fn pasta_cnes(p: &Pastas) -> PathBuf {
     p.dados.join("cnes")
@@ -74,7 +77,7 @@ pub fn banco_usuario(p: &Pastas) -> PathBuf {
     p.dados.join("usuario.db")
 }
 
-fn exigir_uf(uf: &str) -> Result<(), String> {
+pub(crate) fn exigir_uf(uf: &str) -> Result<(), String> {
     if dl::uf_valida(uf) {
         Ok(())
     } else {
@@ -273,6 +276,11 @@ pub fn consulta_cnes(p: &Pastas, uf: &str) -> Result<ConsultaCnes, String> {
             ));
         }
         saude::Compatibilidade::Anterior(v) => {
+            if !dl::locais(&arquivos_cnes(p, uf), uf).contains_key("ST") {
+                return Err(format!(
+                    "o CNES de {uf} foi gravado por uma versão anterior do programa (esquema {v}) e precisa ser refeito. Baixe o CNES de {uf} de novo em Módulos e dados; nada foi alterado"
+                ));
+            }
             let leiame = format!(
                 "Banco do CNES gravado por uma versão anterior do SIGTAP Aberto (esquema {v}).\r\n\
                  O programa o refez a partir dos arquivos oficiais guardados em dados\\cnes\\arquivos.\r\n\
@@ -296,24 +304,83 @@ fn ler_dbc(caminho: &Path) -> Result<(u64, String, Vec<u8>), String> {
 
 /// (Re)monta o banco do CNES de uma UF a partir dos arquivos guardados. Devolve um resumo.
 pub fn carregar_uf(p: &Pastas, uf: &str, avisar: &dyn Fn(&str)) -> Result<String, String> {
-    carregar(p, uf, false, avisar)
+    carregar(p, uf, Modo::Tudo, avisar)
+}
+
+/// O que `carregar` grava no banco da UF.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Modo {
+    /// Tudo o que está na pasta (exige o ST).
+    Tudo,
+    /// Só o ST, o cadastro de nomes e as tabelas auxiliares (exige o ST).
+    Busca,
+    /// Os arquivos que não são o ST, sem refazer nomes nem tabelas auxiliares (não exige o ST).
+    Restante,
+    /// Só os arquivos das pessoas da unidade escolhida (PF).
+    Escolhidos,
 }
 
 /// Carrega só os profissionais da unidade escolhida (sem refazer o resto do banco).
 fn carregar_profissionais(p: &Pastas, uf: &str) -> Result<String, String> {
-    carregar(p, uf, true, &|_| {})
+    carregar(p, uf, Modo::Escolhidos, &|_| {})
 }
 
-fn carregar(
-    p: &Pastas,
+/// Variável de ambiente só para desenvolvimento: mantém o ST e o CADGER depois da carga. Em
+/// produção nunca é definida.
+pub const MANTER_ARQUIVOS_CNES: &str = "SA_MANTER_ARQUIVOS_CNES";
+
+/// O ST e o cadastro oficial (`CADGER<UF>.dbf`) trazem o CPF de titulares pessoa física; o banco
+/// não grava esse dado. Depois da carga, o arquivo oficial também não fica guardado (como o PF).
+/// A cópia local para desenvolvimento fica fora da pasta do programa (`dados_dev`).
+/// Tabela de códigos em `.dbf` (código e descrição em colunas): código -> descrição, sem espaços nas pontas.
+fn ler_dbf_de_codigos(
+    bytes: &[u8],
+    coluna_codigo: &str,
+    coluna_descricao: &str,
+) -> BTreeMap<String, String> {
+    let mut mapa = BTreeMap::new();
+    let Ok(d) = sa_sources::dbf::Dbf::abrir(bytes) else {
+        return mapa;
+    };
+    let (Some(ic), Some(id)) = (
+        d.cabecalho.indice(coluna_codigo),
+        d.cabecalho.indice(coluna_descricao),
+    ) else {
+        return mapa;
+    };
+    for r in d.registros() {
+        let (c, t) = (r.texto(ic), r.texto(id));
+        if !c.is_empty() && !t.is_empty() {
+            mapa.entry(c).or_insert(t);
+        }
+    }
+    mapa
+}
+
+fn apagar_arquivos_com_cpf(
+    pasta: &Path,
     uf: &str,
-    so_escolhidos: bool,
-    avisar: &dyn Fn(&str),
-) -> Result<String, String> {
+    locais: &std::collections::BTreeMap<String, (Competencia, PathBuf)>,
+) {
+    if std::env::var_os(MANTER_ARQUIVOS_CNES).is_some() {
+        return;
+    }
+    // O ST (decisão do cliente, 05/10/2026) e as marcas RC, IN, GM e EF (Fase 4.5) trazem CPF_CNPJ de titulares
+    // pessoa física: o arquivo bruto não fica em disco depois da carga.
+    for tipo in ["ST", "RC", "IN", "GM", "EF"] {
+        if let Some((_, caminho)) = locais.get(tipo) {
+            let _ = std::fs::remove_file(caminho);
+        }
+    }
+    let _ = std::fs::remove_file(pasta.join(format!("CADGER{uf}.dbf")));
+}
+
+fn carregar(p: &Pastas, uf: &str, modo: Modo, avisar: &dyn Fn(&str)) -> Result<String, String> {
     exigir_uf(uf)?;
+    let so_escolhidos = modo == Modo::Escolhidos;
     let pasta = arquivos_cnes(p, uf);
     let locais = dl::locais(&pasta, uf);
-    if !locais.contains_key("ST") {
+    if matches!(modo, Modo::Tudo | Modo::Busca) && !locais.contains_key("ST") {
         return Err(format!(
             "não há arquivo de estabelecimentos (ST{uf}AAMM.dbc) em {}. Baixe o CNES de {uf} ou importe os arquivos",
             pasta.display()
@@ -330,6 +397,10 @@ fn carregar(
             continue;
         };
         if so_escolhidos && !t.so_cnes_escolhidos {
+            continue;
+        }
+        if (modo == Modo::Busca && t.codigo != "ST") || (modo == Modo::Restante && t.codigo == "ST")
+        {
             continue;
         }
         if t.so_cnes_escolhidos && meus.is_none() {
@@ -383,8 +454,13 @@ fn carregar(
     if so_escolhidos {
         return Ok(partes.join(", "));
     }
+    if modo == Modo::Restante {
+        apagar_arquivos_com_cpf(&pasta, uf, &locais);
+        return Ok(format!("CNES de {uf}: {}.", partes.join(", ")));
+    }
     let cad = pasta.join(format!("CADGER{uf}.dbf"));
-    if cad.exists() {
+    let tinha_cadastro = cad.exists();
+    if tinha_cadastro {
         avisar("Carregando os nomes dos estabelecimentos");
         let bytes = std::fs::read(&cad).map_err(|e| e.to_string())?;
         let origem = Origem {
@@ -405,19 +481,20 @@ fn carregar(
         if d.vale_em(&comp_st)
             && let Ok(bytes) = std::fs::read(&arq)
         {
-            b.gravar_decodificador(
-                &d.chave(),
-                &d.arquivo,
-                &ler_cnv(&latin1::decodificar(&bytes)),
-            )
-            .map_err(|e| e.to_string())?;
+            let mapa = match (&d.coluna_codigo, &d.coluna_descricao) {
+                (Some(cc), Some(cd)) => ler_dbf_de_codigos(&bytes, cc, cd),
+                _ => ler_cnv(&latin1::decodificar(&bytes)),
+            };
+            b.gravar_decodificador(&d.chave(), &d.arquivo, &mapa)
+                .map_err(|e| e.to_string())?;
         }
     }
+    apagar_arquivos_com_cpf(&pasta, uf, &locais);
     let mut msg = format!("CNES de {uf} carregado: {}.", partes.join(", "));
     if competencias.len() > 1 {
         msg.push_str(" Atenção: os arquivos são de competências diferentes; baixe o CNES de novo para alinhar.");
     }
-    if !cad.exists() {
+    if !tinha_cadastro {
         msg.push_str(" Nomes dos estabelecimentos e descrições de órgão responsável indisponíveis no momento (arquivo auxiliar do DATASUS não baixado); tente \"Baixar de novo\" mais tarde.");
     }
     Ok(msg)
@@ -427,12 +504,69 @@ fn carregar(
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct PedidoCnes {
     pub uf: String,
-    /// `AAAAMM`; vazio = a mais recente do servidor.
+    /// `AAAAMM`; vazio = a mais recente do servidor (ou, nas fases `restante` e `pessoas`, a já carregada).
     #[serde(default)]
     pub competencia: String,
+    #[serde(default)]
+    pub fase: FaseCnes,
 }
 
-fn emitir(emissor: Emissor<'_>, resumo: &str, mensagem: &str, fracao: f64, indeterminado: bool) {
+/// Em que parte do CNES da UF o pedido trabalha. A interface baixa a `busca` na frente (basta para
+/// escolher a unidade) e deixa o `restante` e as `pessoas` para o segundo plano.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FaseCnes {
+    /// Tudo de uma vez (o comportamento de sempre).
+    #[default]
+    Tudo,
+    /// Estabelecimentos (ST), nomes e tabelas auxiliares: o suficiente para buscar a unidade.
+    Busca,
+    /// Os demais arquivos da UF, na competência já carregada pela busca.
+    Restante,
+    /// Os profissionais (PF) da unidade escolhida.
+    Pessoas,
+}
+
+/// Tipos de arquivo que cada fase baixa.
+pub fn tipos_da_fase(fase: FaseCnes, tem_unidade_na_uf: bool) -> Vec<String> {
+    let base = |f: &dyn Fn(&str) -> bool| -> Vec<String> {
+        TIPOS_BASE
+            .iter()
+            .filter(|t| f(t))
+            .map(|t| t.to_string())
+            .collect()
+    };
+    match fase {
+        FaseCnes::Busca => base(&|t| t == "ST"),
+        FaseCnes::Restante => base(&|t| t != "ST"),
+        FaseCnes::Pessoas if tem_unidade_na_uf => vec!["PF".to_string()],
+        FaseCnes::Pessoas => Vec::new(),
+        FaseCnes::Tudo => {
+            let mut v = base(&|_| true);
+            if tem_unidade_na_uf {
+                v.push("PF".into());
+            }
+            v
+        }
+    }
+}
+
+/// Competência (`AAAAMM`) dos estabelecimentos já carregados da UF, se houver.
+pub fn competencia_carregada(p: &Pastas, uf: &str) -> Option<String> {
+    consulta_cnes(p, uf)
+        .ok()
+        .and_then(|q| q.resumo().ok())
+        .map(|r| r.competencia)
+        .filter(|c| !c.is_empty())
+}
+
+pub(crate) fn emitir(
+    emissor: Emissor<'_>,
+    resumo: &str,
+    mensagem: &str,
+    fracao: f64,
+    indeterminado: bool,
+) {
     emissor(Progresso {
         resumo: resumo.into(),
         mensagem: mensagem.into(),
@@ -460,6 +594,20 @@ pub fn baixar_cnes_de(
 ) -> Result<String, String> {
     let uf = pedido.uf.as_str();
     exigir_uf(uf)?;
+    let fase = pedido.fase;
+    let tem_unidade = minha(p).is_some_and(|(u, _)| u == uf);
+    // Recusas que não precisam do servidor vêm antes de qualquer consulta de rede.
+    if fase == FaseCnes::Pessoas && !tem_unidade {
+        return Err("escolha a unidade antes de baixar os profissionais".into());
+    }
+    let ja_carregada = if matches!(fase, FaseCnes::Restante | FaseCnes::Pessoas) {
+        Some(
+            competencia_carregada(p, uf)
+                .ok_or_else(|| format!("baixe primeiro o cadastro do CNES de {uf}"))?,
+        )
+    } else {
+        None
+    };
     let resumo = format!("Baixando o CNES de {uf}");
     emitir(
         emissor,
@@ -468,7 +616,9 @@ pub fn baixar_cnes_de(
         0.0,
         true,
     );
-    let competencia = if pedido.competencia.is_empty() {
+    let competencia = if let Some(c) = &ja_carregada {
+        Competencia::de_texto(c).map_err(|e| e.to_string())?
+    } else if pedido.competencia.is_empty() {
         dl::competencias(fonte, uf)
             .map_err(|e| e.to_string())?
             .last()
@@ -479,13 +629,11 @@ pub fn baixar_cnes_de(
     } else {
         Competencia::de_texto(&pedido.competencia).map_err(|e| e.to_string())?
     };
-    let mut tipos: Vec<String> = TIPOS_BASE.iter().map(|t| t.to_string()).collect();
-    if minha(p).is_some_and(|(u, _)| u == uf) {
-        tipos.push("PF".into());
-    }
+    let tipos = tipos_da_fase(fase, tem_unidade);
+    let com_auxiliares = matches!(fase, FaseCnes::Tudo | FaseCnes::Busca);
     let destino = arquivos_cnes(p, uf);
-    // Etapas: cada arquivo, mais 3 trechos dos auxiliares, mais a carga.
-    let etapas = (tipos.len() + 4) as f64;
+    // Etapas: cada arquivo, mais (com auxiliares) 3 trechos deles, mais a carga.
+    let etapas = (tipos.len() + if com_auxiliares { 4 } else { 1 }) as f64;
     let feitos = std::sync::atomic::AtomicUsize::new(0);
     let progresso = |e: Evento| {
         use std::sync::atomic::Ordering::SeqCst;
@@ -546,7 +694,7 @@ pub fn baixar_cnes_de(
         .iter()
         .map(|d| d.arquivo.clone())
         .collect();
-    let aux = (!auxiliares_em_dia)
+    let aux = (com_auxiliares && !auxiliares_em_dia)
         .then(|| dl::baixar_auxiliares(fonte, uf, &cnv, &destino, cancelar, &progresso));
     let aviso_aux = match aux {
         None => String::new(),
@@ -570,7 +718,13 @@ pub fn baixar_cnes_de(
         (etapas - 1.0) / etapas,
         false,
     );
-    let msg = carregar_uf(p, uf, &|t| {
+    let modo = match fase {
+        FaseCnes::Tudo => Modo::Tudo,
+        FaseCnes::Busca => Modo::Busca,
+        FaseCnes::Restante => Modo::Restante,
+        FaseCnes::Pessoas => Modo::Escolhidos,
+    };
+    let msg = carregar(p, uf, modo, &|t| {
         emitir(emissor, &resumo, t, (etapas - 1.0) / etapas, false)
     })?;
     Ok(format!("{msg}{aviso_aux}"))
@@ -956,7 +1110,7 @@ fn territorio(p: &Pastas) -> Option<BancoTerritorio> {
         .flatten()
 }
 
-fn nome_municipio(p: &Pastas, codigo6: &str) -> String {
+pub(crate) fn nome_municipio(p: &Pastas, codigo6: &str) -> String {
     territorio(p)
         .and_then(|t| {
             t.conexao()
@@ -1213,6 +1367,98 @@ mod testes {
     use std::time::Duration;
 
     #[test]
+    fn st_e_cadastro_oficial_nao_ficam_guardados_e_os_outros_ficam() {
+        let d = std::env::temp_dir().join(format!("sa-cpf-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        for n in [
+            "STMS2608.dbc",
+            "HBMS2608.dbc",
+            "SRMS2608.dbc",
+            "CADGERMS.dbf",
+            "RCMS2608.dbc",
+            "EFMS2608.dbc",
+        ] {
+            std::fs::write(d.join(n), b"x").unwrap();
+        }
+        let locais = dl::locais(&d, "MS");
+        assert!(locais.contains_key("ST"));
+        if std::env::var_os(MANTER_ARQUIVOS_CNES).is_none() {
+            apagar_arquivos_com_cpf(&d, "MS", &locais);
+            assert!(!d.join("STMS2608.dbc").exists());
+            assert!(!d.join("CADGERMS.dbf").exists());
+            assert!(!d.join("RCMS2608.dbc").exists() && !d.join("EFMS2608.dbc").exists());
+        }
+        assert!(d.join("HBMS2608.dbc").exists());
+        assert!(d.join("SRMS2608.dbc").exists());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    fn pastas_de_teste(nome: &str) -> Pastas {
+        let d = std::env::temp_dir().join(format!("sa-cnes-fase-{}-{nome}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        Pastas { dados: d }
+    }
+
+    #[test]
+    fn tipos_de_cada_fase() {
+        assert_eq!(tipos_da_fase(FaseCnes::Busca, false), ["ST"]);
+        assert_eq!(
+            tipos_da_fase(FaseCnes::Restante, true),
+            ["HB", "SR", "LT", "EQ", "RC", "IN", "GM", "EF"]
+        );
+        assert_eq!(tipos_da_fase(FaseCnes::Pessoas, true), ["PF"]);
+        assert!(tipos_da_fase(FaseCnes::Pessoas, false).is_empty());
+        let tudo = tipos_da_fase(FaseCnes::Tudo, true);
+        assert!(tudo.contains(&"ST".to_string()) && tudo.contains(&"PF".to_string()));
+        assert!(!tipos_da_fase(FaseCnes::Tudo, false).contains(&"PF".to_string()));
+    }
+
+    #[test]
+    fn pedido_sem_fase_e_tudo() {
+        let p: PedidoCnes = serde_json::from_str(r#"{"uf":"MS"}"#).unwrap();
+        assert_eq!(p.fase, FaseCnes::Tudo);
+        let p: PedidoCnes = serde_json::from_str(r#"{"uf":"MS","fase":"busca"}"#).unwrap();
+        assert_eq!(p.fase, FaseCnes::Busca);
+        let p: PedidoCnes =
+            serde_json::from_str(r#"{"uf":"MS","competencia":"","fase":"restante"}"#).unwrap();
+        assert_eq!(p.fase, FaseCnes::Restante);
+    }
+
+    #[test]
+    fn restante_nao_exige_o_st_e_tudo_continua_exigindo() {
+        let p = pastas_de_teste("restante-sem-st");
+        let r = carregar(&p, "MS", Modo::Restante, &|_| {});
+        assert!(r.is_ok(), "{r:?}");
+        let e = carregar(&p, "MS", Modo::Tudo, &|_| {}).unwrap_err();
+        assert!(e.contains("não há arquivo de estabelecimentos"), "{e}");
+        let e = carregar(&p, "MS", Modo::Busca, &|_| {}).unwrap_err();
+        assert!(e.contains("não há arquivo de estabelecimentos"), "{e}");
+    }
+
+    #[test]
+    fn restante_e_pessoas_recusam_antes_de_falar_com_o_servidor() {
+        let p = pastas_de_teste("recusas");
+        let nao_cancelar = AtomicBool::new(false);
+        let quieto = |_: Progresso| {};
+        let pedido = |fase| PedidoCnes {
+            uf: "MS".into(),
+            competencia: String::new(),
+            fase,
+        };
+        // Sem a busca feita, não há competência para completar.
+        let e = baixar_cnes(&p, &pedido(FaseCnes::Restante), &nao_cancelar, &quieto).unwrap_err();
+        assert!(e.contains("baixe primeiro o cadastro do CNES de MS"), "{e}");
+        // Sem unidade escolhida na UF, não há profissionais a baixar.
+        let e = baixar_cnes(&p, &pedido(FaseCnes::Pessoas), &nao_cancelar, &quieto).unwrap_err();
+        assert!(
+            e.contains("escolha a unidade antes de baixar os profissionais"),
+            "{e}"
+        );
+    }
+
+    #[test]
     fn terceiros_sao_por_unidade() {
         let d = std::env::temp_dir().join(format!("sa-terc-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
@@ -1358,6 +1604,7 @@ mod testes {
         let pedido = PedidoCnes {
             uf: "MS".into(),
             competencia: String::new(),
+            fase: FaseCnes::Tudo,
         };
         let msg = baixar_cnes_de(&fonte, &p, &pedido, &cancelar, &emissor).unwrap();
         assert!(msg.contains("7108 estabelecimentos"), "{msg}");

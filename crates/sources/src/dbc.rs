@@ -66,9 +66,47 @@ pub fn para_dbf(dbc: &[u8], limite: usize) -> Result<Vec<u8>, ErroDbc> {
     Ok(dbf)
 }
 
+/// Monta um `.dbc` a partir de um DBF, só com literais sem compressão. **Só para testes** (fixtures
+/// sintéticas): o programa nunca grava `.dbc`. O CRC fica zerado, porque a leitura não o confere.
+pub fn de_dbf_sintetico(dbf: &[u8]) -> Vec<u8> {
+    let cab = Cabecalho::ler(dbf).expect("DBF sintético válido");
+    let mut saida = dbf[..cab.tamanho_cabecalho].to_vec();
+    saida.extend_from_slice(&[0; 4]);
+    saida.extend_from_slice(&[0, 4]);
+    let mut bits: Vec<u8> = Vec::new();
+    for &byte in &dbf[cab.tamanho_cabecalho..] {
+        bits.push(0);
+        bits.extend((0..8).map(|i| (byte >> i) & 1));
+    }
+    // Fim do fluxo: bit 1, código do comprimento 519 (sete zeros) e oito bits 1.
+    bits.push(1);
+    bits.extend([0; 7]);
+    bits.extend([1; 8]);
+    for grupo in bits.chunks(8) {
+        saida.push(
+            grupo
+                .iter()
+                .enumerate()
+                .fold(0u8, |acc, (i, b)| acc | (b << i)),
+        );
+    }
+    saida
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn dbc_sintetico_volta_ao_dbf_original() {
+        let dbf = crate::dbf::testes::montar(
+            &[("CNES", 'C', 7), ("QT", 'N', 4)],
+            &[&["0000001", "12"], &["0000002", "3"]],
+            0x0D,
+        );
+        let dbc = de_dbf_sintetico(&dbf);
+        assert_eq!(para_dbf(&dbc, 1 << 20).unwrap(), dbf);
+    }
 
     #[test]
     fn recusa_arquivo_que_nao_e_dbc() {

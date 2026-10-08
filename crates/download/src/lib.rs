@@ -9,6 +9,7 @@ pub mod cnes;
 pub mod cortesia;
 pub mod ftp;
 pub mod http;
+pub mod producao;
 #[cfg(feature = "servidor-falso")]
 pub mod servidor_falso;
 pub mod sigtap;

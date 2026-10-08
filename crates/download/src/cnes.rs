@@ -57,6 +57,9 @@ pub fn uf_valida(uf: &str) -> bool {
 }
 
 /// Nome oficial do arquivo: `STMS2608.dbc`.
+/// Tipos que podem faltar no servidor sem derrubar o download.
+pub const TIPOS_OPCIONAIS: [&str; 4] = ["RC", "IN", "GM", "EF"];
+
 pub fn nome(tipo: &str, uf: &str, c: Competencia) -> String {
     format!("{tipo}{uf}{:02}{:02}.dbc", c.ano() % 100, c.mes())
 }
@@ -131,7 +134,15 @@ pub fn baixar(
     for t in tipos {
         let n = nome(t, uf, competencia);
         let pasta = format!("{base}/{t}");
-        let tamanho = sessao.tamanho(&format!("{pasta}/{n}"), cancelar, &mut progresso)?;
+        let tamanho = match sessao.tamanho(&format!("{pasta}/{n}"), cancelar, &mut progresso) {
+            // Tipos opcionais (marcas RC, IN, GM, EF): o servidor pode não ter o arquivo da UF.
+            Err(ErroDownload::Ftp(ErroFtp::Resposta(..)))
+                if TIPOS_OPCIONAIS.contains(&t.as_str()) =>
+            {
+                continue;
+            }
+            r => r?,
+        };
         pedidos.push(Pedido {
             pasta_remota: pasta,
             nome: n,
@@ -166,18 +177,18 @@ pub struct Auxiliares {
 
 /// Sessão FTP reaproveitada entre os trechos e os SIZE. Se cair (ou o servidor não abrir o
 /// canal de dados), reabre e repete, com espera crescente.
-struct Sessao<'a> {
+pub(crate) struct Sessao<'a> {
     fonte: &'a Fonte,
     ftp: Option<Ftp>,
 }
 
 impl<'a> Sessao<'a> {
-    fn nova(fonte: &'a Fonte) -> Self {
+    pub(crate) fn nova(fonte: &'a Fonte) -> Self {
         Self { fonte, ftp: None }
     }
 
     /// Roda `op` na sessão, reabrindo-a quantas vezes a cortesia permitir.
-    fn com_tentativas<T>(
+    pub(crate) fn com_tentativas<T>(
         &mut self,
         rotulo: &str,
         cancelar: &AtomicBool,
@@ -221,7 +232,7 @@ impl<'a> Sessao<'a> {
         }
     }
 
-    fn tamanho(
+    pub(crate) fn tamanho(
         &mut self,
         caminho: &str,
         cancelar: &AtomicBool,
@@ -235,7 +246,7 @@ impl<'a> Sessao<'a> {
         Ok(r)
     }
 
-    fn trecho(
+    pub(crate) fn trecho(
         &mut self,
         desde: u64,
         quantos: u64,
@@ -265,7 +276,7 @@ impl<'a> Sessao<'a> {
         Ok(b)
     }
 
-    fn sair(mut self) {
+    pub(crate) fn sair(mut self) {
         if let Some(f) = self.ftp.take() {
             f.sair();
         }

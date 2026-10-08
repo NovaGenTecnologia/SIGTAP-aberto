@@ -76,6 +76,41 @@ pub struct HabilitacaoDaUnidade {
     pub leitos: Option<i64>,
 }
 
+/// Recorte mais estreito que o tipo de unidade para escolher os pares de uma comparação.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CriterioPar {
+    /// Mesmo tipo e mesma natureza jurídica (`NAT_JUR`): separa público, filantrópico e privado.
+    TipoENaturezaJuridica,
+    /// Mesmo tipo e mesma condição de hospital filantrópico (arquivo EF do CNES).
+    TipoEFilantropia,
+    /// Mesmo tipo e mesma condição de ter ou não atividade de ensino/pesquisa (`ATIVIDAD` diferente de `04`).
+    TipoEEnsino,
+}
+
+/// Estabelecimentos comparáveis à unidade segundo um [`CriterioPar`], ela incluída.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct GrupoDePares {
+    pub criterio: CriterioPar,
+    /// Texto para a tela, já com o valor da unidade ("mesmo tipo e natureza jurídica 2062-...").
+    pub rotulo: String,
+    pub cnes: Vec<String>,
+}
+
+/// Marca do CNES que muda o que o pagamento faz (regra contratual, incentivo, gestão e metas, hospital filantrópico).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct MarcaDaUnidade {
+    /// `RC`, `IN`, `GM` ou `EF`.
+    pub tipo: String,
+    pub codigo: String,
+    pub descricao: Option<String>,
+    pub inicio: String,
+    pub fim: String,
+    pub vigente: bool,
+    /// Regra contratual cuja descrição oficial diz que não há geração de crédito (total ou em parte do financiamento).
+    pub sem_credito: bool,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ServicoDaUnidade {
     pub servico: Codigo,
@@ -237,6 +272,76 @@ pub struct Rede {
     pub regra_confirmada: bool,
 }
 
+/// Produtores de um procedimento diante da regra de aptidão (a regra segue não confirmada: quem
+/// produziu e foi aprovado deve, em tese, estar apto; se muitos não estão, a regra é que está errada
+/// ou o serviço é terceirizado, que o arquivo público do CNES não traz).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ConfrontoAptidao {
+    pub procedimento: String,
+    pub competencia_cnes: String,
+    pub competencia_sigtap: String,
+    /// O procedimento exige habilitação ou serviço? Se não, não há o que confrontar.
+    pub exige: bool,
+    pub exige_habilitacao: bool,
+    pub exige_servico: bool,
+    pub produtores: u64,
+    /// Produtores que estão no cadastro do CNES carregado.
+    pub no_cadastro: u64,
+    /// Dos que estão no cadastro, os que a regra considera aptos.
+    pub aptos: u64,
+    /// Os que a regra considera não aptos (até 50, por CNES).
+    pub nao_aptos: Vec<String>,
+    pub total_nao_aptos: u64,
+    pub regra_confirmada: bool,
+}
+
+/// Separa os produtores em fora do cadastro, aptos e não aptos.
+fn classificar(
+    produtores: &HashSet<String>,
+    cadastro: &HashSet<String>,
+    aptos: &HashSet<String>,
+) -> (u64, u64, Vec<String>) {
+    let mut no_cadastro = 0u64;
+    let mut ok = 0u64;
+    let mut nao: Vec<String> = Vec::new();
+    for c in produtores {
+        if !cadastro.contains(c) {
+            continue;
+        }
+        no_cadastro += 1;
+        if aptos.contains(c) {
+            ok += 1;
+        } else {
+            nao.push(c.clone());
+        }
+    }
+    nao.sort();
+    (no_cadastro, ok, nao)
+}
+
+/// Uma exigência do procedimento e quantos produtores a têm.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct PesoExigencia {
+    /// `habilitacao` ou `servico`.
+    pub tipo: &'static str,
+    pub codigo: String,
+    /// Só para serviço.
+    pub classificacao: Option<String>,
+    pub nome: Option<String>,
+    /// Habilitação 38.xx (programa "Agora Tem Especialistas").
+    pub programa_38: bool,
+    /// Produtores (do cadastro) que têm esta exigência em vigor.
+    pub produtores_com: u64,
+}
+
+/// O peso de cada exigência de um procedimento entre os produtores.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct PesoDasExigencias {
+    pub procedimento: String,
+    pub produtores_no_cadastro: u64,
+    pub itens: Vec<PesoExigencia>,
+}
+
 /// Situação resumida de uma unidade diante de um procedimento (marcador da lista).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -249,6 +354,16 @@ pub enum Estado {
     Ressalva,
     /// Falta habilitação ou serviço.
     Nao,
+}
+
+/// Situação da unidade diante de um procedimento, com o motivo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct EstadoDetalhado {
+    pub estado: Estado,
+    /// Toda exigência de habilitação do procedimento é 38.xx.
+    pub habilitacao_so_38: bool,
+    pub falta_habilitacao: bool,
+    pub falta_servico: bool,
 }
 
 /// Procedimento que a unidade pode cobrar pelo cadastro.
@@ -284,6 +399,25 @@ fn erro(e: impl std::fmt::Display) -> ErroConsulta {
 /// A habilitação está em vigor na competência `ref_` (`AAAAMM`)? Fim vazio = sem fim.
 fn vigente(inicio: &str, fim: &str, ref_: &str) -> bool {
     (inicio.is_empty() || inicio <= ref_) && (fim.is_empty() || fim >= ref_)
+}
+
+/// A descrição oficial da regra diz que o estabelecimento não gera crédito ("SEM GERACAO DE CREDITO",
+/// "NAO GERACAO DE CREDITO"). Compara em maiúsculas e sem acento, porque o texto do DATASUS varia.
+fn descricao_sem_credito(descricao: &str) -> bool {
+    let t: String = descricao
+        .to_uppercase()
+        .chars()
+        .map(|c| match c {
+            'Ã' | 'Á' | 'À' | 'Â' => 'A',
+            'É' | 'Ê' => 'E',
+            'Í' => 'I',
+            'Õ' | 'Ó' | 'Ô' => 'O',
+            'Ú' => 'U',
+            'Ç' => 'C',
+            c => c,
+        })
+        .collect();
+    t.contains("GERACAO DE CREDITO") && (t.contains("SEM GERACAO") || t.contains("NAO GERACAO"))
 }
 
 impl ConsultaCnes {
@@ -352,6 +486,91 @@ impl ConsultaCnes {
                 .map(str::to_string)
         });
         Codigo { codigo, nome }
+    }
+
+    /// Regras contratuais, incentivos, gestão e metas e filantropia da unidade (arquivos RC, IN, GM e EF do CNES),
+    /// com a descrição oficial e a vigência na competência `comp` (`AAAAMM`). O código `0000` (sem regra) não entra.
+    pub fn marcas_da_unidade(
+        &self,
+        cnes: &str,
+        comp: &str,
+    ) -> Result<Vec<MarcaDaUnidade>, ErroConsulta> {
+        let mut saida = Vec::new();
+        for tipo in ["RC", "IN", "GM", "EF"] {
+            let tabela = format!("cnes_{}", tipo.to_ascii_lowercase());
+            if !self.tem(&tabela) {
+                continue;
+            }
+            let c = self.colunas(&tabela);
+            let sql = format!(
+                "SELECT DISTINCT sgruphab, {}, {} FROM {tabela} WHERE cnes = ?1 ORDER BY sgruphab, 2",
+                Self::col(&c, "cmpt_ini"),
+                Self::col(&c, "cmpt_fim")
+            );
+            let mut st = self.conn().prepare(&sql)?;
+            let linhas = st
+                .query_map([cnes], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            for (codigo, inicio, fim) in linhas {
+                if codigo.trim().is_empty() || codigo.chars().all(|c| c == '0') {
+                    continue;
+                }
+                let descricao = self.decod(&format!("{tipo}_SGRUPHAB"), &codigo);
+                let sem_credito =
+                    tipo == "RC" && descricao.as_deref().is_some_and(descricao_sem_credito);
+                saida.push(MarcaDaUnidade {
+                    tipo: tipo.to_string(),
+                    vigente: vigente(&inicio, &fim, comp),
+                    codigo,
+                    descricao,
+                    inicio,
+                    fim,
+                    sem_credito,
+                });
+            }
+        }
+        Ok(saida)
+    }
+
+    /// Serviços/classificações cadastrados no CNES da unidade: `SSSCCC` (serviço + classificação) -> tem a marca
+    /// de atendimento ambulatorial SUS. Vazio se o arquivo SR não foi carregado.
+    pub fn servicos_cadastrados(&self, cnes: &str) -> Result<BTreeMap<String, bool>, ErroConsulta> {
+        if !self.tem("cnes_sr") {
+            return Ok(BTreeMap::new());
+        }
+        let c = self.colunas("cnes_sr");
+        let mut st = self.conn().prepare(&format!(
+            "SELECT trim(serv_esp) || trim(class_sr), {} FROM cnes_sr WHERE cnes = ?1",
+            Self::col(&c, "amb_sus")
+        ))?;
+        let mut m = BTreeMap::new();
+        for r in st.query_map([cnes], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)? == "1"))
+        })? {
+            let (codigo, sus) = r?;
+            let e = m.entry(codigo).or_insert(false);
+            *e = *e || sus;
+        }
+        Ok(m)
+    }
+
+    /// Nome de cada serviço/classificação do SIGTAP vigente na competência, por `SSSCCC`: "Serviço · Classificação".
+    pub fn nomes_de_servicos(sig: &Consulta, comp: Competencia) -> HashMap<String, String> {
+        let seq = comp.seq();
+        let servicos = Self::nomes_sigtap(sig, seq, "tb_servico", "co_servico", "no_servico");
+        Self::classificacoes(sig, seq)
+            .into_iter()
+            .map(|((s, c), nome)| {
+                let base = servicos.get(&s).map_or(s.clone(), |n| n.trim().to_string());
+                (format!("{s}{c}"), format!("{base} · {}", nome.trim()))
+            })
+            .collect()
     }
 
     /// Competência (`AAAAMM`) do arquivo de um tipo; vazio se não foi carregado.
@@ -1240,6 +1459,20 @@ impl ConsultaCnes {
         comp: Competencia,
         cnes: &str,
     ) -> Result<Option<HashMap<String, Estado>>, ErroConsulta> {
+        Ok(self
+            .estados_detalhados(sig, comp, cnes)?
+            .map(|m| m.into_iter().map(|(p, d)| (p, d.estado)).collect()))
+    }
+
+    /// Como [`Self::estados`], com o que o faturista precisa para ler o resultado: se a única
+    /// exigência de habilitação do procedimento são habilitações 38.xx (programa "Agora Tem
+    /// Especialistas", que a produção real de MS mostrou não serem condição para a aprovação).
+    pub fn estados_detalhados(
+        &self,
+        sig: &Consulta,
+        comp: Competencia,
+        cnes: &str,
+    ) -> Result<Option<HashMap<String, EstadoDetalhado>>, ErroConsulta> {
         let seq = sig.exigir(comp)?;
         if !self.tem("cnes_st") {
             return Ok(None);
@@ -1295,9 +1528,172 @@ impl ConsultaCnes {
                 (true, false) => Estado::Ressalva,
                 _ => Estado::Nao,
             };
-            saida.insert(proc_, estado);
+            let so_38 = !ex.habilitacoes.is_empty()
+                && ex.habilitacoes.iter().all(|(h, _)| h.starts_with("38"));
+            saida.insert(
+                proc_,
+                EstadoDetalhado {
+                    estado,
+                    habilitacao_so_38: so_38,
+                    falta_habilitacao: !hab_ok,
+                    falta_servico: !serv_ok,
+                },
+            );
         }
         Ok(Some(saida))
+    }
+
+    /// Para cada habilitação, os procedimentos vigentes que a citam como exigência (sozinha ou como
+    /// uma das alternativas). Procedimento que aceita mais de uma alternativa aparece em todas.
+    pub fn procedimentos_por_habilitacao(
+        sig: &Consulta,
+        comp: Competencia,
+    ) -> Result<HashMap<String, Vec<String>>, ErroConsulta> {
+        let seq = sig.exigir(comp)?;
+        let mut m: HashMap<String, BTreeSet<String>> = HashMap::new();
+        for (p, ex) in Self::exigencias_de_todos(sig, seq) {
+            for (h, _) in ex.habilitacoes {
+                m.entry(h).or_default().insert(p.clone());
+            }
+        }
+        Ok(m.into_iter()
+            .map(|(h, ps)| (h, ps.into_iter().collect()))
+            .collect())
+    }
+
+    /// Os estabelecimentos do mesmo tipo (`TP_UNID`) que o `cnes`, ele incluído: (código do tipo,
+    /// nome do tipo, CNES de todos). `None` se o CNES não está no cadastro.
+    #[allow(clippy::type_complexity)]
+    pub fn do_mesmo_tipo(
+        &self,
+        cnes: &str,
+    ) -> Result<Option<(String, Option<String>, Vec<String>)>, ErroConsulta> {
+        if !self.tem("cnes_st") {
+            return Ok(None);
+        }
+        let tipo: Option<String> = self
+            .conn()
+            .query_row("SELECT tp_unid FROM cnes_st WHERE cnes = ?1", [cnes], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        let Some(tipo) = tipo else {
+            return Ok(None);
+        };
+        let mut st = self
+            .conn()
+            .prepare("SELECT cnes FROM cnes_st WHERE tp_unid = ?1 ORDER BY cnes")?;
+        let todos = st
+            .query_map([&tipo], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        let nome = self.decod("TP_UNID", &tipo);
+        Ok(Some((tipo, nome, todos)))
+    }
+
+    /// Estabelecimentos do mesmo tipo e do mesmo perfil que o `cnes` (ele incluído), pelo `criterio`.
+    /// `None` se a unidade não está no cadastro ou o arquivo que o critério usa não foi carregado.
+    pub fn pares_por_criterio(
+        &self,
+        cnes: &str,
+        criterio: CriterioPar,
+    ) -> Result<Option<GrupoDePares>, ErroConsulta> {
+        if !self.tem("cnes_st") {
+            return Ok(None);
+        }
+        let c = self.colunas("cnes_st");
+        let tipo: Option<String> = self
+            .conn()
+            .query_row("SELECT tp_unid FROM cnes_st WHERE cnes = ?1", [cnes], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        let Some(tipo) = tipo else {
+            return Ok(None);
+        };
+        let nome_tipo = self.decod("TP_UNID", &tipo).unwrap_or_else(|| tipo.clone());
+        let (rotulo, filtro, extra): (String, &str, Option<String>) = match criterio {
+            CriterioPar::TipoENaturezaJuridica => {
+                if !c.contains("nat_jur") {
+                    return Ok(None);
+                }
+                let nj: String = self.conn().query_row(
+                    "SELECT nat_jur FROM cnes_st WHERE cnes = ?1",
+                    [cnes],
+                    |r| r.get(0),
+                )?;
+                if nj.trim().is_empty() {
+                    return Ok(None);
+                }
+                let nome = self.decod("NAT_JUR", &nj).unwrap_or_else(|| nj.clone());
+                (
+                    format!("{nome_tipo} com natureza jurídica {}", nome.trim()),
+                    "AND nat_jur = ?2",
+                    Some(nj),
+                )
+            }
+            CriterioPar::TipoEFilantropia => {
+                if !self.tem("cnes_ef") {
+                    return Ok(None);
+                }
+                let eu: bool = self.conn().query_row(
+                    "SELECT EXISTS(SELECT 1 FROM cnes_ef WHERE cnes = ?1)",
+                    [cnes],
+                    |r| r.get(0),
+                )?;
+                if eu {
+                    (
+                        format!("{nome_tipo} filantrópicos"),
+                        "AND cnes IN (SELECT cnes FROM cnes_ef)",
+                        None,
+                    )
+                } else {
+                    (
+                        format!("{nome_tipo} não filantrópicos"),
+                        "AND cnes NOT IN (SELECT cnes FROM cnes_ef)",
+                        None,
+                    )
+                }
+            }
+            CriterioPar::TipoEEnsino => {
+                if !c.contains("atividad") {
+                    return Ok(None);
+                }
+                let at: String = self.conn().query_row(
+                    "SELECT atividad FROM cnes_st WHERE cnes = ?1",
+                    [cnes],
+                    |r| r.get(0),
+                )?;
+                if at.trim().is_empty() {
+                    return Ok(None);
+                }
+                if at == "04" {
+                    (
+                        format!("{nome_tipo} sem atividade de ensino ou pesquisa"),
+                        "AND atividad = '04'",
+                        None,
+                    )
+                } else {
+                    (
+                        format!("{nome_tipo} com atividade de ensino ou pesquisa"),
+                        "AND atividad <> '04' AND trim(atividad) <> ''",
+                        None,
+                    )
+                }
+            }
+        };
+        let sql = format!("SELECT cnes FROM cnes_st WHERE tp_unid = ?1 {filtro} ORDER BY cnes");
+        let mut st = self.conn().prepare(&sql)?;
+        let primeira = |r: &rusqlite::Row| r.get::<_, String>(0);
+        let cnes_do_grupo = match &extra {
+            Some(x) => st.query_map([&tipo, x], primeira)?,
+            None => st.query_map([&tipo], primeira)?,
+        }
+        .collect::<Result<Vec<_>, _>>()?;
+        Ok(Some(GrupoDePares {
+            criterio,
+            rotulo,
+            cnes: cnes_do_grupo,
+        }))
     }
 
     /// Procedimentos que a unidade pode cobrar pelo cadastro (aptos, e os
@@ -1396,6 +1792,120 @@ impl ConsultaCnes {
         Ok(rede)
     }
 
+    /// Confronta quem produziu o procedimento (SIA ou SIH) com a regra de aptidão.
+    pub fn confronto_producao(
+        &self,
+        sig: &Consulta,
+        comp: Competencia,
+        procedimento: &str,
+        produtores: &HashSet<String>,
+    ) -> Result<ConfrontoAptidao, ErroConsulta> {
+        let seq = sig.exigir(comp)?;
+        let procedimento = crate::ficha::normalizar_codigo(procedimento)?;
+        let ex = Self::exigencias(sig, seq, &procedimento)?;
+        let exige = !ex.habilitacoes.is_empty() || !ex.servicos.is_empty();
+        let mut r = ConfrontoAptidao {
+            procedimento,
+            competencia_cnes: self.competencia_de("ST"),
+            competencia_sigtap: comp.to_string(),
+            exige,
+            exige_habilitacao: !ex.habilitacoes.is_empty(),
+            exige_servico: !ex.servicos.is_empty(),
+            produtores: produtores.len() as u64,
+            no_cadastro: 0,
+            aptos: 0,
+            nao_aptos: Vec::new(),
+            total_nao_aptos: 0,
+            regra_confirmada: false,
+        };
+        if !exige || !self.tem("cnes_st") {
+            return Ok(r);
+        }
+        let mut st = self.conn().prepare("SELECT cnes FROM cnes_st")?;
+        let cadastro: HashSet<String> =
+            st.query_map([], |x| x.get(0))?.collect::<Result<_, _>>()?;
+        let (no_cadastro, ok, mut nao) = classificar(produtores, &cadastro, &self.aptos(&ex)?);
+        r.no_cadastro = no_cadastro;
+        r.aptos = ok;
+        r.total_nao_aptos = nao.len() as u64;
+        nao.truncate(50);
+        r.nao_aptos = nao;
+        Ok(r)
+    }
+
+    /// De cada exigência do procedimento (habilitação ou serviço), quantos dos `produtores` que estão
+    /// no cadastro a têm. Mostra qual exigência pesa de fato: uma habilitação que quase nenhum
+    /// produtor tem (como as 38.xx) não é o que separa quem produz de quem não produz.
+    pub fn peso_das_exigencias(
+        &self,
+        sig: &Consulta,
+        comp: Competencia,
+        procedimento: &str,
+        produtores: &HashSet<String>,
+    ) -> Result<PesoDasExigencias, ErroConsulta> {
+        let seq = sig.exigir(comp)?;
+        let procedimento = crate::ficha::normalizar_codigo(procedimento)?;
+        let ex = Self::exigencias(sig, seq, &procedimento)?;
+        let mut r = PesoDasExigencias {
+            procedimento,
+            produtores_no_cadastro: 0,
+            itens: Vec::new(),
+        };
+        if (ex.habilitacoes.is_empty() && ex.servicos.is_empty()) || !self.tem("cnes_st") {
+            return Ok(r);
+        }
+        let mut st = self.conn().prepare("SELECT cnes FROM cnes_st")?;
+        let cadastro: HashSet<String> =
+            st.query_map([], |x| x.get(0))?.collect::<Result<_, _>>()?;
+        let nos: Vec<&String> = produtores
+            .iter()
+            .filter(|c| cadastro.contains(*c))
+            .collect();
+        r.produtores_no_cadastro = nos.len() as u64;
+        let (hab, sr) = self.cadastro_para(&ex)?;
+        let vazio_h = HashSet::new();
+        let vazio_s = HashSet::new();
+        let nomes_h = Self::nomes_sigtap(
+            sig,
+            seq,
+            "tb_habilitacao",
+            "co_habilitacao",
+            "no_habilitacao",
+        );
+        let nomes_s = Self::nomes_sigtap(sig, seq, "tb_servico", "co_servico", "no_servico");
+        let codigos: BTreeSet<&String> = ex.habilitacoes.iter().map(|h| &h.0).collect();
+        for h in codigos {
+            let com = nos
+                .iter()
+                .filter(|c| hab.get(**c).unwrap_or(&vazio_h).contains(h))
+                .count() as u64;
+            r.itens.push(PesoExigencia {
+                tipo: "habilitacao",
+                codigo: h.clone(),
+                classificacao: None,
+                nome: nomes_h.get(h).cloned(),
+                programa_38: h.starts_with("38"),
+                produtores_com: com,
+            });
+        }
+        let pares: BTreeSet<&(String, String)> = ex.servicos.iter().collect();
+        for par in pares {
+            let com = nos
+                .iter()
+                .filter(|c| sr.get(**c).unwrap_or(&vazio_s).contains(par))
+                .count() as u64;
+            r.itens.push(PesoExigencia {
+                tipo: "servico",
+                codigo: par.0.clone(),
+                classificacao: Some(par.1.clone()),
+                nome: nomes_s.get(&par.0).cloned(),
+                programa_38: false,
+                produtores_com: com,
+            });
+        }
+        Ok(r)
+    }
+
     /// Para a prova: quantos procedimentos com exigência têm ao menos um estabelecimento apto.
     /// Devolve (procedimentos com exigência, com ao menos um apto).
     pub fn cobertura(&self, sig: &Consulta, comp: Competencia) -> Result<(u64, u64), ErroConsulta> {
@@ -1425,12 +1935,134 @@ mod testes {
     use super::*;
 
     #[test]
+    fn marcas_da_unidade_trazem_descricao_vigencia_e_regra_sem_credito() {
+        let b = BancoCnes::em_memoria().unwrap();
+        b.conexao()
+            .execute_batch(
+                "CREATE TABLE cnes_rc(cnes TEXT, sgruphab TEXT, cmpt_ini TEXT, cmpt_fim TEXT);
+                 INSERT INTO cnes_rc VALUES
+                   ('1', '7101', '202607', '202708'), ('1', '0000', '202607', '202708'),
+                   ('1', '7102', '202001', '202606'), ('2', '7101', '202607', '202708');
+                 CREATE TABLE cnes_ef(cnes TEXT, sgruphab TEXT, cmpt_ini TEXT, cmpt_fim TEXT);
+                 INSERT INTO cnes_ef VALUES ('1', '6001', '202607', '999999');
+                 INSERT INTO cnes_decod VALUES
+                   ('RC_SGRUPHAB', '7101', '7101-ESTABELECIMENTO DE SAUDE SEM GERACAO DE CREDITO NA MEDIA COMPLEXIDADE', 'REGRAS.DBF'),
+                   ('RC_SGRUPHAB', '7102', '7102-OUTRA REGRA QUALQUER', 'REGRAS.DBF'),
+                   ('EF_SGRUPHAB', '6001', 'HOSPITAL FILANTRÓPICO', 'ESTABFIL.CNV');",
+            )
+            .unwrap();
+        let q = ConsultaCnes::de_banco(b);
+        let m = q.marcas_da_unidade("1", "202608").unwrap();
+        let por: Vec<(&str, &str, bool, bool)> = m
+            .iter()
+            .map(|x| (x.tipo.as_str(), x.codigo.as_str(), x.vigente, x.sem_credito))
+            .collect();
+        assert_eq!(
+            por,
+            [
+                ("RC", "7101", true, true),
+                ("RC", "7102", false, false),
+                ("EF", "6001", true, false)
+            ],
+            "0000 não entra; vigência pela competência; só a regra de texto sem geração de crédito é marcada"
+        );
+        assert!(
+            m[0].descricao
+                .as_deref()
+                .unwrap()
+                .contains("MEDIA COMPLEXIDADE")
+        );
+        assert!(q.marcas_da_unidade("9", "202608").unwrap().is_empty());
+        // Banco sem os arquivos novos (carga antiga): lista vazia, sem erro.
+        let velho = ConsultaCnes::de_banco(BancoCnes::em_memoria().unwrap());
+        assert!(velho.marcas_da_unidade("1", "202608").unwrap().is_empty());
+    }
+
+    #[test]
+    fn pares_por_criterio_separam_natureza_filantropia_e_ensino() {
+        let b = BancoCnes::em_memoria().unwrap();
+        b.conexao()
+            .execute_batch(
+                "CREATE TABLE cnes_st(cnes TEXT, tp_unid TEXT, nat_jur TEXT, atividad TEXT);
+                 INSERT INTO cnes_st VALUES
+                   ('1', '05', '1031', '04'), ('2', '05', '1031', '03'), ('3', '05', '3999', '04'),
+                   ('4', '05', '1031', '04'), ('5', '07', '1031', '04'), ('6', '05', '', '');
+                 CREATE TABLE cnes_ef(cnes TEXT, sgruphab TEXT);
+                 INSERT INTO cnes_ef VALUES ('3', '6001');
+                 INSERT INTO cnes_decod VALUES
+                   ('TP_UNID', '05', 'HOSPITAL GERAL', 'TP_UNID.CNV'),
+                   ('NAT_JUR', '1031', '103-1 Órgão Público do Poder Executivo Municipal', 'NAT_JUR.CNV');",
+            )
+            .unwrap();
+        let q = ConsultaCnes::de_banco(b);
+        let g = |cnes: &str, c| q.pares_por_criterio(cnes, c).unwrap();
+        let nj = g("1", CriterioPar::TipoENaturezaJuridica).unwrap();
+        assert_eq!(
+            nj.cnes,
+            ["1", "2", "4"],
+            "mesmo tipo e mesma natureza; o 5 é de outro tipo"
+        );
+        assert!(nj.rotulo.contains("HOSPITAL GERAL") && nj.rotulo.contains("Municipal"));
+        assert!(
+            g("6", CriterioPar::TipoENaturezaJuridica).is_none(),
+            "sem natureza informada"
+        );
+        let ef = g("3", CriterioPar::TipoEFilantropia).unwrap();
+        assert_eq!(ef.cnes, ["3"]);
+        let nao_ef = g("1", CriterioPar::TipoEFilantropia).unwrap();
+        assert_eq!(nao_ef.cnes, ["1", "2", "4", "6"]);
+        let ensino = g("2", CriterioPar::TipoEEnsino).unwrap();
+        assert_eq!(ensino.cnes, ["2"]);
+        assert!(ensino.rotulo.contains("com atividade de ensino"));
+        let sem = g("1", CriterioPar::TipoEEnsino).unwrap();
+        assert_eq!(sem.cnes, ["1", "3", "4"]);
+        assert!(g("99", CriterioPar::TipoEEnsino).is_none());
+        // Sem o arquivo EF carregado, o critério de filantropia não se aplica.
+        let sem_ef = ConsultaCnes::de_banco(BancoCnes::em_memoria().unwrap());
+        assert!(
+            sem_ef
+                .pares_por_criterio("1", CriterioPar::TipoEFilantropia)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn descricao_sem_credito_reconhece_o_texto_oficial() {
+        assert!(descricao_sem_credito(
+            "7100-TABELA DE NAO GERACAO DE CREDITO POR PRODUCAO NA INTERNACAO"
+        ));
+        assert!(descricao_sem_credito(
+            "7106-ESTABELECIMENTO SEM GERACAO DE CREDITO TOTAL"
+        ));
+        assert!(!descricao_sem_credito(
+            "7001-HOSPITAL DE ENSINO COM CONTRATO DE GESTAO/METAS"
+        ));
+        assert!(!descricao_sem_credito("0000-SEM REGRA CONTRATUAL"));
+    }
+
+    #[test]
     fn vigencia_da_habilitacao() {
         assert!(vigente("202001", "999999", "202608"));
         assert!(vigente("202608", "202608", "202608"));
         assert!(vigente("", "", "202608"));
         assert!(!vigente("202609", "999999", "202608"));
         assert!(!vigente("201001", "202607", "202608"));
+    }
+
+    #[test]
+    fn confronto_separa_fora_do_cadastro_aptos_e_nao_aptos() {
+        let c = |v: &[&str]| -> HashSet<String> { v.iter().map(|s| s.to_string()).collect() };
+        let produtores = c(&["1", "2", "3", "4"]);
+        let cadastro = c(&["1", "2", "3", "9"]);
+        let aptos = c(&["1", "9"]);
+        let (no_cad, ok, nao) = classificar(&produtores, &cadastro, &aptos);
+        assert_eq!((no_cad, ok), (3, 1));
+        assert_eq!(
+            nao,
+            ["2", "3"],
+            "o 4 não está no cadastro: não conta contra a regra"
+        );
     }
 
     #[test]

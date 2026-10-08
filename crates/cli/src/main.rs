@@ -36,6 +36,8 @@ Comandos:
                                   ficha completa do procedimento, em JSON
   buscar <texto> [--competencia AAAAMM]
                                   busca por código, nome, CID, CBO, habilitação..., em JSON
+  buscar-todos <texto> [--competencia AAAAMM]
+                                  a mesma busca, sem o limite de procedimentos
   arvore [nó] [--competencia AAAAMM]
   arvore-cid [letra|categoria] [--competencia AAAAMM]
   ligados <tabela> <código> [--competencia AAAAMM]   (ex.: ligados tb_cid T742)
@@ -59,6 +61,31 @@ Comandos:
   aptidao <código>                a sua unidade está apta ao procedimento? (regra não confirmada)
   rede <código> [--escopo municipio|regiao|uf]
                                   quem faz o procedimento na rede
+  producao-plano <UF> [--meses N] o que seria baixado de produção (SIA, SIH) e o tamanho, em JSON
+  producao-baixar <UF> [--meses N] [--confirmar]
+                                  baixa a produção da UF (os N meses mais recentes; padrão 3),
+                                  soma por estabelecimento e apaga os arquivos oficiais
+  producao-importar <UF> --origem PASTA
+                                  carrega arquivos PA, RD e ER baixados por conta própria
+  producao-situacao               UFs com produção carregada, em JSON
+  producao-apagar <UF>            apaga a produção da UF
+  manter-brutos [sim|nao]         mostra ou muda a chave guardar os arquivos baixados (padrao: nao).
+                                  Ligada, os .dbc de producao (com dado de paciente) ficam em
+                                  dados/producao/arquivos/<UF> para refazer o banco sem baixar de novo
+  producao-reconstruir <UF>       refaz a produção da UF dos arquivos guardados, sem rede
+  producao-apagar-guardados <UF>  apaga os arquivos guardados da UF (o banco de totais fica)
+  producao <código> [--uf UF]     quem produziu o procedimento (SIA e SIH) na UF, em JSON
+  producao-unidade [UF CNES]      o que a unidade produziu e o que foi rejeitado, em JSON
+  faturamento-unidade [UF CNES]   rejeições por 100 AIH, tendência, curva ABC, apresentado x aprovado,
+                                  financiamento, leitos e comparação com pares, em JSON
+  faturamento-procedimentos [UF CNES]
+                                  procedimentos da unidade: produz e pode, pode e não produz, produz sem
+                                  aptidão pelo cadastro (com o motivo); habilitações e produção, em JSON
+  faturamento <código> [--uf UF]  série mensal, tendência, concentração, financiamento e mudanças de
+                                  valor do procedimento na UF, em JSON
+  faturamento-impacto [--de AAAAMM] [--competencia AAAAMM]
+                                  impacto estimado das mudanças da tabela na produção da UF e da unidade
+  faturamento-painel              painel do faturista da unidade ativa, em JSON
   favorito <código> sim|nao       marca ou desmarca um procedimento favorito
   anotar <código> [texto]         grava a anotação do procedimento (sem texto, apaga)
   marcados                        favoritos e anotações, em JSON
@@ -84,6 +111,9 @@ struct Opcoes {
     livres: Vec<PathBuf>,
     dados: Option<PathBuf>,
     escopo: String,
+    meses: usize,
+    confirmar: bool,
+    uf: Option<String>,
 }
 
 fn pasta_do_programa() -> PathBuf {
@@ -108,6 +138,9 @@ fn ler_opcoes(args: &[String]) -> Result<Opcoes, String> {
         livres: Vec::new(),
         dados: None,
         escopo: "municipio".into(),
+        meses: 0,
+        confirmar: false,
+        uf: None,
     };
     let mut i = 0;
     let valor = |i: usize, nome: &str| -> Result<String, String> {
@@ -160,6 +193,17 @@ fn ler_opcoes(args: &[String]) -> Result<Opcoes, String> {
                 o.escopo = valor(i, "--escopo")?;
                 i += 1;
             }
+            "--meses" => {
+                o.meses = valor(i, "--meses")?
+                    .parse()
+                    .map_err(|_| "--meses espera um número".to_string())?;
+                i += 1;
+            }
+            "--uf" => {
+                o.uf = Some(valor(i, "--uf")?);
+                i += 1;
+            }
+            "--confirmar" => o.confirmar = true,
             "--ultima" => o.ultima = true,
             "--todas" => o.todas = true,
             x if x.starts_with("--") => {
@@ -327,6 +371,10 @@ fn cmd_consulta(cmd: &str, o: &Opcoes) -> Result<(), String> {
         "buscar" => {
             exigir("o texto da busca")?;
             serde_json::to_string_pretty(&q.buscar(comp, &livre).map_err(|e| e.to_string())?)
+        }
+        "buscar-todos" => {
+            exigir("o texto da busca")?;
+            serde_json::to_string_pretty(&q.buscar_todos(comp, &livre).map_err(|e| e.to_string())?)
         }
         "arvore" => {
             let pai = if livre.is_empty() { None } else { Some(livre.as_str()) };
@@ -651,6 +699,7 @@ fn cmd_unidade(cmd: &str, o: &Opcoes) -> Result<(), String> {
             let pedido = un::PedidoCnes {
                 uf: arg(0, "a UF")?.to_string(),
                 competencia: o.competencia.map(|c| c.to_string()).unwrap_or_default(),
+                fase: Default::default(),
             };
             println!(
                 "{}",
@@ -673,6 +722,112 @@ fn cmd_unidade(cmd: &str, o: &Opcoes) -> Result<(), String> {
             arg(0, "a UF")?,
             &livres[1..].join(" "),
         )?),
+        "producao-plano" => mostrar(un::producao::plano_producao(arg(0, "a UF")?, o.meses)?),
+        "producao-baixar" => {
+            let pedido = un::producao::PedidoProducao {
+                uf: arg(0, "a UF")?.to_string(),
+                meses: o.meses,
+                confirmado: o.confirmar,
+            };
+            println!(
+                "{}",
+                un::producao::baixar_producao(&p, &pedido, &AtomicBool::new(false), &progresso)?
+            );
+            Ok(())
+        }
+        "producao-importar" => {
+            let origem = o.origem.as_ref().ok_or("informe --origem PASTA")?;
+            println!(
+                "{}",
+                un::producao::importar_producao(&p, origem, arg(0, "a UF")?, &progresso)?
+            );
+            Ok(())
+        }
+        "producao-situacao" => mostrar(un::producao::situacao_producao(&p)),
+        "producao-apagar" => {
+            println!("{}", un::producao::apagar_producao(&p, arg(0, "a UF")?)?);
+            Ok(())
+        }
+        "manter-brutos" => {
+            if let Some(v) = livres.first() {
+                let ligar = match v.as_str() {
+                    "sim" | "1" | "on" => true,
+                    "nao" | "não" | "0" | "off" => false,
+                    outro => return Err(format!("use sim ou nao (recebi \"{outro}\")")),
+                };
+                un::producao::definir_manter_brutos(&p, ligar)?;
+            }
+            println!(
+                "Guardar os arquivos baixados: {}",
+                if un::producao::manter_brutos(&p) {
+                    "ligado"
+                } else {
+                    "desligado"
+                }
+            );
+            Ok(())
+        }
+        "producao-reconstruir" => {
+            println!(
+                "{}",
+                un::producao::reconstruir_producao(&p, arg(0, "a UF")?, &progresso)?
+            );
+            Ok(())
+        }
+        "producao-apagar-guardados" => {
+            println!("{}", un::producao::apagar_guardados(&p, arg(0, "a UF")?)?);
+            Ok(())
+        }
+        "producao" => {
+            let (q, c) = sigtap()?;
+            mostrar(un::producao::producao_do_procedimento(
+                &p,
+                &q,
+                c,
+                arg(0, "o código do procedimento")?,
+                o.uf.as_deref(),
+            )?)
+        }
+        "producao-unidade" => {
+            let (q, c) = sigtap()?;
+            let alvo = livres
+                .first()
+                .zip(livres.get(1))
+                .map(|(u, n)| (u.as_str(), n.as_str()));
+            mostrar(un::producao::producao_da_unidade(&p, &q, c, alvo)?)
+        }
+        "faturamento-unidade" | "faturamento-procedimentos" => {
+            let (q, c) = sigtap()?;
+            let alvo = livres
+                .first()
+                .zip(livres.get(1))
+                .map(|(u, n)| (u.as_str(), n.as_str()));
+            mostrar(if cmd == "faturamento-unidade" {
+                un::faturamento::faturamento_da_unidade(&p, &q, c, alvo)?
+            } else {
+                un::faturamento::procedimentos_com_producao(&p, &q, c, alvo)?
+            })
+        }
+        "faturamento" => {
+            let (q, c) = sigtap()?;
+            mostrar(un::faturamento::faturamento_do_procedimento(
+                &p,
+                &q,
+                c,
+                arg(0, "o código do procedimento")?,
+                o.uf.as_deref(),
+            )?)
+        }
+        "faturamento-impacto" => {
+            let (q, c) = sigtap()?;
+            mostrar(un::faturamento::impacto_das_mudancas(
+                &p, &q, o.de, c, None,
+            )?)
+        }
+        "faturamento-painel" => {
+            let (q, c) = sigtap()?;
+            mostrar(un::faturamento::painel_do_faturista(&p, &q, c)?)
+        }
         "cnes-apagar" => {
             println!("{}", un::apagar_uf(&p, arg(0, "a UF")?)?);
             Ok(())
@@ -797,15 +952,29 @@ fn main() -> ExitCode {
         "baixar" => cmd_baixar(&o),
         "importar" => cmd_importar(&o),
         "territorio" => cmd_territorio(&o),
-        "ficha" | "buscar" | "arvore" | "arvore-cid" | "ligados" | "historico" | "mudou" => {
-            cmd_consulta(cmd.as_str(), &o)
-        }
+        "ficha" | "buscar" | "buscar-todos" | "arvore" | "arvore-cid" | "ligados" | "historico"
+        | "mudou" => cmd_consulta(cmd.as_str(), &o),
         "cnes-competencias"
         | "cnes-baixar"
         | "cnes-importar"
         | "cnes-situacao"
         | "cnes-buscar"
         | "cnes-apagar"
+        | "producao-plano"
+        | "producao-baixar"
+        | "producao-importar"
+        | "producao-situacao"
+        | "producao-apagar"
+        | "manter-brutos"
+        | "producao-reconstruir"
+        | "producao-apagar-guardados"
+        | "producao"
+        | "producao-unidade"
+        | "faturamento-unidade"
+        | "faturamento-procedimentos"
+        | "faturamento"
+        | "faturamento-impacto"
+        | "faturamento-painel"
         | "unidade-definir"
         | "unidade-limpar"
         | "unidade-remover"

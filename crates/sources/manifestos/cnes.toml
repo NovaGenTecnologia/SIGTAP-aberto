@@ -53,13 +53,42 @@ chave = ["CNES", "CODUFMUN", "CBO", "COMPETEN"]
 indices = [["CNES"], ["CBO"]]
 so_cnes_escolhidos = true
 
+# Fase 4.5 (Q04): marcas que mudam o que o pagamento faz. Mesmo cabeçalho de estabelecimento do ST (trazem CPF_CNPJ: valem as
+# regras de privacidade abaixo) e SGRUPHAB + CMPT_INI/CMPT_FIM (999999 = sem fim). Códigos próprios do CNES (60xx, 70xx, 71xx, 81xx,
+# 82xx), que NÃO existem em tb_habilitacao do SIGTAP; o mesmo código de RC aparece no PA_REGCT e no REGCT do RD.
+# Nem toda UF/competência tem o arquivo: a ausência no servidor não derruba o download.
+
+[[tipo]]
+codigo = "RC"
+nome = "Regras contratuais"
+chave = ["CNES", "CODUFMUN", "SGRUPHAB", "CMPT_INI", "CMPT_FIM", "COMPETEN"]
+indices = [["CNES"], ["SGRUPHAB"]]
+
+[[tipo]]
+codigo = "IN"
+nome = "Incentivos"
+chave = ["CNES", "CODUFMUN", "SGRUPHAB", "CMPT_INI", "CMPT_FIM", "COMPETEN"]
+indices = [["CNES"], ["SGRUPHAB"]]
+
+[[tipo]]
+codigo = "GM"
+nome = "Gestão e metas"
+chave = ["CNES", "CODUFMUN", "SGRUPHAB", "CMPT_INI", "CMPT_FIM", "COMPETEN"]
+indices = [["CNES"], ["SGRUPHAB"]]
+
+[[tipo]]
+codigo = "EF"
+nome = "Hospitais filantrópicos"
+chave = ["CNES", "CODUFMUN", "SGRUPHAB", "CMPT_INI", "CMPT_FIM", "COMPETEN"]
+indices = [["CNES"], ["SGRUPHAB"]]
+
 # ---- Privacidade ----
 # `sempre = true`: o campo nem vira coluna. Com `quando_campo`/`quando_valor`: o valor é apagado
 # naquele registro. PF_PJ = "1" é pessoa física (IT_CNES_1706, campo PF_PJ: "1-Física 3-Jurídica").
 # Tipo "CAD" é o cadastro de nomes (CADGER<UF>.dbf); a regra dele usa o PF_PJ do arquivo ST.
 
 [[privacidade]]
-tipos = ["ST", "HB", "SR", "LT", "EQ", "PF"]
+tipos = ["ST", "HB", "SR", "LT", "EQ", "PF", "RC", "IN", "GM", "EF"]
 campos = ["CPF_CNPJ"]
 quando_campo = "PF_PJ"
 quando_valor = "1"
@@ -88,6 +117,34 @@ motivo = "dados pessoais do titular de estabelecimento pessoa física"
 # ---- Decodificadores ----
 # Campo -> arquivo CNV de TAB_CNES.zip, como os .def oficiais indicam. `campos` com dois nomes:
 # o código é a junção dos dois (equipamento = TIPEQUIP + CODEQUIP, como em Equip_Tp.cnv).
+
+# Decodificadores de RC, IN, GM e EF: o código é o SGRUPHAB do tipo (nomes virtuais RC_SGRUPHAB etc., porque o mesmo campo
+# significa coisas diferentes em cada arquivo). Três vêm de .dbf do TAB_CNES.zip (colunas dadas) e um do .cnv.
+[[decodificador]]
+campos = ["RC_SGRUPHAB"]
+arquivo = "REGRAS.DBF"
+coluna_codigo = "CHAVE"
+coluna_descricao = "DS_REGRA"
+fonte = "TAB_CNES.zip DBF/REGRAS.DBF (19 regras contratuais; o texto já começa com o código)"
+
+[[decodificador]]
+campos = ["IN_SGRUPHAB"]
+arquivo = "incentivos.dbf"
+coluna_codigo = "CHAVE"
+coluna_descricao = "DS_INCEN"
+fonte = "TAB_CNES.zip DBF/incentivos.dbf (105 incentivos)"
+
+[[decodificador]]
+campos = ["GM_SGRUPHAB"]
+arquivo = "GESTAO.dbf"
+coluna_codigo = "CD_GESTAO"
+coluna_descricao = "DS_GESTAO"
+fonte = "TAB_CNES.zip DBF/GESTAO.dbf (9 tipos de contrato de gestão e metas)"
+
+[[decodificador]]
+campos = ["EF_SGRUPHAB"]
+arquivo = "ESTABFIL.CNV"
+fonte = "TAB_CNES.zip CNV/ESTABFIL.CNV (hospital filantrópico)"
 
 [[decodificador]]
 campos = ["TP_UNID"]

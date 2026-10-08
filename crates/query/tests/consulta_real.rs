@@ -432,13 +432,29 @@ fn o_que_mudou_bate_com_intervalos_em_todas_as_viradas() {
         .iter()
         .find(|t| t.tabela == "tb_procedimento")
         .unwrap();
-    assert_eq!((proc.incluidos, proc.excluidos, proc.alterados), (0, 0, 3));
-    let mepo = proc
-        .itens
-        .iter()
-        .find(|i| i.chave["co_procedimento"] == "0604840020")
-        .unwrap();
-    assert_eq!(mepo.campos_alterados, ["vl_idade_minima"]);
+    // Valores conhecidos da versão de 17/09/2026 (`v2609171117`). Em 05/10/2026 o DATASUS republicou
+    // 09/2026 (`v2610050950`, 14 procedimentos alterados em relação a 08/2026): para essa versão, e
+    // para qualquer outra, vale a conferência contra os intervalos feita acima, não um número fixo.
+    let versao_09 = q
+        .competencias()
+        .unwrap()
+        .into_iter()
+        .find(|x| x.competencia == "202609")
+        .and_then(|x| x.versao);
+    if versao_09.as_deref() == Some("2609171117") {
+        assert_eq!((proc.incluidos, proc.excluidos, proc.alterados), (0, 0, 3));
+        let mepo = proc
+            .itens
+            .iter()
+            .find(|i| i.chave["co_procedimento"] == "0604840020")
+            .unwrap();
+        assert_eq!(mepo.campos_alterados, ["vl_idade_minima"]);
+    } else {
+        eprintln!(
+            "09/2026 versão {versao_09:?}: tb_procedimento incluídos {}, excluídos {}, alterados {}",
+            proc.incluidos, proc.excluidos, proc.alterados
+        );
+    }
 
     // "Ver mais": páginas pequenas de cada tabela, concatenadas, reproduzem a lista completa.
     let completo = q.o_que_mudou(c("202608"), c("202609"), usize::MAX).unwrap();
@@ -572,4 +588,51 @@ fn arvore_de_cids_bate_com_sql_independente() {
     assert_eq!(t742.codigo_mascarado, "T74.2");
     assert_eq!(t742.nome.as_deref(), Some("Abuso sexual"));
     eprintln!("PROVA T74.2: {} procedimento(s) ligados (SQL igual)", sql);
+}
+
+#[test]
+fn busca_todos_devolve_sem_o_limite_de_procedimentos() {
+    let Some(p) = preparado() else { return };
+    let q = Consulta::abrir(&p).unwrap();
+    let comp = c("202609");
+    let curta = q.buscar(comp, "procedimento").unwrap();
+    let toda = q.buscar_todos(comp, "procedimento").unwrap();
+    assert_eq!(toda.total_procedimentos, curta.total_procedimentos);
+    assert_eq!(toda.procedimentos.len(), toda.total_procedimentos);
+    assert_eq!(
+        curta.procedimentos.len(),
+        curta
+            .total_procedimentos
+            .min(sa_query::busca::LIMITE_PROCEDIMENTOS)
+    );
+    let codigos: Vec<_> = toda.procedimentos.iter().map(|i| &i.codigo).collect();
+    assert!(
+        curta
+            .procedimentos
+            .iter()
+            .all(|i| codigos.contains(&&i.codigo))
+    );
+}
+
+#[test]
+fn busca_de_categoria_cid_lista_as_subcategorias_e_soma_os_procedimentos() {
+    let Some(p) = preparado() else { return };
+    let q = Consulta::abrir(&p).unwrap();
+    let comp = c("202609");
+    let r = q.buscar(comp, "Z00").unwrap();
+    let cids: Vec<&str> = r
+        .apoio
+        .iter()
+        .filter(|a| a.tabela == "tb_cid")
+        .map(|a| a.codigo[0].as_str())
+        .collect();
+    assert!(cids.contains(&"Z00"));
+    assert!(cids.iter().any(|c| c.len() == 4 && c.starts_with("Z00")));
+    let da_categoria = q.procedimentos_ligados(comp, "tb_cid", &["Z00"]).unwrap();
+    let soma: usize = cids
+        .iter()
+        .filter(|c| c.len() == 4)
+        .map(|c| q.procedimentos_ligados(comp, "tb_cid", &[c]).unwrap().len())
+        .sum();
+    assert!(da_categoria.len() <= soma && (soma == 0 || !da_categoria.is_empty()));
 }
