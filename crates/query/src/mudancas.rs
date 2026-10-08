@@ -231,6 +231,15 @@ impl Consulta {
         let sb = self.exigir(para)?;
         let pa: BTreeSet<String> = util::tabelas(self.conn(), sa)?.into_iter().collect();
         let pb: BTreeSet<String> = util::tabelas(self.conn(), sb)?.into_iter().collect();
+        if let Some(x) = so
+            && !pa.contains(x)
+            && !pb.contains(x)
+        {
+            let x: String = x.chars().take(40).collect();
+            return Err(ErroConsulta::Entrada(format!(
+                "a tabela '{x}' não existe nesta comparação"
+            )));
+        }
         let chaves = sa_sources::sigtap::chaves_naturais();
         let mut tabelas = Vec::new();
         for t in pa.union(&pb) {

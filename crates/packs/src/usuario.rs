@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS config(chave TEXT PRIMARY KEY, valor TEXT NOT NULL);
 #[derive(Debug)]
 pub enum ErroUsuario {
     Sql(rusqlite::Error),
+    /// O arquivo não é um banco válido ou está danificado.
+    Danificado,
     Entrada(String),
     Versao(String),
 }
@@ -37,6 +39,10 @@ impl fmt::Display for ErroUsuario {
             ErroUsuario::Sql(e) => write!(
                 f,
                 "não foi possível gravar seus favoritos e anotações ({e}). Verifique se a pasta do programa não é só leitura e se há espaço em disco"
+            ),
+            ErroUsuario::Danificado => write!(
+                f,
+                "o arquivo dos favoritos e anotações (dados\\usuario.db) está danificado. Abra Módulos e dados, use Verificar o banco e, antes de apagá-lo, guarde uma cópia do arquivo"
             ),
             ErroUsuario::Entrada(m) => write!(f, "{m}"),
             ErroUsuario::Versao(v) => write!(
@@ -51,7 +57,11 @@ impl std::error::Error for ErroUsuario {}
 
 impl From<rusqlite::Error> for ErroUsuario {
     fn from(e: rusqlite::Error) -> Self {
-        ErroUsuario::Sql(e)
+        if crate::saude::erro_de_corrupcao(&e) {
+            ErroUsuario::Danificado
+        } else {
+            ErroUsuario::Sql(e)
+        }
     }
 }
 
@@ -71,11 +81,17 @@ pub struct BancoUsuario {
     conn: Connection,
 }
 
+/// Quantas marcações (favoritos mais anotações) o banco do usuário aceita.
+const MAX_MARCACOES: i64 = 5000;
+
 fn validar(tipo: &str, codigo: &str) -> Result<(), ErroUsuario> {
-    let ok = |t: &str, max: usize| {
-        !t.is_empty() && t.len() <= max && t.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    let alfanum = |t: &str| t.bytes().all(|b| b.is_ascii_alphanumeric());
+    let ok = match tipo {
+        "procedimento" => codigo.len() == 10 && codigo.bytes().all(|b| b.is_ascii_digit()),
+        "cid" => (3..=5).contains(&codigo.len()) && alfanum(codigo),
+        _ => false,
     };
-    if ok(tipo, 20) && ok(codigo, 20) {
+    if ok {
         Ok(())
     } else {
         Err(ErroUsuario::Entrada(
@@ -126,10 +142,25 @@ impl BancoUsuario {
         Ok(Self { conn })
     }
 
+    fn exigir_espaco(&self) -> Result<(), ErroUsuario> {
+        let n: i64 = self.conn.query_row(
+            "SELECT (SELECT count(*) FROM favorito) + (SELECT count(*) FROM anotacao)",
+            [],
+            |r| r.get(0),
+        )?;
+        if n >= MAX_MARCACOES {
+            return Err(ErroUsuario::Entrada(format!(
+                "limite de {MAX_MARCACOES} favoritos e anotações. Remova alguns antes de marcar outros"
+            )));
+        }
+        Ok(())
+    }
+
     /// Marca ou desmarca um favorito. Devolve o estado final.
     pub fn favoritar(&self, tipo: &str, codigo: &str, favorito: bool) -> Result<bool, ErroUsuario> {
         validar(tipo, codigo)?;
         if favorito {
+            self.exigir_espaco()?;
             self.conn.execute(
                 "INSERT OR IGNORE INTO favorito VALUES(?1, ?2, datetime('now', 'localtime'))",
                 params![tipo, codigo],
@@ -158,6 +189,9 @@ impl BancoUsuario {
                 params![tipo, codigo],
             )?;
         } else {
+            if self.marcado(tipo, codigo)?.anotacao.is_none() {
+                self.exigir_espaco()?;
+            }
             self.conn.execute(
                 "INSERT INTO anotacao VALUES(?1, ?2, ?3, datetime('now', 'localtime')) \
                  ON CONFLICT(tipo, codigo) DO UPDATE SET texto = excluded.texto, alterado_em = excluded.alterado_em",
@@ -199,10 +233,11 @@ impl BancoUsuario {
     /// Tudo o que o usuário marcou de um tipo (favoritos e anotações), por código.
     pub fn marcados(&self, tipo: &str) -> Result<Vec<Marcado>, ErroUsuario> {
         let mut st = self.conn.prepare(
-            "SELECT codigo FROM favorito WHERE tipo = ?1 UNION SELECT codigo FROM anotacao WHERE tipo = ?1 ORDER BY 1",
+            "SELECT codigo FROM favorito WHERE tipo = ?1 UNION SELECT codigo FROM anotacao WHERE tipo = ?1 ORDER BY 1 LIMIT ?2",
         )?;
+        // Mesmo teto da gravação: um arquivo com milhões de linhas (forjado ou de outra origem) não vira resposta gigante.
         let codigos: Vec<String> = st
-            .query_map([tipo], |r| r.get(0))?
+            .query_map(params![tipo, MAX_MARCACOES], |r| r.get(0))?
             .collect::<Result<_, _>>()?;
         codigos.iter().map(|c| self.marcado(tipo, c)).collect()
     }
@@ -319,5 +354,63 @@ mod testes {
         ));
         assert_eq!(std::fs::read(&d).unwrap(), antes);
         let _ = std::fs::remove_file(&d);
+    }
+
+    #[test]
+    fn arquivo_que_nao_e_banco_vira_aviso_de_arquivo_danificado() {
+        let d = std::env::temp_dir().join(format!("sa_usuario_lixo_{}.db", std::process::id()));
+        std::fs::write(&d, vec![b'x'; 4096]).unwrap();
+        let e = BancoUsuario::abrir(&d).err().expect("deveria recusar");
+        let _ = std::fs::remove_file(&d);
+        assert!(matches!(e, ErroUsuario::Danificado), "{e}");
+        let m = e.to_string();
+        assert!(m.contains("danificado") && !m.contains("só leitura"), "{m}");
+    }
+
+    #[test]
+    fn marcados_le_no_maximo_o_teto_de_gravacao() {
+        let b = BancoUsuario::em_memoria().unwrap();
+        b.conn.execute_batch("BEGIN").unwrap();
+        for i in 0..(MAX_MARCACOES + 300) {
+            b.conn
+                .execute(
+                    "INSERT INTO favorito VALUES('procedimento', ?1, 'x')",
+                    params![format!("{i:010}")],
+                )
+                .unwrap();
+        }
+        b.conn.execute_batch("COMMIT").unwrap();
+        assert_eq!(
+            b.marcados("procedimento").unwrap().len(),
+            MAX_MARCACOES as usize
+        );
+    }
+
+    #[test]
+    fn so_aceita_tipos_conhecidos_e_codigos_no_formato() {
+        let b = BancoUsuario::em_memoria().unwrap();
+        assert!(b.favoritar("zzz", "0301010072", true).is_err());
+        assert!(b.favoritar("procedimento", "9", true).is_err());
+        assert!(b.favoritar("procedimento", "03010100a2", true).is_err());
+        assert!(b.favoritar("cid", "ab", true).is_err());
+        assert!(b.favoritar("procedimento", "0301010072", true).is_ok());
+        assert!(b.favoritar("cid", "T742", true).is_ok());
+    }
+
+    #[test]
+    fn limita_a_quantidade_de_marcacoes() {
+        let b = BancoUsuario::em_memoria().unwrap();
+        for i in 0..MAX_MARCACOES {
+            b.conn
+                .execute(
+                    "INSERT INTO favorito VALUES('procedimento', ?1, 'x')",
+                    params![format!("{i:010}")],
+                )
+                .unwrap();
+        }
+        assert!(b.favoritar("procedimento", "9999999999", true).is_err());
+        assert!(b.anotar("procedimento", "9999999998", "nota").is_err());
+        assert!(b.favoritar("procedimento", "0000000001", false).is_ok());
+        assert!(b.favoritar("procedimento", "9999999999", true).is_ok());
     }
 }

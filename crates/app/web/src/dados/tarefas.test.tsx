@@ -67,7 +67,7 @@ test("segunda tarefa na mesma fonte não executa e explica qual fonte", async ()
   await pronto();
   const segunda = vi.fn().mockResolvedValue(undefined);
   await act(async () => { await result.current.cnes.iniciar(vi.fn().mockResolvedValue(undefined)); });
-  await expect(result.current.cnes.iniciar(segunda)).rejects.toThrow("Já há um download de CNES em andamento.");
+  await expect(result.current.cnes.iniciar(segunda)).rejects.toThrow("Já há uma tarefa de CNES em andamento.");
   expect(segunda).not.toHaveBeenCalled();
 });
 
@@ -107,7 +107,7 @@ test("app aberto com tarefa no backend já nasce ativo na fonte certa", async ()
   const { result } = montar();
   await waitFor(() => expect(result.current.producao.ativa).toBe(true));
   expect(result.current.cnes.ativa).toBe(false);
-  await expect(result.current.producao.iniciar(vi.fn())).rejects.toThrow("Já há um download de Produção em andamento.");
+  await expect(result.current.producao.iniciar(vi.fn())).rejects.toThrow("Já há uma tarefa de Produção em andamento.");
 });
 
 test("naFila conta os itens da fila da fonte", async () => {

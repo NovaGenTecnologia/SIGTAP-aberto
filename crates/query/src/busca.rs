@@ -55,18 +55,40 @@ pub struct Busca {
     pub apoio: Vec<ItemApoio>,
 }
 
+/// Máximo de caracteres da entrada e de termos distintos usados no índice de texto.
+const MAX_ENTRADA_FTS: usize = 200;
+const MAX_TERMOS_FTS: usize = 12;
+
 /// Termos para o índice de texto: só letras e dígitos (sem aspas nem operadores), cada um
-/// como prefixo. `None` se não sobrar termo.
+/// como prefixo. Termos repetidos ou que são o começo de outro termo saem (não mudam o resultado
+/// e cada um custa uma varredura); a entrada e o número de termos têm limite.
+/// `None` se não sobrar termo.
 fn termos_fts(entrada: &str) -> Option<String> {
-    let termos: Vec<String> = entrada
+    let limitada: String = entrada.chars().take(MAX_ENTRADA_FTS).collect();
+    let mut termos: Vec<String> = Vec::new();
+    for t in limitada
         .split(|c: char| !c.is_alphanumeric())
         .filter(|t| !t.is_empty())
-        .map(|t| format!("\"{t}\"*"))
-        .collect();
+    {
+        let t = t.to_lowercase();
+        if termos.iter().any(|x| x.starts_with(&t)) {
+            continue;
+        }
+        termos.retain(|x| !t.starts_with(x.as_str()));
+        if termos.len() < MAX_TERMOS_FTS {
+            termos.push(t);
+        }
+    }
     if termos.is_empty() {
         None
     } else {
-        Some(termos.join(" AND "))
+        Some(
+            termos
+                .iter()
+                .map(|t| format!("\"{t}\"*"))
+                .collect::<Vec<_>>()
+                .join(" AND "),
+        )
     }
 }
 
@@ -413,8 +435,16 @@ mod testes {
         );
         assert_eq!(
             termos_fts("a\" OR x NEAR(").unwrap(),
-            "\"a\"* AND \"OR\"* AND \"x\"* AND \"NEAR\"*"
+            "\"a\"* AND \"or\"* AND \"x\"* AND \"near\"*"
         );
+        assert_eq!(termos_fts("a a A a").unwrap(), "\"a\"*");
+        assert_eq!(termos_fts("a aa aaa").unwrap(), "\"aaa\"*");
+        let muitos = (0..50)
+            .map(|i| format!("w{i:02}x"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(termos_fts(&muitos).unwrap().matches(" AND ").count() < MAX_TERMOS_FTS);
+        assert!(termos_fts(&"b ".repeat(100_000)).is_some());
         assert!(termos_fts("--- ...").is_none());
     }
 }

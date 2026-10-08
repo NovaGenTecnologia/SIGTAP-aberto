@@ -79,10 +79,10 @@ test("o menu Manutenção abre por teclado e o diálogo de recriar não tem viol
 test("durante um download simulado há progresso, as ações ficam desativadas e dá para cancelar", async ({ page }) => {
   await page.getByRole("button", { name: "Baixar", exact: true }).click();
   await expect(page.getByRole("button", { name: "Cancelar" })).toBeVisible();
-  await expect(page.getByText("Já há um download de SIGTAP em andamento.")).toBeVisible();
+  await expect(page.getByText("Já há uma tarefa de SIGTAP em andamento.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Importar de pasta" })).toBeDisabled();
   await page.getByRole("button", { name: "Cancelar" }).click();
-  await expect(page.getByText("Já há um download de SIGTAP em andamento.")).toBeHidden({ timeout: 15_000 });
+  await expect(page.getByText("Já há uma tarefa de SIGTAP em andamento.")).toBeHidden({ timeout: 15_000 });
 });
 
 test("a 1024 px nenhuma aba tem rolagem horizontal da página", async ({ page }) => {

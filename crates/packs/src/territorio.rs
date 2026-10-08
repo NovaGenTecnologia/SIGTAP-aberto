@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS demas_municipio(
     codigo_regiao_saude TEXT NOT NULL, regiao_saude TEXT NOT NULL,
     populacao_estimada_ibge_2022 INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS demas_regiao ON demas_municipio(codigo_regiao_saude);
+-- A view `municipio` junta pelo código como número; sem este índice cada linha varre a tabela inteira.
+CREATE INDEX IF NOT EXISTS demas_codigo_num ON demas_municipio(CAST(codigo_municipio AS INTEGER));
 CREATE VIEW IF NOT EXISTS municipio AS
     SELECT i.*, d.codigo_municipio AS saude_codigo, d.codigo_regiao_saude, d.regiao_saude,
            d.codigo_macrorregiao_saude, d.macrorregiao_saude, d.populacao_estimada_ibge_2022
@@ -333,6 +335,26 @@ mod testes {
             municipio: "X - M".into(),
             populacao_estimada_ibge_2022: 10,
         }
+    }
+
+    #[test]
+    fn a_view_municipio_usa_o_indice_do_codigo_numerico() {
+        let b = BancoTerritorio::em_memoria().unwrap();
+        let mut st = b
+            .conn
+            .prepare(
+                "EXPLAIN QUERY PLAN SELECT municipio_id FROM municipio WHERE saude_codigo IS NULL",
+            )
+            .unwrap();
+        let plano: Vec<String> = st
+            .query_map([], |r| r.get::<_, String>(3))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(
+            plano.iter().any(|l| l.contains("demas_codigo_num")),
+            "{plano:?}"
+        );
     }
 
     #[test]

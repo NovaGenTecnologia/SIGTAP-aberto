@@ -50,9 +50,12 @@ impl fmt::Display for ErroConsulta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ErroConsulta::Banco(e) => write!(f, "{e}"),
+            ErroConsulta::Sql(e) if e.to_string().contains("too complex") => {
+                write!(f, "o texto de busca é longo demais. Use menos caracteres.")
+            }
             ErroConsulta::Sql(e) => write!(
                 f,
-                "falha ao consultar o banco do SIGTAP ({e}). Se persistir, refaça o banco a partir dos ZIPs em Módulos e dados."
+                "falha ao consultar o banco de dados ({e}). Se persistir, abra Dados e confira os bancos."
             ),
             ErroConsulta::NaoCarregada(c) => write!(
                 f,

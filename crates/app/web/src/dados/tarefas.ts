@@ -4,9 +4,9 @@ import type { FimDeTarefa, Fonte, ProgressoDeTarefa } from "../api/tipos";
 export const FONTES: Fonte[] = ["sigtap", "cnes", "producao"];
 const NOMES: Record<Fonte, string> = { sigtap: "SIGTAP", cnes: "CNES", producao: "Produção" };
 export const nomeDaFonte = (f: Fonte) => NOMES[f];
-export const mensagemOcupado = (f: Fonte) => `Já há um download de ${NOMES[f]} em andamento.`;
+export const mensagemOcupado = (f: Fonte) => `Já há uma tarefa de ${NOMES[f]} em andamento.`;
 // O backend e a trava da tela dizem a mesma frase; quem chama não precisa mostrar esse erro de novo.
-export const ehOcupado = (e: unknown) => e instanceof Error && e.message.startsWith("Já há um download de ");
+export const ehOcupado = (e: unknown) => e instanceof Error && e.message.startsWith("Já há uma tarefa de ");
 
 export interface TarefaAtiva { ativa: boolean; progresso: ProgressoDeTarefa | null; fim: FimDeTarefa | null }
 export interface TarefaDeFonte extends TarefaAtiva { naFila: number }

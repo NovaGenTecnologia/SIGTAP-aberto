@@ -108,7 +108,7 @@ test("com tarefa em andamento as ações ficam desativadas e uma linha explica o
   for (const nome of ["Baixar", "Importar de pasta", "Apagar ZIPs já carregados", "Procurar atualizações"]) {
     expect(screen.getByRole("button", { name: nome })).toBeDisabled();
   }
-  expect(screen.getAllByText("Já há um download de SIGTAP em andamento.")).toHaveLength(1);
+  expect(screen.getAllByText("Já há uma tarefa de SIGTAP em andamento.")).toHaveLength(1);
 });
 
 test("com o CNES baixando, os botões do SIGTAP continuam habilitados", async () => {
@@ -118,7 +118,7 @@ test("com o CNES baixando, os botões do SIGTAP continuam habilitados", async ()
   for (const nome of ["Baixar", "Importar de pasta", "Procurar atualizações"]) {
     expect(screen.getByRole("button", { name: nome })).toBeEnabled();
   }
-  expect(screen.queryByText(/Já há um download/)).toBeNull();
+  expect(screen.queryByText(/Já há uma tarefa/)).toBeNull();
 });
 
 test("durante o download aparece o progresso com Cancelar", async () => {

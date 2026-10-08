@@ -45,3 +45,4 @@
 .producao-opcional__titulo { margin: 0; font-size: var(--texto-14); font-weight: 700; }
 .passo__acoes--base { align-items: flex-end; }
 .passo__erro { margin: 0; color: var(--cor-texto); }
+.passo__nota { margin: 0; font-size: var(--texto-14); color: var(--cor-texto-2); }

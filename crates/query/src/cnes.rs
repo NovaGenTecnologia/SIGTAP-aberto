@@ -658,7 +658,8 @@ impl ConsultaCnes {
 
     /// Procura estabelecimentos pelo número do CNES (começo) ou por parte do nome.
     pub fn buscar(&self, texto: &str, limite: usize) -> Result<Vec<Estabelecimento>, ErroConsulta> {
-        let t = texto.trim();
+        let t: String = texto.trim().chars().take(100).collect();
+        let t = t.as_str();
         if t.is_empty() {
             return Ok(Vec::new());
         }
@@ -669,7 +670,11 @@ impl ConsultaCnes {
         if !self.tem("cnes_cad") {
             return Ok(Vec::new());
         }
-        let padrao = format!("%{}%", t.replace(['%', '_'], " ").to_uppercase());
+        let sem_curinga = t.replace(['%', '_'], " ");
+        if sem_curinga.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+        let padrao = format!("%{}%", sem_curinga.trim().to_uppercase());
         self.estabelecimentos_onde(
             "s.cnes IN (SELECT c.cnes FROM cnes_cad c WHERE upper(c.fantasia) LIKE ?1 OR upper(c.raz_soci) LIKE ?1)",
             &[padrao],
