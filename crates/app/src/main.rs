@@ -442,7 +442,14 @@ fn importar(
         "SIGTAP",
         quando,
         move |sv, ctx, emissor, _| {
-            servico::importar(&sv.pastas, &PathBuf::from(pasta), &ctx.cancelar, emissor)
+            let apagar = !unidade::producao::manter_brutos(&unidade::local(&sv.pastas));
+            servico::importar(
+                &sv.pastas,
+                &PathBuf::from(pasta),
+                &ctx.cancelar,
+                emissor,
+                apagar,
+            )
         },
     )
 }

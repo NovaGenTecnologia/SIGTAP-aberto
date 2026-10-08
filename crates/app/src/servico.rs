@@ -425,7 +425,7 @@ impl Servico {
             .map_err(|_| "estado interno travado".to_string())? = None;
         ac.mudar(|p| p.indeterminado = false);
         let mut partes = Vec::new();
-        let n = carregar_zips(&self.pastas, cancelar, &ac)?;
+        let n = carregar_zips(&self.pastas, cancelar, &ac, false)?;
         partes.push(format!(
             "{n} competência(s) do SIGTAP refeitas a partir dos ZIPs guardados"
         ));
@@ -1214,11 +1214,12 @@ fn carregador(
 }
 
 /// Carrega no banco os ZIPs guardados que ainda não estão nele (ou que têm versão nova),
-/// da competência mais recente para a mais antiga.
+/// da competência mais recente para a mais antiga. Com `apagar`, cada ZIP sai da pasta depois de carregado.
 fn carregar_zips(
     pastas: &Pastas,
     cancelar: &AtomicBool,
     ac: &Acompanhamento,
+    apagar: bool,
 ) -> Result<usize, String> {
     let ja = carregadas(pastas)?;
     let pendentes: Vec<(Competencia, PathBuf)> = dl::locais(&pastas.zips())
@@ -1237,6 +1238,9 @@ fn carregar_zips(
         b.carregar_zip(p)
             .map_err(|e| format!("falha ao carregar a competência {} ({e})", mes_ano(*c)))?;
         ac.mudar(|x| x.carregados += 1);
+        if apagar {
+            let _ = std::fs::remove_file(p);
+        }
     }
     Ok(pendentes.len())
 }
@@ -1261,11 +1265,13 @@ pub fn gravar_territorio(pasta: &Path, banco: &Path) -> Result<(), String> {
 }
 
 /// Importação manual: ZIPs do SIGTAP e/ou arquivos do território de uma pasta escolhida.
+/// Com `apagar` (sem "Manter arquivos baixados"), os ZIPs copiados para `dados\zips` saem depois de carregados.
 pub fn importar(
     pastas: &Pastas,
     origem: &Path,
     cancelar: &AtomicBool,
     emissor: &Emissor,
+    apagar: bool,
 ) -> Result<String, String> {
     let ac = Acompanhamento::novo(emissor.clone());
     ac.mudar(|p| {
@@ -1276,7 +1282,7 @@ pub fn importar(
     ac.mudar(|p| p.indeterminado = false);
     let mut partes = Vec::new();
     if !ok.is_empty() {
-        let n = carregar_zips(pastas, cancelar, &ac)?;
+        let n = carregar_zips(pastas, cancelar, &ac, apagar)?;
         partes.push(format!(
             "{} ZIP(s) do SIGTAP importados, {n} competência(s) carregadas",
             ok.len()
@@ -1855,6 +1861,31 @@ mod testes {
         assert_eq!(j["tarefas"][0]["fonte"], "cnes");
         assert_eq!(j["tarefas"][0]["rotulo"], "CNES de MS");
         s.send(()).unwrap();
+    }
+
+    #[test]
+    fn importar_de_pasta_apaga_os_zips_copiados_so_sem_manter() {
+        let Some(zips) = zips_reais(2) else { return };
+        for (apagar, nome) in [(true, "importar_apaga"), (false, "importar_mantem")] {
+            let origem = pastas(&format!("{nome}_origem")).dados.join("entrada");
+            let _ = std::fs::remove_dir_all(&origem);
+            std::fs::create_dir_all(&origem).unwrap();
+            for (_, z) in &zips {
+                std::fs::copy(z, origem.join(z.file_name().unwrap())).unwrap();
+            }
+            let ps = pastas(nome);
+            let (em, _) = emissor();
+            importar(&ps, &origem, &AtomicBool::new(false), &em, apagar).unwrap();
+            assert_eq!(carregadas(&ps).unwrap().len(), zips.len());
+            // A pasta do usuário não é tocada; só a cópia em dados\zips depende da chave.
+            assert_eq!(std::fs::read_dir(&origem).unwrap().count(), zips.len());
+            let guardados = dl::locais(&ps.zips()).len();
+            assert_eq!(
+                guardados,
+                if apagar { 0 } else { zips.len() },
+                "apagar={apagar}"
+            );
+        }
     }
 
     #[test]

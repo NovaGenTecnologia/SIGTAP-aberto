@@ -375,6 +375,17 @@ fn apagar_arquivos_com_cpf(
     let _ = std::fs::remove_file(pasta.join(format!("CADGER{uf}.dbf")));
 }
 
+/// Sem "Manter arquivos baixados", os arquivos oficiais já carregados no banco saem da pasta. Os que têm CPF
+/// saem sempre (`apagar_arquivos_com_cpf`); esta chave só vale para os demais.
+fn apagar_carregados(p: &Pastas, carregados: &[PathBuf]) {
+    if producao::manter_brutos(p) {
+        return;
+    }
+    for caminho in carregados {
+        let _ = std::fs::remove_file(caminho);
+    }
+}
+
 fn carregar(p: &Pastas, uf: &str, modo: Modo, avisar: &dyn Fn(&str)) -> Result<String, String> {
     exigir_uf(uf)?;
     let so_escolhidos = modo == Modo::Escolhidos;
@@ -392,6 +403,7 @@ fn carregar(p: &Pastas, uf: &str, modo: Modo, avisar: &dyn Fn(&str)) -> Result<S
     let meus: Option<HashSet<String>> = minha(p).filter(|(u, _)| u == uf).map(|(_, c)| [c].into());
     let mut partes = Vec::new();
     let mut competencias: HashSet<String> = HashSet::new();
+    let mut carregados: Vec<PathBuf> = Vec::new();
     for t in &m.tipos {
         let Some((_, caminho)) = locais.get(&t.codigo) else {
             continue;
@@ -448,6 +460,7 @@ fn carregar(p: &Pastas, uf: &str, modo: Modo, avisar: &dyn Fn(&str)) -> Result<S
             })?;
         } else {
             competencias.insert(c.competencia.clone());
+            carregados.push(caminho.clone());
         }
         partes.push(format!("{} {}", c.gravados, t.nome.to_lowercase()));
     }
@@ -456,6 +469,7 @@ fn carregar(p: &Pastas, uf: &str, modo: Modo, avisar: &dyn Fn(&str)) -> Result<S
     }
     if modo == Modo::Restante {
         apagar_arquivos_com_cpf(&pasta, uf, &locais);
+        apagar_carregados(p, &carregados);
         return Ok(format!("CNES de {uf}: {}.", partes.join(", ")));
     }
     let cad = pasta.join(format!("CADGER{uf}.dbf"));
@@ -487,9 +501,11 @@ fn carregar(p: &Pastas, uf: &str, modo: Modo, avisar: &dyn Fn(&str)) -> Result<S
             };
             b.gravar_decodificador(&d.chave(), &d.arquivo, &mapa)
                 .map_err(|e| e.to_string())?;
+            carregados.push(arq);
         }
     }
     apagar_arquivos_com_cpf(&pasta, uf, &locais);
+    apagar_carregados(p, &carregados);
     let mut msg = format!("CNES de {uf} carregado: {}.", partes.join(", "));
     if competencias.len() > 1 {
         msg.push_str(" Atenção: os arquivos são de competências diferentes; baixe o CNES de novo para alinhar.");
@@ -1609,6 +1625,10 @@ mod testes {
         let msg = baixar_cnes_de(&fonte, &p, &pedido, &cancelar, &emissor).unwrap();
         assert!(msg.contains("7108 estabelecimentos"), "{msg}");
         assert!(!arquivos_cnes(&p, "MS").join("PFMS2608.dbc").exists());
+        // Sem "Manter arquivos baixados", nada do que foi carregado fica em disco.
+        let sobras = dl::locais(&arquivos_cnes(&p, "MS"), "MS");
+        assert!(sobras.is_empty(), "{sobras:?}");
+        assert!(!arquivos_cnes(&p, "MS").join("CADGERMS.dbf").exists());
         assert!(
             registro
                 .lock()
@@ -1810,21 +1830,28 @@ mod testes {
         assert!(consulta_cnes(&p, "MS").err().unwrap().contains("mais nova"));
         assert_eq!(std::fs::read(&db).unwrap(), antes);
         mudar("0");
-        assert_eq!(
-            consulta_cnes(&p, "MS")
-                .unwrap()
-                .resumo()
-                .unwrap()
-                .estabelecimentos,
-            7108
-        );
+        // O ST (com CPF) não fica em disco, então um banco de esquema anterior pede baixar de novo, sem alterar nada.
+        let erro = consulta_cnes(&p, "MS").err().unwrap();
+        assert!(erro.contains("precisa ser refeito"), "{erro}");
+        assert_eq!(std::fs::read(&db).unwrap().len(), antes.len());
 
         // 7. Importação manual numa pasta nova e apagar.
         let p2 = Pastas {
             dados: d.join("dados2"),
         };
-        let m = importar_cnes(&p2, &arquivos_cnes(&p, "MS"), "MS", &emissor).unwrap();
+        let entrada = d.join("entrada");
+        std::fs::create_dir_all(&entrada).unwrap();
+        for t in ["ST", "HB", "SR", "LT", "EQ"] {
+            let nome = format!("{t}MS2608.dbc");
+            std::fs::copy(origem.join(&nome), entrada.join(&nome)).unwrap();
+        }
+        std::fs::copy(d.join("TAB_CNES.zip"), entrada.join("TAB_CNES.zip")).unwrap();
+        let m = importar_cnes(&p2, &entrada, "MS", &emissor).unwrap();
         assert!(m.contains("7108 estabelecimentos"), "{m}");
+        // Importar de pasta segue a mesma regra: a pasta do usuário fica como está e a cópia carregada sai.
+        assert_eq!(std::fs::read_dir(&entrada).unwrap().count(), 6);
+        let sobras = dl::locais(&arquivos_cnes(&p2, "MS"), "MS");
+        assert!(sobras.is_empty(), "{sobras:?}");
         assert!(
             importar_cnes(&p2, &d.join("dados2"), "SP", &emissor)
                 .unwrap_err()
