@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SIGTAP Aberto — Guia da marca</title>
+<style>
+@font-face{font-family:"Public Sans";font-weight:100 900;src:url("../crates/app/web/node_modules/@fontsource-variable/public-sans/files/public-sans-latin-wght-normal.woff2") format("woff2")}
+:root{--casco:#0A3D91;--tinta:#14202B;--apoio:#3F4C59;--fundo:#F2F4F7;--linha:#D5DBE3;--branco:#fff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--fundo);color:var(--tinta);font:16px/1.5 "Public Sans",system-ui,sans-serif}
+main{max-width:1080px;margin:0 auto;padding:48px 24px 96px}
+h1{font-size:32px;line-height:1.15;margin:0 0 8px}
+h2{font-size:22px;margin:56px 0 4px;padding-top:24px;border-top:2px solid var(--casco)}
+h3{font-size:15px;margin:0 0 8px}
+p{margin:0 0 12px;max-width:68ch;color:var(--apoio)}
+.grade{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:16px}
+.cartao{background:var(--branco);border:1px solid var(--linha);border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:12px;justify-content:space-between}
+.cartao.azul{background:var(--casco);border-color:var(--casco);color:var(--branco)}
+.cartao.escuro{background:var(--tinta);border-color:var(--tinta);color:var(--branco)}
+.cartao.azul p,.cartao.escuro p{color:#d6e0f2}
+.palco{display:flex;align-items:center;justify-content:center;min-height:120px}
+.palco img{display:block;max-width:100%}
+.rotulo{font-size:13px;color:var(--apoio)}
+.azul .rotulo,.escuro .rotulo{color:#c3d1ea}
+code{font-family:ui-monospace,Consolas,monospace;font-size:13px}
+table{border-collapse:collapse;width:100%;background:var(--branco);border:1px solid var(--linha);border-radius:10px;overflow:hidden}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--linha);font-size:14px}
+th{background:#e8ecf2}
+.amostra{width:44px;height:44px;border-radius:8px;border:1px solid var(--linha)}
+.tamanhos{display:flex;align-items:flex-end;gap:24px;flex-wrap:wrap}
+.reservado{position:relative;display:inline-block;padding:10px;outline:1px dashed #6b86b8;background:#f2f6fc}
+.reservado img{display:block;outline:1px solid #cfd8e8}
+.errado img{display:block}
+.x1 img{transform:scaleX(1.5)}
+.x2 img{transform:rotate(-12deg)}
+.x3 img{filter:hue-rotate(120deg)}
+.x4 img{filter:drop-shadow(4px 6px 3px rgba(0,0,0,.5))}
+button{font:inherit;font-weight:600;padding:8px 14px;border-radius:8px;border:1px solid var(--casco);background:var(--branco);color:var(--casco);cursor:pointer;min-height:36px}
+button:focus-visible{outline:3px solid var(--casco);outline-offset:2px}
+.nota{background:#e8eef9;border-radius:8px;padding:12px 16px;margin:16px 0}
+</style>
+</head>
+<body>
+<main>
+<h1>SIGTAP Aberto: guia da marca</h1>
+<p>O símbolo é uma cruz de células de tabela. A tabela e a saúde estão na cruz; o braço direito é um nó aberto, ligado pela linha-guia que também conduz a interface.</p>
+
+<h2>Símbolo e versões</h2>
+<p>Use o arquivo pronto da pasta <code>svg/</code>. Nunca redesenhe o símbolo nem recrie o nome com outra fonte: o nome já está em contorno.</p>
+<div class="grade">
+  <div class="cartao"><div class="palco"><img src="svg/horizontal.svg" alt="Marca horizontal" width="300"></div><div><h3>Horizontal</h3><p class="rotulo"><code>horizontal.svg</code> — barra de topo, documentos, cabeçalhos.</p></div></div>
+  <div class="cartao"><div class="palco"><img src="svg/vertical.svg" alt="Marca vertical" width="150"></div><div><h3>Vertical</h3><p class="rotulo"><code>vertical.svg</code> — abertura, tela de inicialização, capas.</p></div></div>
+  <div class="cartao"><div class="palco"><img src="svg/simbolo.svg" alt="Símbolo" width="120"></div><div><h3>Símbolo</h3><p class="rotulo"><code>simbolo.svg</code> — ícone do programa e espaços pequenos.</p></div></div>
+</div>
+
+<h2>Negativo e monocromático</h2>
+<p>Sobre fundo azul ou escuro, use o negativo. Em impressão de uma cor, use o monocromático.</p>
+<div class="grade">
+  <div class="cartao azul"><div class="palco"><img src="svg/horizontal-negativo.svg" alt="Horizontal negativo" width="300"></div><p class="rotulo"><code>horizontal-negativo.svg</code></p></div>
+  <div class="cartao azul"><div class="palco"><img src="svg/vertical-negativo.svg" alt="Vertical negativo" width="150"></div><p class="rotulo"><code>vertical-negativo.svg</code></p></div>
+  <div class="cartao escuro"><div class="palco"><img src="svg/horizontal-mono-negativo.svg" alt="Horizontal monocromático negativo" width="300"></div><p class="rotulo"><code>*-mono-negativo.svg</code></p></div>
+  <div class="cartao"><div class="palco"><img src="svg/horizontal-mono.svg" alt="Horizontal monocromático" width="300"></div><p class="rotulo"><code>*-mono.svg</code></p></div>
+</div>
+
+<h2>Cor</h2>
+<table>
+<tr><th></th><th>Nome</th><th>Valor</th><th>Uso</th></tr>
+<tr><td><div class="amostra" style="background:#0A3D91"></div></td><td>Casco</td><td><code>#0A3D91</code></td><td>Marca, ação principal. Contraste 10:1 sobre branco.</td></tr>
+<tr><td><div class="amostra" style="background:#14202B"></div></td><td>Tinta</td><td><code>#14202B</code></td><td>Texto e versão monocromática.</td></tr>
+<tr><td><div class="amostra" style="background:#3F4C59"></div></td><td>Apoio</td><td><code>#3F4C59</code></td><td>Texto secundário.</td></tr>
+<tr><td><div class="amostra" style="background:#F2F4F7"></div></td><td>Fundo</td><td><code>#F2F4F7</code></td><td>Fundo de documentos e telas.</td></tr>
+<tr><td><div class="amostra" style="background:#fff"></div></td><td>Branco</td><td><code>#FFFFFF</code></td><td>Símbolo sobre o casco; negativo.</td></tr>
+</table>
+
+<h2>Tipografia</h2>
+<p>O nome é composto em Public Sans: <strong>SIGTAP</strong> em Bold (700), <em style="font-style:normal">Aberto</em> em Regular (400), com a mesma altura. A interface usa a mesma família.</p>
+
+<h2>Espaço livre e tamanho mínimo</h2>
+<p>Até 32 px de altura use o desenho pequeno (<code>simbolo-pequeno*.svg</code>): traço mais grosso e células maiores, para a linha e o anel não virarem mancha. Acima disso, o normal. O componente escolhe sozinho.</p><p>Deixe ao redor da marca, no mínimo, um quarto da altura do símbolo. Nada entra nessa área.</p>
+<div class="grade">
+  <div class="cartao"><div class="palco"><span class="reservado"><img src="svg/horizontal.svg" alt="" width="260"></span></div><p class="rotulo">Área reservada tracejada.</p></div>
+  <div class="cartao"><h3>Tamanho mínimo e desenho pequeno</h3>
+    <div class="tamanhos">
+      <div><img src="svg/simbolo-pequeno.svg" alt="" width="16" height="16"><p class="rotulo">Símbolo: 16 px (desenho pequeno)</p></div>
+      <div><img src="svg/horizontal.svg" alt="" height="32"><p class="rotulo">Horizontal: 32 px de altura</p></div><div><img src="svg/simbolo-pequeno.svg" alt="" width="32" height="32"><img src="svg/simbolo.svg" alt="" width="32" height="32"><p class="rotulo">32 px: pequeno e normal</p></div>
+      <div><img src="svg/vertical.svg" alt="" height="64"><p class="rotulo">Vertical: 64 px de altura</p></div>
+    </div></div>
+</div>
+
+<h2>Ícone do programa</h2>
+<p>O símbolo sobre o casco, com cantos arredondados. As variações do ícone estão em <code>icones/</code> (16 a 512 px e <code>icon.ico</code>).</p>
+<div class="grade">
+  <div class="cartao"><div class="palco tamanhos"><img src="icones/512.png" alt="" width="128"><img src="icones/128.png" alt="" width="64"><img src="icones/32.png" alt="" width="32"></div></div>
+</div>
+
+<h2>Animação</h2>
+<p>Três versões, e só elas. A sutil é também a versão de movimento reduzido: com redução de movimento, o carregamento mostra o brilho lento da sutil (5 s) e as demais ficam paradas. Todas respeitam <code>prefers-reduced-motion</code>.</p>
+<div class="grade">
+  <div class="cartao"><div class="palco"><img id="anim-sutil" src="animacao/sutil.svg" alt="Marca com animação sutil" width="300"></div><div><h3>Sutil</h3><p class="rotulo">Um brilho sai do quadrado central, corre a linha-guia, entra no nó pela esquerda, contorna o anel nos dois sentidos e se encontra à direita (ciclo de 5 s). Para telas paradas por muito tempo.</p></div></div>
+  <div class="cartao"><div class="palco"><img id="anim-ini" src="animacao/inicializacao.svg" alt="Marca com animação de inicialização" width="300"></div><div><h3>Inicialização</h3><p class="rotulo">Uma vez, em 1,84 s de movimento mais 0,16 s de saída: 2 s no programa. O casco assenta, as células entram em sequência, a linha-guia corre a 52 unidades por segundo e o anel se fecha na mesma velocidade horizontal (os dois arcos se encontram à direita; o perfil do arco compensa a curva do círculo, que a olho parece frear nas pontas), o anel pulsa uma vez e o nome se revela da esquerda para a direita. Ao abrir o programa; com movimento reduzido não há espera.</p><button type="button" id="repetir">Repetir</button></div></div>
+  <div class="cartao"><div class="palco"><img src="animacao/carregamento.svg" alt="Símbolo com animação de carregamento" width="96"></div><div><h3>Carregamento</h3><p class="rotulo">Um fluxo contínuo, sem pausa nem emenda, em ciclos de 1,4 s: uma luz anda pelo caminho (esquerda, centro, cima, linha, baixo, anel) a velocidade constante e deixa um rastro que apaga devagar; o ciclo seguinte começa antes de o rastro acabar. Cima e baixo entram suaves, um de cada vez, para não estourar. Só enquanto algo carrega; sempre com o texto do que está acontecendo. Com movimento reduzido, vira o brilho lento da animação sutil.</p></div></div>
+</div>
+
+<h2>Não faça</h2>
+<div class="grade">
+  <div class="cartao errado x1"><div class="palco"><img src="svg/simbolo.svg" alt="" width="64"></div><p class="rotulo">Esticar ou comprimir.</p></div>
+  <div class="cartao errado x2"><div class="palco"><img src="svg/simbolo.svg" alt="" width="64"></div><p class="rotulo">Girar ou inclinar.</p></div>
+  <div class="cartao errado x3"><div class="palco"><img src="svg/simbolo.svg" alt="" width="64"></div><p class="rotulo">Trocar as cores.</p></div>
+  <div class="cartao errado x4"><div class="palco"><img src="svg/simbolo.svg" alt="" width="64"></div><p class="rotulo">Sombra, brilho ou contorno.</p></div>
+</div>
+<p class="nota">Também não: mover o nó para outro lado, remover a linha-guia, usar o símbolo sobre fundo sem contraste, acrescentar o nome em outra fonte ou criar animações novas.</p>
+
+<h2>Arquivos</h2>
+<table>
+<tr><th>Pasta</th><th>Conteúdo</th></tr>
+<tr><td><code>svg/</code></td><td>Símbolo (normal e pequeno), horizontal e vertical; padrão, negativo, mono e mono-negativo; <code>sem-casco.svg</code> e <code>sem-casco-branco.svg</code> (a cruz sem o casco).</td></tr>
+<tr><td><code>animacao/</code></td><td><code>sutil.svg</code>, <code>carregamento.svg</code>, <code>inicializacao.svg</code>, <code>inicializacao-vertical.svg</code>.</td></tr>
+<tr><td><code>icones/</code></td><td>PNG em 16, 24, 32, 48, 128, 256 e 512 px e <code>icon.ico</code> (16 a 32 px com o desenho pequeno).</td></tr>
+<tr><td><code>gerar_marca.py</code></td><td>Gera os SVGs e os caminhos usados pelo programa. Não edite os SVGs à mão.</td></tr>
+</table>
+</main>
+<script>
+document.getElementById("repetir").addEventListener("click", function () {
+  document.getElementById("anim-ini").src = "animacao/inicializacao.svg?t=" + Date.now();
+});
+</script>
+</body>
+</html>
