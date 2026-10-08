@@ -22,6 +22,8 @@
 dados_dev/
 dados/
 zips/
+# Código-fonte da interface com "dados" no nome (não são dados): precisa ir para o repositório
+!crates/app/web/src/**/dados/
 
 # Arquivos do hospital (dados de paciente): nunca no repositório
 modelos/
@@ -45,6 +47,17 @@ dados_webview/
 *.lock
 !Cargo.lock
 *.log
+
+# Segredos e lixo de ferramentas: nunca
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+__pycache__/
+*.pyc
+*.tsbuildinfo
 
 # Editores e sistema
 .vscode/
