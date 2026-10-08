@@ -1,0 +1,93 @@
+/* Explorar: árvore de procedimentos e de CID, com prévia à direita (>= 1100 px) ou detalhe sob a linha. */
+.explorar { display: flex; flex-direction: column; gap: var(--esp-3); padding-top: var(--esp-3); }
+.explorar__tipo { margin: 0; }
+.explorar__tipo .campo__rotulo { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.explorar__corpo { display: flex; flex-direction: column; gap: var(--esp-4); }
+.explorar__corpo--larga { display: grid; grid-template-columns: minmax(0, 1fr) 410px; align-items: start; }
+.explorar__arvore { display: flex; flex-direction: column; gap: var(--esp-2); min-width: 0; }
+
+.explorar__ferramentas { display: flex; align-items: center; gap: var(--esp-3); flex-wrap: wrap; }
+.explorar__filtro { flex: 0 1 360px; min-width: 220px; }
+.explorar__filtro .campo__rotulo { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.explorar__filtro .campo__entrada { min-height: 36px; }
+.explorar__acoes { margin-left: auto; display: flex; gap: var(--esp-2); }
+.explorar__status { color: var(--cor-texto-2); font-size: var(--texto-14); }
+
+/* Árvore: a área rola por dentro e o caminho fica preso no topo */
+.arvc { position: relative; height: clamp(320px, calc(100vh - 360px), 680px); overflow: auto; background: var(--cor-superficie); border: 1px solid var(--cor-linha); border-radius: var(--raio-bloco); }
+.arvc__caminho { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: var(--esp-2); min-height: 32px; padding: 0 var(--esp-3); background: var(--cor-pagina); border-bottom: 1px solid var(--cor-linha); overflow: hidden; white-space: nowrap; }
+.arvc__trecho { display: inline-flex; align-items: center; gap: var(--esp-2); min-width: 0; }
+.arvc__sep { color: var(--cor-texto-2); }
+.arvc__passo { max-width: 28ch; padding: 0; border: 0; background: none; font: inherit; font-size: var(--texto-14); font-weight: 600; color: var(--cor-acao); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.arvc__passo:hover { text-decoration: underline; }
+.arvc__passo:focus-visible { outline: none; box-shadow: var(--anel-foco); border-radius: 2px; }
+
+.arvc__arvore { display: flex; flex-direction: column; }
+.arvc__bloco { border-bottom: 1px solid var(--cor-linha); }
+.arvc__linha {
+  --n: 0; --guia: var(--cor-linha);
+  position: relative; display: flex; align-items: center; gap: var(--esp-2); min-height: 36px; padding: 0 var(--esp-4) 0 calc(var(--esp-4) + var(--n) * 22px);
+  scroll-margin-top: 36px; cursor: pointer; outline: none; font-size: var(--texto-14);
+  background-image: repeating-linear-gradient(90deg, var(--guia) 0 1px, transparent 1px 22px);
+  background-size: calc(var(--n) * 22px) 100%; background-repeat: no-repeat; background-position: calc(var(--esp-4) + 6px) 0;
+}
+.arvc__linha--sel { background-color: var(--cor-info-fundo); font-weight: 700; color: var(--cor-acao-escura); box-shadow: inset 0 1px 0 var(--cor-acao), inset 0 -1px 0 var(--cor-acao); }
+.arvc__linha:focus-visible { box-shadow: inset 0 0 0 2px var(--cor-foco); }
+.arvc__seta { flex: 0 0 14px; color: var(--cor-texto-2); }
+.arvc__codigo { flex: 0 0 auto; min-width: var(--larg, 2ch); font-weight: 600; font-variant-numeric: tabular-nums; margin-right: var(--esp-2); }
+.arvc__nome { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arvc__nome--falta { color: var(--cor-texto-2); font-weight: 400; }
+.arvc__contagem { flex: 0 0 auto; margin-left: auto; padding-left: var(--esp-3); color: var(--cor-texto-2); font-size: var(--texto-14); font-weight: 600; }
+.arvc__linha:not(.arvc__linha--sel):hover { background-color: var(--cor-pagina); }
+@media (prefers-reduced-motion: no-preference) {
+  .arvc__linha { transition: background-color var(--mov-curto, 120ms) cubic-bezier(0.23, 1, 0.32, 1); }
+  .arvc__linha:focus-visible { transition: none; }
+}
+
+.arvc__espera { display: flex; align-items: center; gap: var(--esp-3); min-height: 36px; padding: 0 var(--esp-4) 0 calc(var(--esp-4) + var(--n, 0) * 22px + 20px); color: var(--cor-texto-2); font-size: var(--texto-14); border-bottom: 1px solid var(--cor-linha); }
+.arvc__espera--esq { flex-direction: column; align-items: stretch; justify-content: center; gap: var(--esp-3); padding-top: var(--esp-3); padding-bottom: var(--esp-3); }
+.arvc__espera--esq .esqueleto { height: 14px; }
+.arvc__espera--erro { color: var(--cor-rejeicao-texto); }
+.arvc__vazio { margin: 0; padding: var(--esp-4); color: var(--cor-texto-2); }
+
+/* Detalhe sob a linha (abaixo de 1100 px) */
+.arvc__detalhe { padding: var(--esp-3) var(--esp-4) var(--esp-3) calc(var(--esp-4) + var(--n, 0) * 22px + 36px); background: var(--cor-pagina); border-top: 1px solid var(--cor-linha); }
+
+/* Prévia lateral */
+.previa { position: sticky; top: var(--esp-3); display: flex; flex-direction: column; gap: var(--esp-3); max-height: clamp(320px, calc(100vh - 300px), 724px); overflow: auto; padding: var(--esp-4); background: var(--cor-superficie); border: 1px solid var(--cor-linha); border-radius: var(--raio-bloco); }
+.previa__cabeca { display: flex; flex-direction: column; gap: var(--esp-1); }
+.previa__codigo { margin: 0; color: var(--cor-texto-2); font-weight: 600; }
+.previa__nome { margin: 0; font-size: var(--texto-18); line-height: 1.25; }
+.previa__sub { margin: 0; color: var(--cor-texto-2); font-size: var(--texto-14); }
+.previa__secao { display: flex; flex-direction: column; gap: var(--esp-2); padding-top: var(--esp-3); border-top: 1px solid var(--cor-linha); }
+.previa__secao h3 { margin: 0; font-size: var(--texto-12); font-weight: 700; color: var(--cor-texto-2); }
+.previa__secao dl { margin: 0; display: flex; flex-direction: column; gap: var(--esp-1); }
+.previa__linha { display: flex; justify-content: space-between; gap: var(--esp-3); font-size: var(--texto-14); }
+.previa__linha dt { color: var(--cor-texto-2); }
+.previa__linha dd { margin: 0; font-weight: 700; text-align: right; }
+.previa__linha--forte dt, .previa__linha--forte dd { color: var(--cor-texto); font-weight: 700; }
+.previa__itens { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr auto; gap: var(--esp-2) var(--esp-3); }
+.previa__itens li { display: contents; }
+.previa__item-valor { text-align: right; font-weight: 700; font-size: var(--texto-14); }
+.previa__item-nome { grid-column: 1 / -1; font-size: var(--texto-14); margin-top: calc(var(--esp-1) * -1); }
+.previa__mais { margin: 0; color: var(--cor-texto-2); font-size: var(--texto-14); }
+.previa__acao { margin-top: auto; padding-top: var(--esp-2); }
+.previa__compacta { display: flex; flex-direction: column; gap: var(--esp-1); align-items: flex-start; }
+.previa__compacta .previa__sub, .previa__total { margin: 0; font-size: var(--texto-14); }
+.previa__compacta .botao { margin-top: var(--esp-2); }
+.previa__codigos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--esp-1); font-size: var(--texto-14); }
+.previa__acao { display: flex; flex-wrap: wrap; align-items: center; gap: var(--esp-2); }
+.arvc__linha .marcas-linha { flex: none; margin-left: var(--esp-2); }
+/* Na prévia que rola por dentro, as ações ficam sempre à vista no pé */
+.previa > .previa__acao { position: sticky; bottom: calc(var(--esp-4) * -1); margin: 0 calc(var(--esp-4) * -1) calc(var(--esp-4) * -1); padding: var(--esp-3) var(--esp-4); background: var(--cor-superficie); border-top: 1px solid var(--cor-linha); }
+
+/* Pai (tem filhos) x item final: o pai é negrito, com seta; o final é leve, com ponto */
+.arvc__linha--pai .arvc__codigo, .arvc__linha--pai .arvc__nome { font-weight: 700; }
+.arvc__linha--folha .arvc__codigo { font-weight: 500; }
+.arvc__linha--folha .arvc__nome:not(.arvc__nome--falta) { font-weight: 400; }
+.arvc__linha--folha .arvc__seta { text-align: center; font-size: 10px; }
+.arvc__linha--pai:not(.arvc__linha--sel) { background-color: var(--cor-pagina); }
+.arvc__linha--pai:not(.arvc__linha--sel):hover { background-color: var(--cor-info-fundo); }
+.arvc__linha--sel .arvc__nome, .arvc__linha--sel .arvc__codigo { font-weight: 700; }
+.previa__secao .botao { align-self: flex-start; padding: 0; min-height: 24px; font-size: var(--texto-14); color: var(--cor-acao); }
