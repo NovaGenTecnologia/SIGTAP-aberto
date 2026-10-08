@@ -4,6 +4,7 @@ import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 import { Shell } from "./Shell";
 import { ProvedorDaSessao } from "./sessao";
 import { ProvedorDeAvisos } from "../componentes/base/Avisos";
+import { TarefasProvider } from "../dados/TarefasProvider";
 import * as comandos from "../api/comandos";
 import * as eventos from "../api/eventos";
 
@@ -14,13 +15,13 @@ const ev = vi.mocked(eventos);
 
 const COMP = (c: string) => ({ competencia: c, rotulo: `${c.slice(4)}/${c.slice(0, 4)}`, arquivo: "", versao: null, publicado_em: "05/10/2026 09:50", sha256: "" });
 const situacaoOk = { primeira_execucao: false, bloqueio: null, competencias: [COMP("202608"), COMP("202609")], territorio: {}, pasta_dados: "", ocupado: false, recuperacao: null };
-const cnesOk = { minha: { uf: "MS", cnes: "2654504", nome: "Hospital Regional" }, unidades: [{ uf: "MS", cnes: "2654504", nome: "Hospital Regional" }], ufs_disponiveis: ["MS"] };
+const cnesOk = { minha: { uf: "MS", cnes: "2654504", nome: "Hospital Regional" }, unidades: [{ uf: "MS", cnes: "2654504", nome: "Hospital Regional" }], ufs: [], ufs_disponiveis: ["MS"] };
 
 function montar() {
   const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={cliente}>
-      <ProvedorDeAvisos><ProvedorDaSessao><Shell><p>conteúdo</p></Shell></ProvedorDaSessao></ProvedorDeAvisos>
+      <ProvedorDeAvisos><TarefasProvider><ProvedorDaSessao><Shell><p>conteúdo</p></Shell></ProvedorDaSessao></TarefasProvider></ProvedorDeAvisos>
     </QueryClientProvider>,
   );
 }
@@ -30,6 +31,7 @@ beforeEach(() => {
   window.location.hash = "#/painel";
   ev.ouvirProgresso.mockResolvedValue(() => {});
   ev.ouvirFimTarefa.mockResolvedValue(() => {});
+  ev.ouvirPedidoDeFechar.mockResolvedValue(() => {});
   m.situacao.mockResolvedValue(situacaoOk);
   m.cnesSituacao.mockResolvedValue(cnesOk);
   m.buscar.mockResolvedValue({ consulta: "consulta", competencia: "202609", modo: "texto", total_procedimentos: 1, apoio: [],
@@ -110,7 +112,7 @@ test("unidade ativa fora da lista de troca rápida continua aparecendo no topo",
 });
 
 test("sem unidade nenhuma o topo oferece escolher em Dados", async () => {
-  m.cnesSituacao.mockResolvedValue({ minha: null, unidades: [], ufs_disponiveis: [] });
+  m.cnesSituacao.mockResolvedValue({ minha: null, unidades: [], ufs: [], ufs_disponiveis: [] });
   montar();
   expect(await screen.findByRole("link", { name: "Escolher unidade" })).toHaveAttribute("href", "#/dados");
 });
@@ -142,4 +144,14 @@ test("trocar a unidade chama o backend e atualiza a lista", async () => {
   await u.click(await screen.findByRole("button", { name: /Trocar unidade/ }));
   await u.click(await screen.findByRole("menuitem", { name: /UPA Centro/ }));
   expect(m.unidadeDefinir).toHaveBeenCalledWith("MS", "7");
+});
+
+test("a lista de unidades termina com o atalho para adicionar outra, que abre Dados", async () => {
+  const u = userEvent.setup();
+  montar();
+  await u.click(await screen.findByRole("button", { name: /Trocar unidade/ }));
+  const itens = await screen.findAllByRole("menuitem");
+  expect(itens.at(-1)).toHaveTextContent("Adicionar unidade");
+  await u.click(itens.at(-1)!);
+  expect(window.location.hash).toBe("#/dados");
 });

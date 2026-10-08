@@ -1,0 +1,12 @@
+.sobre { display: flex; flex-direction: column; gap: var(--esp-3); }
+.sobre__versao { font-size: var(--texto-16); }
+.sobre__promessas { margin: 0; display: grid; gap: var(--esp-2); }
+.sobre__promessas dt { font-weight: 700; }
+.sobre__promessas dd { margin: 0; color: var(--cor-texto-2); }
+.sobre__acoes { display: flex; flex-wrap: wrap; gap: var(--esp-2); }
+.sobre__resultado:empty { display: none; }
+.sobre__apoio { display: flex; flex-direction: column; gap: var(--esp-2); border-top: 1px solid var(--cor-linha); padding-top: var(--esp-3); }
+.sobre__pix { display: flex; gap: var(--esp-4); align-items: center; }
+.sobre__pix img { background: #fff; border-radius: var(--raio-controle); flex: none; }
+.sobre__pix code { display: block; overflow-wrap: anywhere; margin-bottom: var(--esp-2); }
+.sobre__nota { color: var(--cor-texto-2); font-size: var(--texto-12); }

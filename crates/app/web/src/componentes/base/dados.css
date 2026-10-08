@@ -1,9 +1,9 @@
 .tabela { border: 1px solid var(--cor-linha); border-radius: var(--raio-bloco); background: var(--cor-superficie); overflow: hidden; }
 .tabela__grade { width: 100%; height: 100%; overflow: auto; outline: none; }
 .tabela__cabeca { background: var(--cor-pagina); }
-.tabela__coluna { padding: 0 var(--esp-3); text-align: left; font-size: var(--texto-12); font-weight: 700; color: var(--cor-texto-2); cursor: default; }
+.tabela__coluna { display: flex; align-items: center; height: 100%; background: var(--cor-pagina); border-bottom: 1px solid var(--cor-linha); padding: 0 var(--esp-3); text-align: left; font-size: var(--texto-12); font-weight: 700; color: var(--cor-texto-2); cursor: default; }
 .tabela__coluna[data-allows-sorting] { cursor: pointer; }
-.tabela__coluna--num { text-align: right; }
+.tabela__coluna--num { text-align: right; justify-content: flex-end; }
 .tabela__coluna[data-focus-visible] { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: -3px; }
 .tabela__linha { border-top: 1px solid var(--cor-linha); cursor: default; }
 .tabela__linha[data-hovered] { background: var(--cor-pagina); }

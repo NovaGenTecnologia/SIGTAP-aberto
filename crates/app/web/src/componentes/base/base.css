@@ -9,6 +9,10 @@
 }
 .botao[data-hovered] { background: var(--cor-pagina); }
 .botao[data-pressed] { background: var(--cor-linha); }
+@media (prefers-reduced-motion: no-preference) {
+  .botao { transition: background-color var(--mov-curto), border-color var(--mov-curto), transform 120ms cubic-bezier(0.23, 1, 0.32, 1); }
+  .botao[data-pressed] { transform: scale(0.97); }
+}
 .botao[data-focus-visible] { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: 2px; }
 .botao[data-disabled] { color: var(--cor-texto-3); border-color: var(--cor-linha); background: var(--cor-pagina); cursor: default; }
 .botao[data-pending] { cursor: progress; }
@@ -40,10 +44,25 @@
 .campo__ajuda { font-size: var(--texto-12); color: var(--cor-texto-2); }
 .campo__erro { font-size: var(--texto-12); color: var(--cor-rejeicao-texto); }
 .campo__limpar { min-width: var(--altura-controle); min-height: var(--altura-controle); border: 0; background: transparent; cursor: pointer; color: var(--cor-texto-2); }
+/* Busca: o botão de limpar fica dentro do campo; o "x" nativo do navegador não aparece (seria um segundo botão) */
+.campo--busca .campo__linha { position: relative; }
+.campo--busca .campo__entrada { padding-right: var(--altura-controle); }
+.campo--busca .campo__entrada::-webkit-search-cancel-button { display: none; }
+.campo--busca .campo__limpar { position: absolute; right: 0; top: 50%; transform: translateY(-50%); }
+.campo--busca .campo__limpar[data-empty] { display: none; }
 .campo__limpar[data-focus-visible] { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: -2px; }
 .selecao__botao { display: flex; align-items: center; justify-content: space-between; text-align: left; cursor: pointer; }
 
 /* Balão e lista */
+@media (prefers-reduced-motion: no-preference) {
+  /* O balão nasce do botão que o abriu (origem no gatilho); sai mais rápido do que entra. */
+  .balao { transform-origin: var(--trigger-anchor-point, top); }
+  .balao { transform-origin: var(--trigger-anchor-point, center); }
+  .balao[data-entering] { animation: balao-entra 140ms cubic-bezier(0.23, 1, 0.32, 1); }
+  .balao[data-exiting] { animation: balao-sai 90ms cubic-bezier(0.23, 1, 0.32, 1) forwards; }
+}
+@keyframes balao-entra { from { opacity: 0; transform: scale(0.96); } }
+@keyframes balao-sai { to { opacity: 0; transform: scale(0.98); } }
 .balao { background: var(--cor-superficie); border: 1px solid var(--cor-linha-controle); border-radius: var(--raio-bloco); box-shadow: var(--sombra-flutuante); min-width: var(--trigger-width); }
 .lista { max-height: 320px; overflow: auto; padding: var(--esp-1); outline: none; }
 .lista__item { display: block; padding: var(--esp-2) var(--esp-3); border-radius: var(--raio-controle); cursor: pointer; }
@@ -76,6 +95,13 @@
 /* Progresso */
 .progresso { width: 100%; }
 .progresso__trilho { height: 8px; border-radius: 4px; background: var(--cor-linha); overflow: hidden; }
-.progresso__barra { height: 100%; background: var(--cor-acao); transition: width var(--mov-medio); }
-.progresso__barra[data-indeterminado] { width: 35%; animation: desliza 1.2s ease-in-out infinite alternate; }
-@keyframes desliza { from { transform: translateX(0); } to { transform: translateX(185%); } }
+.progresso__barra { position: relative; height: 100%; border-radius: 4px; background: var(--cor-acao); overflow: hidden; transition: width 480ms cubic-bezier(0.22, 1, 0.36, 1); }
+.progresso__barra[data-indeterminado] { width: 35%; transition: none; }
+.lista__item[data-separado] { margin-top: var(--esp-1); border-top: 1px solid var(--cor-linha); border-radius: 0 0 var(--raio-controle) var(--raio-controle); padding-top: calc(var(--esp-2) + var(--esp-1)); }
+@media (prefers-reduced-motion: no-preference) {
+  /* Brilho que percorre a parte já preenchida: mostra que o trabalho continua mesmo quando o número demora a mudar. */
+  .progresso__barra:not([data-indeterminado])::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / 0.38) 50%, transparent 70%); transform: translateX(-100%); animation: progresso-brilho 1.8s ease-in-out infinite; }
+  .progresso__barra[data-indeterminado] { animation: progresso-vai-e-volta 1.4s cubic-bezier(0.65, 0, 0.35, 1) infinite alternate; }
+}
+@keyframes progresso-brilho { to { transform: translateX(100%); } }
+@keyframes progresso-vai-e-volta { from { transform: translateX(-10%); } to { transform: translateX(185%); } }

@@ -2,7 +2,7 @@ import { lazy, Suspense } from "react";
 import { useRota } from "../shell/rotas";
 import { Conferir } from "./Conferir";
 import { Consultar } from "./Consultar";
-import { Dados } from "./Dados";
+import { Dados } from "./dados/Dados";
 import { Mudancas } from "./Mudancas";
 import { Painel } from "./Painel";
 

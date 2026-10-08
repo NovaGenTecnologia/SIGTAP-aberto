@@ -11,12 +11,12 @@
   --cor-texto-2: #3F4C59;
   --cor-texto-3: #56626E;
   /* Linhas: decorativa e de controle (3:1) */
-  --cor-linha: #D9DEE4;
+  --cor-linha: #D5DBE3;
   --cor-linha-controle: #76828F;
   /* Ação, foco e item ativo do trilho */
-  --cor-acao: #0B4FB3;
-  --cor-acao-escura: #083C8C;
-  --cor-foco: #0B4FB3;
+  --cor-acao: #0A3D91;
+  --cor-acao-escura: #082C6C;
+  --cor-foco: #0A3D91;
   --cor-foco-sobre-casco: #FFFFFF;
   --cor-item-ativo: #E6EEFA;
   /* Estados: forte, fundo, texto */

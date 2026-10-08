@@ -1,0 +1,22 @@
+.rodape-tarefas { display: flex; align-items: center; gap: var(--esp-3); min-width: 0; }
+.rodape-tarefas__lento { color: var(--cor-texto-2); white-space: nowrap; }
+.rodape-tarefas__abrir { display: flex; align-items: center; gap: var(--esp-4); min-width: 0; height: 24px; padding: 0 var(--esp-2); border: 0; border-radius: var(--raio-controle, 4px); background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.rodape-tarefas__abrir[data-hovered] { background: var(--cor-fundo-2, #e8ecf0); }
+.rodape-tarefas__abrir[data-focus-visible] { outline: 2px solid var(--cor-foco, #0a3d91); outline-offset: 1px; }
+.rodape-tarefas__item { display: flex; align-items: center; gap: var(--esp-2); min-width: 0; }
+.rodape-tarefas__item--falha { color: var(--cor-perigo, #b3261e); font-weight: 600; }
+.rodape-tarefas__nome { font-weight: 600; color: var(--cor-texto); }
+.rodape-tarefas__barra { width: 72px; }
+.rodape-tarefas__pct { min-width: 3ch; text-align: right; font-variant-numeric: tabular-nums; }
+.rodape-tarefas__fila { white-space: nowrap; }
+.rodape-tarefas__balao { width: 380px; max-width: calc(100vw - 32px); }
+.rodape-tarefas__detalhe { display: flex; flex-direction: column; outline: none; }
+.rodape-tarefas__bloco { display: flex; flex-direction: column; gap: var(--esp-1, 4px); padding: var(--esp-3) var(--esp-4); border-bottom: 1px solid var(--cor-linha); }
+.rodape-tarefas__bloco header { display: flex; align-items: center; justify-content: space-between; gap: var(--esp-3); }
+.rodape-tarefas__bloco p { margin: 0; overflow-wrap: anywhere; }
+.rodape-tarefas__mensagem { color: var(--cor-texto-2); font-size: var(--texto-12); }
+.rodape-tarefas__acoes { display: flex; gap: var(--esp-2); margin-top: var(--esp-2); }
+@media (max-width: 1100px) {
+  .rodape-tarefas__barra { width: 48px; }
+  .rodape-tarefas__lento { display: none; }
+}

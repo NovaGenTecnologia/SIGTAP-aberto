@@ -4,7 +4,7 @@ import "./superficie.css";
 
 export interface MenuProps {
   rotulo: string;
-  itens: { id: string; rotulo: string }[];
+  itens: { id: string; rotulo: string; separado?: boolean }[];
   aoEscolher: (id: string) => void;
   children: ReactNode;
 }
@@ -17,7 +17,7 @@ export function Menu({ rotulo, itens, aoEscolher, children }: MenuProps) {
       </Button>
       <Popover className="balao">
         <MenuRAC aria-label={rotulo} items={itens} onAction={(k) => aoEscolher(String(k))} className="lista">
-          {(i) => <MenuItem id={i.id} textValue={i.rotulo} className="lista__item">{i.rotulo}</MenuItem>}
+          {(i) => <MenuItem id={i.id} textValue={i.rotulo} className="lista__item" data-separado={i.separado || undefined}>{i.rotulo}</MenuItem>}
         </MenuRAC>
       </Popover>
     </MenuTrigger>

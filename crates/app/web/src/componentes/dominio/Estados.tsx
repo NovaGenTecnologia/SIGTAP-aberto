@@ -1,4 +1,5 @@
 import { Botao } from "../base/Botao";
+import { Marca } from "./Marca";
 import { useEspera } from "./useEspera";
 import "./dominio.css";
 
@@ -29,11 +30,11 @@ export function Carregando({ rotulo = "Carregando" }: { rotulo?: string }) {
   );
 }
 
-export function CarregandoComEspera({ rotulo }: { rotulo: string }) {
+export function CarregandoComEspera({ rotulo, semIndicador = false }: { rotulo: string; semIndicador?: boolean }) {
   const { segundos, contador, aviso } = useEspera(true);
   return (
     <div className="carregando carregando--espera" role="status" aria-busy="true" aria-label={rotulo}>
-      <span className="pontos" aria-hidden="true"><i /><i /><i /></span>
+      {!semIndicador && <Marca variante="simbolo" animacao="carregando" altura={24} decorativa />}
       <span>{rotulo}</span>
       {contador && <span className="num carregando__tempo">{segundos} s</span>}
       {aviso && <span className="carregando__aviso">Ainda em andamento</span>}

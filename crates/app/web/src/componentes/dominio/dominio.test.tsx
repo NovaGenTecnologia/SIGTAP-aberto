@@ -95,3 +95,14 @@ test("SerieMensal descreve os pontos e marca o mês incompleto", () => {
   expect(screen.getByRole("img", { name: /Valor aprovado por mês/ })).toBeInTheDocument();
   expect(screen.getByText(/07\/2026.*incompleto/i)).toBeInTheDocument();
 });
+
+test("CarregandoComEspera mostra o símbolo animado e continua anunciando o rótulo", () => {
+  const { container } = render(<CarregandoComEspera rotulo="Carregando dados" />);
+  expect(screen.getByRole("status", { name: "Carregando dados" })).toBeInTheDocument();
+  expect(container.querySelector("svg.marca--carregando")).toHaveAttribute("aria-hidden", "true");
+});
+
+test("CarregandoComEspera sem indicador não repete a marca", () => {
+  const { container } = render(<CarregandoComEspera rotulo="Abrindo o programa" semIndicador />);
+  expect(container.querySelector("svg")).toBeNull();
+});

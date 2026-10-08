@@ -11,3 +11,13 @@ export function rotuloCompetencia(c: string): string {
 export function ordenarCompetencias<T extends { competencia: string }>(lista: T[]): T[] {
   return [...lista].sort((a, b) => a.competencia.localeCompare(b.competencia));
 }
+
+const decimal = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
+/** Tamanho de arquivo em B, KB, MB ou GB (base 1024), com vírgula decimal. */
+export function tamanho(bytes: number): string {
+  if (bytes < 1024) return `${inteiro(bytes)} B`;
+  const unidades = ["KB", "MB", "GB", "TB"];
+  let valor = bytes / 1024, i = 0;
+  while (valor >= 1024 && i < unidades.length - 1) { valor /= 1024; i++; }
+  return `${decimal.format(valor)} ${unidades[i]}`;
+}

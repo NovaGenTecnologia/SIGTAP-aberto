@@ -1,4 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 const cli = process.env.SA_PONTE_CLI;
@@ -9,17 +11,33 @@ if (!cli || !banco || !dados) {
 }
 const raizRepo = path.resolve(import.meta.dirname, "..", "..", "..");
 
+// O assistente roda numa pasta de dados vazia e numa ponte própria em modo primeira execução. O CNES "baixado" vem de uma
+// cópia local de desenvolvimento (nunca da rede); o estado da ponte muda a cada passo, então o servidor não é reaproveitado.
+const origemCnes = path.resolve(dados, "..", "cnes", "MS");
+const dadosVazios = fs.mkdtempSync(path.join(os.tmpdir(), "sigtap-assistente-"));
+const python = process.env.SA_PYTHON ?? "python";
+const ponte = path.join(raizRepo, "scripts", "dev", "ponte_ui.py");
+const dist = path.join(import.meta.dirname, "dist");
+
 export default defineConfig({
   testDir: "e2e",
   timeout: 30_000,
   workers: 1,
   reporter: [["list"]],
-  use: { baseURL: "http://127.0.0.1:8765" },
+  use: { baseURL: "http://127.0.0.1:8765", reducedMotion: "reduce" }, // a abertura de 2 s é provada em marca.spec.ts
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1366, height: 768 } } }],
-  webServer: {
-    command: `${process.env.SA_PYTHON ?? "python"} "${path.join(raizRepo, "scripts", "dev", "ponte_ui.py")}" --raiz "${path.join(import.meta.dirname, "dist")}" --cli "${cli}" --banco "${banco}" --dados "${dados}"`,
-    url: "http://127.0.0.1:8765/",
-    reuseExistingServer: true,
-    timeout: 30_000,
-  },
+  webServer: [
+    {
+      command: `${python} "${ponte}" --raiz "${dist}" --cli "${cli}" --banco "${banco}" --dados "${dados}"`,
+      url: "http://127.0.0.1:8765/",
+      reuseExistingServer: true,
+      timeout: 30_000,
+    },
+    {
+      command: `${python} "${ponte}" --porta 8766 --primeira --raiz "${dist}" --cli "${cli}" --banco "${banco}" --dados "${dadosVazios}" --cnes-origem "${origemCnes}"`,
+      url: "http://127.0.0.1:8766/",
+      reuseExistingServer: false,
+      timeout: 30_000,
+    },
+  ],
 });

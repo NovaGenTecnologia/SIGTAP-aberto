@@ -57,3 +57,16 @@ test("a escala tipográfica e o espaço existem", () => {
     expect(css).toContain(n + ":");
   }
 });
+
+// Identidade aprovada (marca/guia.html): o casco é a marca E a ação principal; a linha decorativa é #D5DBE3.
+test("a ação principal e o foco usam o casco da identidade aprovada", () => {
+  const t = tokens();
+  expect(t["cor-casco"]).toBe("#0A3D91");
+  expect(t["cor-acao"]).toBe(t["cor-casco"]);
+  expect(t["cor-foco"]).toBe(t["cor-casco"]);
+  expect(t["cor-acao-escura"]).toBe(t["cor-casco-escuro"]);
+  expect(t["cor-linha"]).toBe("#D5DBE3");
+  expect(t["cor-pagina"]).toBe("#F2F4F7");
+  expect(t["cor-texto"]).toBe("#14202B");
+  expect(t["cor-texto-2"]).toBe("#3F4C59");
+});

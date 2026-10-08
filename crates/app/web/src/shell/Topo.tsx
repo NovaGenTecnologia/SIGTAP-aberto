@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { CompetenciaInfo } from "../api/tipos";
 import { Botao } from "../componentes/base/Botao";
 import { Menu } from "../componentes/base/Menu";
+import { Marca } from "../componentes/dominio/Marca";
 import { Sobre } from "../telas/Sobre";
 import { PaletaDeBusca } from "./PaletaDeBusca";
 import { SeletorDeCompetencia } from "./SeletorDeCompetencia";
@@ -19,7 +20,7 @@ export function Topo({ competencias, bloqueado }: { competencias: CompetenciaInf
   }, [bloqueado]);
   return (
     <header className="topo">
-      <div className="topo__marca"><strong>SIGTAP</strong> Aberto</div>
+      <div className="topo__marca"><Marca variante="horizontal" tema="negativo" altura={28} /></div>
       <TrocaDeUnidade desativado={bloqueado} />
       <div className="topo__espaco" />
       <Botao onPress={() => setPaleta(true)} isDisabled={bloqueado}>

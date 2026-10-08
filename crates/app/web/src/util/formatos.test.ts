@@ -15,3 +15,8 @@ test("rotuloCompetencia converte AAAAMM em MM/AAAA", () => {
   expect(rotuloCompetencia("202609")).toBe("09/2026");
   expect(rotuloCompetencia("x")).toBe("x");
 });
+
+import { tamanho } from "./formatos";
+test.each([
+  [0, "0 B"], [512, "512 B"], [1536, "1,5 KB"], [734003200, "700 MB"], [1375874564, "1,3 GB"], [135774208, "129,5 MB"],
+])("tamanho(%i) = %s", (bytes, texto) => expect(tamanho(bytes)).toBe(texto));

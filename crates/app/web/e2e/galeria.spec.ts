@@ -31,6 +31,6 @@ test("respeita prefers-reduced-motion", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/#/galeria");
   await expect(page.getByRole("heading", { level: 1, name: "Galeria de componentes" })).toBeVisible();
-  const duracao = await page.evaluate(() => getComputedStyle(document.querySelector(".pontos i")!).animationDuration);
-  expect(parseFloat(duracao)).toBeLessThan(0.05);
+  const nome = await page.evaluate(() => getComputedStyle(document.querySelector(".marca--carregando .marca__arco")!).animationName);
+  expect(nome).toBe("marca-arco-lento"); // movimento reduzido: o carregamento deriva da animação sutil
 });

@@ -7,6 +7,10 @@ export interface Coluna<L> {
   rotulo: string;
   ordenavel?: boolean;
   numerica?: boolean;
+  /** Largura em porcentagem da tabela ("20%"). Sem isso, as colunas dividem a largura por igual. */
+  largura?: `${number}%`;
+  /** Menor largura em px: abaixo dela a tabela rola por dentro em vez de cortar a coluna. */
+  larguraMinima?: number;
   celula: (linha: L) => ReactNode;
 }
 
@@ -29,14 +33,14 @@ export function TabelaDeDados<L extends { id: string }>({ rotulo, colunas, linha
           className="tabela__grade">
           <TableHeader columns={colunas} className="tabela__cabeca">
             {(c) => (
-              <Column id={c.id} isRowHeader={c.id === colunas[0]?.id} allowsSorting={c.ordenavel} className={`tabela__coluna${c.numerica ? " tabela__coluna--num" : ""}`}>
+              <Column id={c.id} width={c.largura} minWidth={c.larguraMinima} isRowHeader={c.id === colunas[0]?.id} allowsSorting={c.ordenavel} className={`tabela__coluna${c.numerica ? " tabela__coluna--num" : ""}`}>
                 {({ sortDirection }) => (<>{c.rotulo}{sortDirection && <span aria-hidden="true">{sortDirection === "ascending" ? " ▲" : " ▼"}</span>}</>)}
               </Column>
             )}
           </TableHeader>
-          <TableBody items={linhas} renderEmptyState={() => <p className="tabela__vazia">Nenhum resultado.</p>}>
+          <TableBody items={linhas} dependencies={[colunas]} renderEmptyState={() => <p className="tabela__vazia">Nenhum resultado.</p>}>
             {(l) => (
-              <Row id={l.id} columns={colunas} className="tabela__linha">
+              <Row id={l.id} columns={colunas} dependencies={[colunas]} className="tabela__linha">
                 {(c) => <Cell className={`tabela__celula${c.numerica ? " tabela__celula--num num" : ""}`}>{c.celula(l)}</Cell>}
               </Row>
             )}
