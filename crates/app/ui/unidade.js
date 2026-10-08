@@ -316,7 +316,7 @@ function blocoRede(codigo) {
 }
 
 // ---------- tela Minha unidade ----------
-const ABAS_UNIDADE = ["Procedimentos", "Habilitações", "Serviços", "Leitos", "Equipamentos", "Profissionais"];
+const ABAS_UNIDADE = ["Procedimentos", "Habilitações", "Serviços", "Leitos", "Equipamentos", "Produção", "Profissionais"];
 const semAcento = (s) => String(s).toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[̀-ͯ]/g, "");
 /** Tabela com filtro por texto e limite de linhas desenhadas (listas grandes, como profissionais). */
 function tabelaFiltravel(colunas, linhas, opc) {
@@ -421,20 +421,28 @@ async function telaUnidade(c, aba) {
     ...u.gerais.slice(0, 2).filter(([, cd]) => cd.nome || cd.codigo).map(([r, cd]) => el("div", {}, el("dt", { text: r }), el("dd", { text: capitalizar(cd.nome || cd.codigo) })))));
   if (u.pessoa_fisica) pg.append(el("p", { class: "aviso", text: "Estabelecimento de pessoa física: dados do titular omitidos." }));
 
-  const contagem = { "Procedimentos": null, "Habilitações": u.habilitacoes.length, "Serviços": u.servicos.length, "Leitos": u.leitos.length, "Equipamentos": u.equipamentos.length,
+  const contagem = { "Produção": null, "Procedimentos": null, "Habilitações": u.habilitacoes.length, "Serviços": u.servicos.length, "Leitos": u.leitos.length, "Equipamentos": u.equipamentos.length,
     "Profissionais": u.ocupacoes ? u.ocupacoes.reduce((s, o) => s + o.profissionais, 0) : null };
   pg.append(el("div", { class: "abas uni-abas", role: "tablist" }, ABAS_UNIDADE.filter((n) => n !== "Profissionais" || u.ativa).map((n) => el("button", { class: "aba", role: "tab", type: "button", "aria-selected": String(n === aba),
     onclick: () => ir({ tipo: "unidade", uf: alvo && alvo.uf, cnes: alvo && alvo.cnes, aba: n }, { substituir: true }) }, n, contagem[n] === null ? null : el("small", { text: F.inteiro(contagem[n]) })))));
   const corpo = el("div", { class: "uni-corpo" });
   pg.append(corpo);
   const vazio = (t) => corpo.append(el("p", { class: "quieto", text: t }));
-  if (aba === "Procedimentos") {
+  if (aba === "Procedimentos" && E.rota.visao === "producao" && temProducao(u.uf)) {
+    corpo.append(chavesDeVisaoProcedimentos(u, alvo));
+    const area = el("div");
+    corpo.append(area);
+    await procedimentosComProducao(area, u);
+  } else if (aba === "Procedimentos") {
+    const visao = chavesDeVisaoProcedimentos(u, alvo);
+    if (visao) corpo.append(visao);
     corpo.append(carregando("Conferindo os procedimentos…"));
     let lista;
     try { lista = await invoke("unidade_procedimentos", { competencia: E.comp, uf: u.uf, cnes: u.cnes }); }
     catch (e) { limpar(corpo).append(erro(e)); lista = null; }
     if (lista) {
       limpar(corpo);
+      if (visao) corpo.append(visao);
       const ROT = { apta: "habilitada", ressalva: "a confirmar" };
       const so = lista;
       if (!so.length) corpo.append(el("p", { class: "quieto", text: "Nenhum procedimento habilitado pelo cadastro." }));
@@ -458,6 +466,7 @@ async function telaUnidade(c, aba) {
         el("td", { class: "mono curta", text: vigencia(h.fim) ? `${F.competencia(h.inicio)} a ${vigencia(h.fim)}` : `desde ${F.competencia(h.inicio)}` }),
         el("td", {}, h.portaria || "—", h.data_portaria ? el("span", { class: "nomeado", text: `de ${h.data_portaria}` }) : null),
         el("td", { class: "num", text: h.leitos ? F.inteiro(h.leitos) : "—" })]))));
+    await blocoHabilitacoesProducao(corpo, u);
   } else if (aba === "Serviços") {
     if (!u.servicos.length) vazio("O cadastro não tem serviços especializados para esta unidade.");
     else corpo.append(...tabelaFiltravel([["Serviço"], ["Classificação"], ["Ambulatorial SUS"], ["Hospitalar SUS"], ["Terceiro"]],
@@ -473,12 +482,15 @@ async function telaUnidade(c, aba) {
         el("td", { text: l.tipo.nome || l.tipo.codigo }),
         el("td", { class: "codnome" }, el("span", { class: "mono", text: l.especialidade.codigo }), el("span", { class: "nome", text: capitalizar(l.especialidade.nome || "") })),
         el("td", { class: "num", text: F.inteiro(l.existentes) }), el("td", { class: "num", text: F.inteiro(l.sus) }), el("td", { class: "num", text: F.inteiro(l.nao_sus) })]))));
+    await blocoLeitosProducao(corpo, u);
   } else if (aba === "Equipamentos") {
     if (!u.equipamentos.length) vazio("O cadastro não tem equipamentos para esta unidade.");
     else corpo.append(...tabelaFiltravel([["Equipamento"], ["Existentes", "num"], ["Em uso", "num"], ["Disponível ao SUS"]],
       u.equipamentos.map((e) => linhaT(`${e.equipamento.codigo} ${e.equipamento.nome || ""}`, () => [
         el("td", { class: "codnome" }, el("span", { class: "mono", text: e.equipamento.codigo }), el("span", { class: "nome", text: (e.equipamento.nome || "").replace(/^\d+-/, "") })),
         el("td", { class: "num", text: F.inteiro(e.existentes) }), el("td", { class: "num", text: F.inteiro(e.em_uso) }), el("td", { text: simNao(e.disponivel_sus) })]))));
+  } else if (aba === "Produção") {
+    await abaProducao(corpo, u);
   } else {
     if (!u.ocupacoes) {
       corpo.append(el("section", { class: "bloco convite" },

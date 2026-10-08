@@ -7,15 +7,19 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod servico;
+mod tarefas;
 mod unidade;
 
 use sa_core::Competencia;
 use sa_download::atualizador;
-use servico::{Emissor, FimTarefa, Pastas, PedidoDownload, Servico};
+use servico::{Emissor, Pastas, PedidoDownload, Servico};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
-use tauri::{AppHandle, Emitter, State, WebviewUrl, WebviewWindowBuilder};
+use tarefas::{Contexto, Fonte, Quando, Recibo};
+use tauri::{
+    AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    window::Color,
+};
 
 type Estado<'a> = State<'a, Arc<Servico>>;
 
@@ -49,6 +53,19 @@ async fn buscar(
     s.com_consulta(|q| {
         let c = s.competencia(q, competencia.as_deref())?;
         json(q.buscar(c, &texto).map_err(|e| e.to_string())?)
+    })
+}
+
+/// A busca com todos os procedimentos encontrados, para exportar a lista inteira.
+#[tauri::command]
+async fn buscar_todos(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    texto: String,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|q| {
+        let c = s.competencia(q, competencia.as_deref())?;
+        json(q.buscar_todos(c, &texto).map_err(|e| e.to_string())?)
     })
 }
 
@@ -149,12 +166,17 @@ async fn verificar_bancos(s: Estado<'_>, completo: bool) -> Result<serde_json::V
 
 /// Refaz os bancos a partir dos ZIPs e arquivos guardados.
 #[tauri::command]
-fn recriar_banco(app: AppHandle, s: Estado<'_>, forcar: Option<bool>) -> Result<(), String> {
+fn recriar_banco(app: AppHandle, s: Estado<'_>, forcar: Option<bool>) -> Result<Recibo, String> {
     let s = s.inner().clone();
     let forcar = forcar.unwrap_or(true);
-    em_segundo_plano(app, s, move |sv, emissor, ao_dados| {
-        sv.recriar(emissor, ao_dados, forcar)
-    })
+    em_segundo_plano(
+        app,
+        s,
+        Fonte::Sigtap,
+        "SIGTAP",
+        None,
+        move |sv, ctx, emissor, ao_dados| sv.recriar_com(&ctx.cancelar, emissor, ao_dados, forcar),
+    )
 }
 
 /// Há dados novos no servidor oficial? (não baixa nada)
@@ -261,35 +283,47 @@ async fn consultar_atualizacao() -> Result<serde_json::Value, String> {
 }
 
 /// Baixa a versão nova, confere o SHA-256, troca o executável e reabre o programa.
+/// Exclusiva: não começa com nenhum download em andamento.
 #[tauri::command]
-fn atualizar_programa(app: AppHandle, s: Estado<'_>) -> Result<(), String> {
+fn atualizar_programa(app: AppHandle, s: Estado<'_>) -> Result<Recibo, String> {
     if !atualizador::TROCA_AUTOMATICA {
         return Err("neste sistema o programa ainda não se troca sozinho: baixe a versão nova na página do lançamento (botão Ver a versão nova).".into());
     }
     let s = s.inner().clone();
-    if s.ocupado.swap(true, Ordering::SeqCst) {
+    if s.ocupado() {
         return Err(
             "há uma tarefa em andamento. Espere terminar ou cancele, e atualize depois.".into(),
         );
     }
-    s.cancelar.store(false, Ordering::SeqCst);
-    std::thread::spawn(move || {
-        let avisar = |msg: &str, frac: f64| {
-            let _ = app.emit(
-                "progresso",
-                servico::Progresso {
-                    resumo: "Atualizando o programa".into(),
-                    mensagem: msg.into(),
-                    fracao: frac,
-                    indeterminado: false,
-                },
-            );
-        };
-        let r = (|| -> Result<String, String> {
+    let app2 = app.clone();
+    em_segundo_plano(
+        app,
+        s,
+        Fonte::Sigtap,
+        "Atualização do programa",
+        None,
+        move |sv, ctx, _, _| {
+            let avisar = |msg: &str, frac: f64| {
+                let _ = app2.emit(
+                    "progresso",
+                    servico::ProgressoDeTarefa {
+                        fonte: ctx.fonte,
+                        tarefa: ctx.tarefa,
+                        rotulo: "Atualização do programa".into(),
+                        fase: servico::Fase::Baixando,
+                        progresso: servico::Progresso {
+                            resumo: "Atualizando o programa".into(),
+                            mensagem: msg.into(),
+                            fracao: frac,
+                            indeterminado: false,
+                        },
+                    },
+                );
+            };
             let exe = std::env::current_exe()
                 .map_err(|e| format!("não foi possível localizar o executável ({e})"))?;
             avisar("Consultando a versão mais recente", 0.05);
-            let l = atualizador::consultar(sa_core::REPOSITORIO, &s.cancelar)
+            let l = atualizador::consultar(sa_core::REPOSITORIO, &ctx.cancelar)
                 .map_err(|e| e.to_string())?
                 .filter(|l| atualizador::e_mais_nova(sa_core::VERSAO, &l.versao))
                 .ok_or("não há versão nova para instalar")?;
@@ -300,101 +334,138 @@ fn atualizar_programa(app: AppHandle, s: Estado<'_>) -> Result<(), String> {
             let novo = atualizador::baixar_e_preparar(
                 &l,
                 sa_core::REPOSITORIO,
-                &s.pastas.dados.join("atualizacao"),
-                &s.cancelar,
+                &sv.pastas.dados.join("atualizacao"),
+                &ctx.cancelar,
             )
             .map_err(|e| e.to_string())?;
             avisar("Trocando o programa", 0.9);
             atualizador::trocar(&exe, &novo).map_err(|e| e.to_string())?;
             std::process::Command::new(&exe)
-                .arg("--apos-atualizacao")
-                .spawn()
-                .map_err(|e| format!("a versão {} foi instalada, mas não abriu sozinha ({e}). Abra o programa de novo", l.versao))?;
+            .arg("--apos-atualizacao")
+            .spawn()
+            .map_err(|e| format!("a versão {} foi instalada, mas não abriu sozinha ({e}). Abra o programa de novo", l.versao))?;
+            app2.exit(0);
             Ok(l.versao)
-        })();
-        match r {
-            Ok(_) => app.exit(0),
-            Err(e) => {
-                s.ocupado.store(false, Ordering::SeqCst);
-                let _ = app.emit(
-                    "tarefa_fim",
-                    FimTarefa {
-                        ok: false,
-                        cancelada: false,
-                        mensagem: e,
-                    },
-                );
-            }
-        }
-    });
-    Ok(())
+        },
+    )
 }
 
-/// Roda uma tarefa longa em segundo plano, uma por vez, com eventos `progresso`,
-/// `dados_atualizados` (dados novos no meio da tarefa) e `tarefa_fim`.
+/// Roda uma tarefa longa em segundo plano na vaga da `fonte`: uma por vez em cada fonte (as
+/// seguintes, com `quando = "depois"`, esperam na fila), e fontes diferentes andam juntas.
+/// Eventos: `progresso` (com fonte e tarefa), `dados_atualizados` e `tarefa_fim` (pela Agenda).
 fn em_segundo_plano(
     app: AppHandle,
     s: Arc<Servico>,
-    tarefa: impl FnOnce(&Servico, &Emissor, &(dyn Fn(bool) + Sync)) -> Result<String, String>
+    fonte: Fonte,
+    rotulo: &str,
+    quando: Option<Quando>,
+    tarefa: impl FnOnce(&Servico, &Contexto, &Emissor, &(dyn Fn(bool) + Sync)) -> Result<String, String>
     + Send
     + 'static,
-) -> Result<(), String> {
-    if s.ocupado.swap(true, Ordering::SeqCst) {
-        return Err("já existe uma tarefa em andamento. Espere terminar ou cancele.".into());
-    }
-    s.cancelar.store(false, Ordering::SeqCst);
-    std::thread::spawn(move || {
-        let a = app.clone();
+) -> Result<Recibo, String> {
+    let (sv, nome) = (s.clone(), rotulo.to_string());
+    let trabalho: tarefas::Trabalho = Box::new(move |ctx| {
+        let (a, r, id) = (app.clone(), nome.clone(), ctx.tarefa);
         let emissor: Emissor = Arc::new(move |p| {
-            let _ = a.emit("progresso", p);
+            let _ = a.emit(
+                "progresso",
+                servico::ProgressoDeTarefa {
+                    fonte,
+                    tarefa: id,
+                    rotulo: r.clone(),
+                    fase: servico::fase_da_mensagem(&p.mensagem),
+                    progresso: p,
+                },
+            );
         });
-        let (a, s2) = (app.clone(), s.clone());
+        let (a, s2) = (app.clone(), sv.clone());
         let ao_dados = move |reabrir: bool| {
-            if reabrir && let Err(e) = s2.reabrir() {
+            if reabrir
+                && fonte == Fonte::Sigtap
+                && let Err(e) = s2.reabrir()
+            {
                 eprintln!("Aviso: {e}");
             }
             let _ = a.emit("dados_atualizados", ());
         };
-        let r = tarefa(&s, &emissor, &ao_dados);
-        let reaberto = s.reabrir();
-        let cancelada = s.cancelar.load(Ordering::SeqCst);
-        let fim = match (r, reaberto) {
-            (Ok(m), Ok(())) => FimTarefa {
-                ok: true,
-                cancelada: false,
-                mensagem: m,
-            },
-            (Err(e), _) | (Ok(_), Err(e)) => FimTarefa {
-                ok: false,
-                cancelada,
-                mensagem: e,
-            },
+        let r = tarefa(&sv, ctx, &emissor, &ao_dados);
+        // A consulta do SIGTAP só é reaberta depois de tarefas do SIGTAP.
+        let reaberto = if fonte == Fonte::Sigtap {
+            sv.reabrir()
+        } else {
+            Ok(())
         };
-        s.ocupado.store(false, Ordering::SeqCst);
-        let _ = app.emit("tarefa_fim", fim);
+        match (r, reaberto) {
+            (Ok(m), Ok(())) => Ok(m),
+            (Err(e), _) | (Ok(_), Err(e)) => Err(e),
+        }
     });
-    Ok(())
+    s.agenda
+        .enviar(fonte, rotulo, quando.unwrap_or_default(), trabalho)
 }
 
 #[tauri::command]
-fn baixar(app: AppHandle, s: Estado<'_>, pedido: PedidoDownload) -> Result<(), String> {
+fn baixar(
+    app: AppHandle,
+    s: Estado<'_>,
+    pedido: PedidoDownload,
+    quando: Option<Quando>,
+) -> Result<Recibo, String> {
     let s = s.inner().clone();
-    em_segundo_plano(app, s, move |sv, emissor, ao_dados| {
-        servico::executar_download(&sv.pastas, &pedido, &sv.cancelar, emissor, ao_dados)
-    })
+    em_segundo_plano(
+        app,
+        s,
+        Fonte::Sigtap,
+        "SIGTAP",
+        quando,
+        move |sv, ctx, emissor, ao_dados| {
+            // Um só interruptor para todas as fontes: sem "Manter arquivos baixados", o ZIP sai depois de carregado.
+            let mut pedido = pedido.clone();
+            pedido.apagar_zips = !unidade::producao::manter_brutos(&unidade::local(&sv.pastas));
+            servico::executar_download(&sv.pastas, &pedido, &ctx.cancelar, emissor, ao_dados)
+        },
+    )
 }
 
 #[tauri::command]
-fn importar(app: AppHandle, s: Estado<'_>, pasta: String) -> Result<(), String> {
+fn importar(
+    app: AppHandle,
+    s: Estado<'_>,
+    pasta: String,
+    quando: Option<Quando>,
+) -> Result<Recibo, String> {
     let s = s.inner().clone();
-    em_segundo_plano(app, s, move |sv, emissor, _| {
-        servico::importar(&sv.pastas, &PathBuf::from(pasta), &sv.cancelar, emissor)
-    })
+    em_segundo_plano(
+        app,
+        s,
+        Fonte::Sigtap,
+        "SIGTAP",
+        quando,
+        move |sv, ctx, emissor, _| {
+            servico::importar(&sv.pastas, &PathBuf::from(pasta), &ctx.cancelar, emissor)
+        },
+    )
 }
 
+/// Cancela a fonte pedida (a tarefa em andamento e a fila dela) ou, sem fonte, todas.
 #[tauri::command]
-fn cancelar(s: Estado<'_>) {
-    s.cancelar.store(true, Ordering::SeqCst);
+fn cancelar(s: Estado<'_>, fonte: Option<Fonte>) {
+    match fonte {
+        Some(f) => s.agenda.cancelar(f),
+        None => s.agenda.cancelar_tudo(),
+    }
+}
+
+/// Fechar a janela com download em andamento pede confirmação à interface.
+pub(crate) fn deve_pedir_confirmacao(agenda: &tarefas::Agenda) -> bool {
+    agenda.alguma()
+}
+
+/// Confirmação do usuário: cancela o que está em andamento e fecha o programa.
+#[tauri::command]
+fn fechar_programa(app: AppHandle, s: Estado<'_>) {
+    s.agenda.cancelar_tudo();
+    app.exit(0);
 }
 
 /// Competências do servidor, para os tamanhos dos downloads parciais.
@@ -420,29 +491,56 @@ async fn cnes_situacao(s: Estado<'_>) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-fn cnes_baixar(app: AppHandle, s: Estado<'_>, pedido: unidade::PedidoCnes) -> Result<(), String> {
+fn cnes_baixar(
+    app: AppHandle,
+    s: Estado<'_>,
+    pedido: unidade::PedidoCnes,
+    quando: Option<Quando>,
+) -> Result<Recibo, String> {
     let s = s.inner().clone();
-    em_segundo_plano(app, s, move |sv, emissor, _| {
-        unidade::baixar_cnes(
-            &unidade::local(&sv.pastas),
-            &pedido,
-            &sv.cancelar,
-            &unidade::repassar(emissor),
-        )
-    })
+    let rotulo = format!("CNES de {}", pedido.uf);
+    em_segundo_plano(
+        app,
+        s,
+        Fonte::Cnes,
+        &rotulo,
+        quando,
+        move |sv, ctx, emissor, _| {
+            unidade::baixar_cnes(
+                &unidade::local(&sv.pastas),
+                &pedido,
+                &ctx.cancelar,
+                &unidade::repassar(emissor),
+            )
+        },
+    )
 }
 
 #[tauri::command]
-fn cnes_importar(app: AppHandle, s: Estado<'_>, pasta: String, uf: String) -> Result<(), String> {
+fn cnes_importar(
+    app: AppHandle,
+    s: Estado<'_>,
+    pasta: String,
+    uf: String,
+    quando: Option<Quando>,
+) -> Result<Recibo, String> {
     let s = s.inner().clone();
-    em_segundo_plano(app, s, move |sv, emissor, _| {
-        unidade::importar_cnes(
-            &unidade::local(&sv.pastas),
-            &PathBuf::from(pasta),
-            &uf,
-            &unidade::repassar(emissor),
-        )
-    })
+    let rotulo = format!("CNES de {uf}");
+    em_segundo_plano(
+        app,
+        s,
+        Fonte::Cnes,
+        &rotulo,
+        quando,
+        move |sv, _, emissor, _| {
+            unidade::importar_cnes(
+                &unidade::local(&sv.pastas),
+                &PathBuf::from(pasta),
+                &uf,
+                &unidade::repassar(emissor),
+            )
+        },
+    )
 }
 
 /// Competências do CNES que o servidor oficial tem para a UF.
@@ -464,8 +562,8 @@ async fn cnes_verificar(s: Estado<'_>) -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 async fn cnes_apagar(s: Estado<'_>, uf: String) -> Result<String, String> {
-    if s.ocupado.load(Ordering::SeqCst) {
-        return Err("há uma tarefa em andamento. Espere terminar ou cancele.".into());
+    if s.agenda.ocupada(Fonte::Cnes) {
+        return Err("há um download do CNES em andamento. Espere terminar ou cancele.".into());
     }
     unidade::apagar_uf(&unidade::local(&s.pastas), &uf)
 }
@@ -485,11 +583,6 @@ async fn unidade_definir(
     uf: String,
     cnes: String,
 ) -> Result<serde_json::Value, String> {
-    if s.ocupado.load(Ordering::SeqCst) {
-        return Err(
-            "há uma tarefa em andamento. Espere terminar e escolha a unidade de novo.".into(),
-        );
-    }
     unidade::definir_minha(&unidade::local(&s.pastas), &uf, &cnes)
 }
 
@@ -501,9 +594,6 @@ async fn unidade_limpar(s: Estado<'_>) -> Result<(), String> {
 /// Tira uma unidade da lista de troca rápida.
 #[tauri::command]
 async fn unidade_remover(s: Estado<'_>, uf: String, cnes: String) -> Result<(), String> {
-    if s.ocupado.load(Ordering::SeqCst) {
-        return Err("há uma tarefa em andamento. Espere terminar e tente de novo.".into());
-    }
     unidade::remover_unidade(&unidade::local(&s.pastas), &uf, &cnes)
 }
 
@@ -624,6 +714,245 @@ async fn rede(
             &codigo,
             escopo.as_deref().unwrap_or("municipio"),
         )
+    })
+}
+
+// ---- Fase 4: produção do SUS (SIA, SIH) e rejeições ----
+
+/// Situação do módulo de produção: UFs carregadas e os arquivos somados.
+#[tauri::command]
+async fn producao_situacao(s: Estado<'_>) -> Result<serde_json::Value, String> {
+    Ok(unidade::producao::situacao_producao(&unidade::local(
+        &s.pastas,
+    )))
+}
+
+/// O que seria baixado (arquivos e tamanho), para o usuário confirmar antes.
+#[tauri::command]
+async fn producao_plano(uf: String, meses: Option<usize>) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        unidade::producao::plano_producao(&uf, meses.unwrap_or(0))
+    })
+    .await
+    .map_err(|e| format!("falha interna ao consultar o servidor ({e})"))?
+}
+
+#[tauri::command]
+fn producao_baixar(
+    app: AppHandle,
+    s: Estado<'_>,
+    pedido: unidade::producao::PedidoProducao,
+    quando: Option<Quando>,
+) -> Result<Recibo, String> {
+    let s = s.inner().clone();
+    em_segundo_plano(
+        app,
+        s,
+        Fonte::Producao,
+        "Produção",
+        quando,
+        move |sv, ctx, emissor, _| {
+            unidade::producao::baixar_producao(
+                &unidade::local(&sv.pastas),
+                &pedido,
+                &ctx.cancelar,
+                &unidade::repassar(emissor),
+            )
+        },
+    )
+}
+
+#[tauri::command]
+fn producao_importar(
+    app: AppHandle,
+    s: Estado<'_>,
+    pasta: String,
+    uf: String,
+    quando: Option<Quando>,
+) -> Result<Recibo, String> {
+    let s = s.inner().clone();
+    em_segundo_plano(
+        app,
+        s,
+        Fonte::Producao,
+        "Produção",
+        quando,
+        move |sv, _, emissor, _| {
+            unidade::producao::importar_producao(
+                &unidade::local(&sv.pastas),
+                &PathBuf::from(pasta),
+                &uf,
+                &unidade::repassar(emissor),
+            )
+        },
+    )
+}
+
+#[tauri::command]
+async fn producao_apagar(s: Estado<'_>, uf: String) -> Result<String, String> {
+    if s.agenda.ocupada(Fonte::Producao) {
+        return Err("há um download da produção em andamento. Espere terminar ou cancele.".into());
+    }
+    unidade::producao::apagar_producao(&unidade::local(&s.pastas), &uf)
+}
+
+/// A chave "guardar os arquivos baixados" (padrão: desligada).
+#[tauri::command]
+async fn manter_brutos_obter(s: Estado<'_>) -> Result<bool, String> {
+    Ok(unidade::producao::manter_brutos(&unidade::local(&s.pastas)))
+}
+
+#[tauri::command]
+async fn manter_brutos_definir(s: Estado<'_>, ligada: bool) -> Result<bool, String> {
+    let p = unidade::local(&s.pastas);
+    unidade::producao::definir_manter_brutos(&p, ligada)?;
+    Ok(unidade::producao::manter_brutos(&p))
+}
+
+/// Refaz a produção da UF dos arquivos guardados, sem baixar nada.
+#[tauri::command]
+fn producao_reconstruir(
+    app: AppHandle,
+    s: Estado<'_>,
+    uf: String,
+    quando: Option<Quando>,
+) -> Result<Recibo, String> {
+    let s = s.inner().clone();
+    em_segundo_plano(
+        app,
+        s,
+        Fonte::Producao,
+        "Produção",
+        quando,
+        move |sv, _, emissor, _| {
+            unidade::producao::reconstruir_producao(
+                &unidade::local(&sv.pastas),
+                &uf,
+                &unidade::repassar(emissor),
+            )
+        },
+    )
+}
+
+#[tauri::command]
+async fn producao_apagar_guardados(s: Estado<'_>, uf: String) -> Result<String, String> {
+    if s.agenda.ocupada(Fonte::Producao) {
+        return Err("há um download da produção em andamento. Espere terminar ou cancele.".into());
+    }
+    unidade::producao::apagar_guardados(&unidade::local(&s.pastas), &uf)
+}
+
+/// Quem produziu o procedimento na UF da unidade escolhida (ou na `uf` pedida).
+#[tauri::command]
+async fn producao_procedimento(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    codigo: String,
+    uf: Option<String>,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|q| {
+        let c = s.competencia(q, competencia.as_deref())?;
+        unidade::producao::producao_do_procedimento(
+            &unidade::local(&s.pastas),
+            q,
+            c,
+            &codigo,
+            uf.as_deref(),
+        )
+    })
+}
+
+/// O que a unidade produziu e o que o SIH rejeitou nela.
+#[tauri::command]
+async fn producao_unidade(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    uf: Option<String>,
+    cnes: Option<String>,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|q| {
+        let c = s.competencia(q, competencia.as_deref())?;
+        let alvo = uf.as_deref().zip(cnes.as_deref());
+        unidade::producao::producao_da_unidade(&unidade::local(&s.pastas), q, c, alvo)
+    })
+}
+
+/// Rejeições, tendência, curva ABC, apresentado x aprovado, financiamento, leitos e pares da unidade.
+#[tauri::command]
+async fn faturamento_unidade(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    uf: Option<String>,
+    cnes: Option<String>,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|q| {
+        let c = s.competencia(q, competencia.as_deref())?;
+        let alvo = uf.as_deref().zip(cnes.as_deref());
+        unidade::faturamento::faturamento_da_unidade(&unidade::local(&s.pastas), q, c, alvo)
+    })
+}
+
+/// Procedimentos da unidade diante da aptidão e da produção, e habilitações com a produção delas.
+#[tauri::command]
+async fn faturamento_procedimentos(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    uf: Option<String>,
+    cnes: Option<String>,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|q| {
+        let c = s.competencia(q, competencia.as_deref())?;
+        let alvo = uf.as_deref().zip(cnes.as_deref());
+        unidade::faturamento::procedimentos_com_producao(&unidade::local(&s.pastas), q, c, alvo)
+    })
+}
+
+/// Um procedimento na UF: série mensal, tendência, concentração, financiamento, mudanças de valor.
+#[tauri::command]
+async fn faturamento_procedimento(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    codigo: String,
+    uf: Option<String>,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|q| {
+        let c = s.competencia(q, competencia.as_deref())?;
+        unidade::faturamento::faturamento_do_procedimento(
+            &unidade::local(&s.pastas),
+            q,
+            c,
+            &codigo,
+            uf.as_deref(),
+        )
+    })
+}
+
+/// Impacto financeiro estimado das mudanças da tabela na produção.
+#[tauri::command]
+async fn faturamento_impacto(
+    s: Estado<'_>,
+    de: Option<String>,
+    para: Option<String>,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|q| {
+        let para = s.competencia(q, para.as_deref())?;
+        let de = match de.filter(|d| !d.is_empty()) {
+            Some(d) => Some(Competencia::de_texto(&d).map_err(|e| e.to_string())?),
+            None => None,
+        };
+        unidade::faturamento::impacto_das_mudancas(&unidade::local(&s.pastas), q, de, para, None)
+    })
+}
+
+/// Painel do faturista da unidade ativa (tela de início).
+#[tauri::command]
+async fn faturamento_painel(
+    s: Estado<'_>,
+    competencia: Option<String>,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|q| {
+        let c = s.competencia(q, competencia.as_deref())?;
+        unidade::faturamento::painel_do_faturista(&unidade::local(&s.pastas), q, c)
     })
 }
 
@@ -819,6 +1148,7 @@ fn main() {
         dados: pasta.join("dados"),
     }));
 
+    let para_eventos = servico.clone();
     let resultado = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(servico)
@@ -834,6 +1164,7 @@ fn main() {
             consultar_atualizacao,
             atualizar_programa,
             buscar,
+            buscar_todos,
             ficha,
             historico,
             mudou,
@@ -862,17 +1193,49 @@ fn main() {
             unidades_buscar,
             aptidao,
             rede,
+            producao_situacao,
+            producao_plano,
+            producao_baixar,
+            producao_importar,
+            producao_apagar,
+            manter_brutos_obter,
+            manter_brutos_definir,
+            producao_reconstruir,
+            producao_apagar_guardados,
+            producao_procedimento,
+            producao_unidade,
+            faturamento_unidade,
+            faturamento_procedimentos,
+            faturamento_procedimento,
+            faturamento_impacto,
+            faturamento_painel,
             marcar_favorito,
             anotar,
             marcado,
             marcados,
-            exportar
+            exportar,
+            fechar_programa
         ])
+        .on_window_event(|janela, evento| {
+            if let WindowEvent::CloseRequested { api, .. } = evento {
+                let servico = janela.state::<Arc<Servico>>();
+                if deve_pedir_confirmacao(&servico.agenda) {
+                    api.prevent_close();
+                    let _ = janela.emit("pedido_de_fechar", ());
+                }
+            }
+        })
         .setup(move |app| {
+            let h = app.handle().clone();
+            para_eventos.ligar_eventos(move |f| {
+                let _ = h.emit("tarefa_fim", f);
+            });
             WebviewWindowBuilder::new(app, "principal", WebviewUrl::App("index.html".into()))
                 .title(format!("SIGTAP Aberto {}", sa_core::VERSAO))
                 .inner_size(1360.0, 860.0)
                 .min_inner_size(1024.0, 640.0)
+                // Mesma cor de fundo da página: sem o flash preto do WebView2 antes do primeiro quadro.
+                .background_color(Color(242, 244, 247, 255))
                 .data_directory(dados_webview.clone())
                 .build()?;
             Ok(())

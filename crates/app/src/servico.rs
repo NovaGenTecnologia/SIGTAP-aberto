@@ -4,6 +4,10 @@
 //! Pastas (todas ao lado do executável): `dados\sigtap.db`, `dados\zips\`,
 //! `dados\territorio\`, `dados\territorio.db`.
 
+use crate::tarefas::{Agenda, Fim, Fonte};
+
+/// Quem recebe o fim de cada tarefa; preenchido quando a janela existe.
+type Ligacao = Arc<OnceLock<Box<dyn Fn(Fim) + Send + Sync>>>;
 use sa_core::Competencia;
 use sa_download::cortesia::{Cortesia, Evento};
 use sa_download::http::Http;
@@ -17,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::time::Duration;
 
 /// Pastas do programa.
@@ -54,19 +58,42 @@ pub struct Progresso {
     pub indeterminado: bool,
 }
 
+/// O que a tarefa está fazendo agora: baixar da rede ou gravar no banco (a carga é o que pesa na interface).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Fase {
+    Baixando,
+    Carregando,
+    Verificando,
+}
+
+/// A fase sai do texto da mensagem, num ponto só.
+pub fn fase_da_mensagem(m: &str) -> Fase {
+    if m.starts_with("Carregando") || m.starts_with("Gravando") {
+        Fase::Carregando
+    } else if m.starts_with("Verificando") {
+        Fase::Verificando
+    } else {
+        Fase::Baixando
+    }
+}
+
+/// Evento `progresso`: o andamento, com a fonte e a tarefa a que pertence.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProgressoDeTarefa {
+    pub fonte: Fonte,
+    pub tarefa: u64,
+    pub rotulo: String,
+    pub fase: Fase,
+    #[serde(flatten)]
+    pub progresso: Progresso,
+}
+
 /// Publica o progresso para a interface (de qualquer thread).
 pub type Emissor = Arc<dyn Fn(Progresso) + Send + Sync>;
 
 /// Aviso de dados novos no meio de uma tarefa; `true` pede para reabrir a consulta.
 pub type AoDados<'a> = &'a (dyn Fn(bool) + Sync);
-
-/// Fim de uma tarefa (evento `tarefa_fim`).
-#[derive(Debug, Clone, Serialize)]
-pub struct FimTarefa {
-    pub ok: bool,
-    pub cancelada: bool,
-    pub mensagem: String,
-}
 
 /// O que baixar na primeira execução, em "Procurar atualizações" ou num download parcial.
 #[derive(Debug, Clone, Deserialize)]
@@ -74,7 +101,8 @@ pub struct PedidoDownload {
     /// `nenhum`, `vigente`, `6`, `12`, `24` (últimas N competências do servidor) ou `tudo`.
     pub sigtap: String,
     pub territorio: bool,
-    /// Apagar cada ZIP depois de carregado (nunca o da competência mais recente).
+    /// Apagar cada ZIP depois de carregado. Não vem da interface: o comando `baixar` preenche com o
+    /// contrário da opção "Manter arquivos baixados" (padrão: apagar).
     #[serde(default)]
     pub apagar_zips: bool,
 }
@@ -106,8 +134,10 @@ pub struct Servico {
     consulta: Mutex<Option<Consulta>>,
     /// Última listagem do servidor do SIGTAP (para mostrar tamanhos dos downloads parciais).
     servidor: Mutex<Option<Vec<dl::Disponivel>>>,
-    pub cancelar: Arc<AtomicBool>,
-    pub ocupado: Arc<AtomicBool>,
+    /// Vagas e filas das tarefas longas, uma vaga por fonte (SIGTAP, CNES, produção).
+    pub agenda: Arc<Agenda>,
+    /// Ligação com os eventos da interface, feita quando a janela existe.
+    ligacao: Ligacao,
     /// Banco danificado ou de versão anterior achado na abertura (já guardado à parte), à espera de refazer.
     recuperacao: Mutex<Option<serde_json::Value>>,
     /// Dados gravados por uma versão mais nova do programa: nada é aberto nem alterado.
@@ -116,15 +146,32 @@ pub struct Servico {
 
 impl Servico {
     pub fn novo(pastas: Pastas) -> Self {
+        let ligacao: Ligacao = Arc::new(OnceLock::new());
+        let para_agenda = ligacao.clone();
+        let agenda = Agenda::nova(Arc::new(move |f| {
+            if let Some(cb) = para_agenda.get() {
+                cb(f);
+            }
+        }));
         Self {
             pastas,
             consulta: Mutex::new(None),
             servidor: Mutex::new(None),
-            cancelar: Arc::new(AtomicBool::new(false)),
-            ocupado: Arc::new(AtomicBool::new(false)),
+            agenda,
+            ligacao,
             recuperacao: Mutex::new(None),
             bloqueio: Mutex::new(None),
         }
+    }
+
+    /// Liga o fim das tarefas aos eventos da interface (uma vez, ao criar a janela).
+    pub fn ligar_eventos(&self, ao_fim: impl Fn(Fim) + Send + Sync + 'static) {
+        let _ = self.ligacao.set(Box::new(ao_fim));
+    }
+
+    /// Há alguma tarefa longa em andamento ou na fila?
+    pub fn ocupado(&self) -> bool {
+        self.agenda.alguma()
     }
 
     /// Abertura do programa: confere os bancos (verificação rápida) e, se algum estiver
@@ -330,6 +377,17 @@ impl Servico {
         ao_dados: AoDados<'_>,
         forcar: bool,
     ) -> Result<String, String> {
+        self.recriar_com(&AtomicBool::new(false), emissor, ao_dados, forcar)
+    }
+
+    /// Como `recriar`, parando quando `cancelar` for ligado.
+    pub fn recriar_com(
+        &self,
+        cancelar: &AtomicBool,
+        emissor: &Emissor,
+        ao_dados: AoDados<'_>,
+        forcar: bool,
+    ) -> Result<String, String> {
         let ac = Acompanhamento::novo(emissor.clone());
         ac.mudar(|p| {
             p.indeterminado = true;
@@ -366,7 +424,7 @@ impl Servico {
             .map_err(|_| "estado interno travado".to_string())? = None;
         ac.mudar(|p| p.indeterminado = false);
         let mut partes = Vec::new();
-        let n = carregar_zips(&self.pastas, &self.cancelar, &ac)?;
+        let n = carregar_zips(&self.pastas, cancelar, &ac)?;
         partes.push(format!(
             "{n} competência(s) do SIGTAP refeitas a partir dos ZIPs guardados"
         ));
@@ -408,10 +466,10 @@ impl Servico {
     /// Há competência nova no servidor ou republicação de uma já carregada? Consulta a lista
     /// do servidor (um único pedido) e compara com o banco. Não baixa nada.
     pub fn verificar_dados(&self) -> Result<serde_json::Value, String> {
-        self.verificar_dados_de(&Fonte::oficial())
+        self.verificar_dados_de(&ServidorSigtap::oficial())
     }
 
-    fn verificar_dados_de(&self, fonte: &Fonte) -> Result<serde_json::Value, String> {
+    fn verificar_dados_de(&self, fonte: &ServidorSigtap) -> Result<serde_json::Value, String> {
         let disp = dl::listar_de(&fonte.servidor, &fonte.pasta, &fonte.cortesia).map_err(|e| {
             format!(
                 "não foi possível consultar {}{} ({e})",
@@ -509,7 +567,8 @@ impl Servico {
                 "territorio": null,
                 "zips": { "arquivos": 0, "bytes": 0, "apagaveis": 0, "bytes_apagaveis": 0, "mantida": null },
                 "pasta_dados": self.pastas.dados.display().to_string(),
-                "ocupado": self.ocupado.load(Ordering::Relaxed),
+                "ocupado": self.ocupado(),
+                "tarefas": self.agenda.lista(),
                 "recuperacao": null,
             }));
         }
@@ -542,7 +601,8 @@ impl Servico {
             "territorio": territorio,
             "zips": self.zips_guardados()?,
             "pasta_dados": self.pastas.dados.display().to_string(),
-            "ocupado": self.ocupado.load(Ordering::Relaxed),
+            "ocupado": self.ocupado(),
+            "tarefas": self.agenda.lista(),
             "recuperacao": self.recuperacao.lock().ok().and_then(|g| g.clone()),
         }))
     }
@@ -612,8 +672,11 @@ impl Servico {
 
     /// Apaga os ZIPs já carregados no banco, menos o da competência mais recente.
     pub fn apagar_zips(&self) -> Result<String, String> {
-        if self.ocupado.load(Ordering::SeqCst) {
-            return Err("há uma tarefa em andamento. Espere terminar para apagar os ZIPs.".into());
+        if self.agenda.ocupada(Fonte::Sigtap) {
+            return Err(
+                "há um download do SIGTAP em andamento. Espere terminar para apagar os ZIPs."
+                    .into(),
+            );
         }
         let (_, apagaveis, manter) = zips_apagaveis(&self.pastas)?;
         let (mut n, mut bytes, mut falhas) = (0usize, 0u64, Vec::new());
@@ -826,7 +889,7 @@ pub fn executar_download(
     ao_dados: AoDados<'_>,
 ) -> Result<String, String> {
     executar_download_de(
-        &Fonte::oficial(),
+        &ServidorSigtap::oficial(),
         pastas,
         pedido,
         cancelar,
@@ -836,13 +899,13 @@ pub fn executar_download(
 }
 
 /// Servidor do SIGTAP (o oficial; nos testes, um servidor local).
-struct Fonte {
+struct ServidorSigtap {
     servidor: String,
     pasta: String,
     cortesia: Cortesia,
 }
 
-impl Fonte {
+impl ServidorSigtap {
     fn oficial() -> Self {
         Self {
             servidor: dl::SERVIDOR.into(),
@@ -853,7 +916,7 @@ impl Fonte {
 }
 
 fn executar_download_de(
-    fonte: &Fonte,
+    fonte: &ServidorSigtap,
     pastas: &Pastas,
     pedido: &PedidoDownload,
     cancelar: &AtomicBool,
@@ -940,7 +1003,7 @@ fn executar_download_de(
                 rx,
                 &parar,
                 &ac,
-                pedido.apagar_zips.then_some(manter).flatten(),
+                pedido.apagar_zips,
                 banco_vazio,
                 ao_dados,
             )
@@ -1022,7 +1085,7 @@ fn executar_download_de(
 /// Cada ZIP validado vai para a fila de carga. Devolve (ZIPs baixados, resultado do território).
 #[allow(clippy::too_many_arguments)]
 fn baixador(
-    fonte: &Fonte,
+    fonte: &ServidorSigtap,
     pastas: &Pastas,
     plano: &[dl::Disponivel],
     territorio: bool,
@@ -1115,7 +1178,7 @@ fn carregador(
     rx: mpsc::Receiver<(Competencia, PathBuf)>,
     parar: &AtomicBool,
     ac: &Acompanhamento,
-    apagar_menos: Option<Competencia>,
+    apagar: bool,
     banco_vazio: bool,
     ao_dados: AoDados<'_>,
 ) -> Result<(usize, u64), String> {
@@ -1139,9 +1202,7 @@ fn carregador(
             // Primeira competência no banco: a consulta já pode ser usada.
             ao_dados(true);
         }
-        if let Some(manter) = apagar_menos
-            && c != manter
-        {
+        if apagar {
             let t = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
             if std::fs::remove_file(&p).is_ok() {
                 liberados += t;
@@ -1277,7 +1338,7 @@ mod testes {
         Some(v[v.len().saturating_sub(n)..].to_vec())
     }
 
-    fn fonte(zips: &[(Competencia, PathBuf)]) -> Fonte {
+    fn fonte(zips: &[(Competencia, PathBuf)]) -> ServidorSigtap {
         let arquivos = zips
             .iter()
             .map(|(_, p)| {
@@ -1288,7 +1349,7 @@ mod testes {
             })
             .collect();
         let porta = sa_download::servidor_falso::iniciar(arquivos);
-        Fonte {
+        ServidorSigtap {
             servidor: "127.0.0.1".into(),
             pasta: "/pub".into(),
             cortesia: Cortesia {
@@ -1337,9 +1398,9 @@ mod testes {
         let ja = carregadas(&ps).unwrap();
         let esperadas: Vec<Competencia> = zips[1..].iter().map(|z| z.0).collect();
         assert_eq!(ja.keys().copied().collect::<Vec<_>>(), esperadas);
-        // Só o ZIP da competência mais recente fica guardado.
+        // Com apagar ligado, nenhum ZIP fica guardado depois de carregado.
         let guardados: Vec<Competencia> = dl::locais(&ps.zips()).into_keys().collect();
-        assert_eq!(guardados, [zips[3].0]);
+        assert!(guardados.is_empty(), "{guardados:?}");
         let reg = reg.lock().unwrap();
         // A barra nunca volta e termina cheia.
         assert!(reg.windows(2).all(|w| w[1].fracao >= w[0].fracao));
@@ -1724,5 +1785,98 @@ mod testes {
         assert!(r["novos"].as_array().unwrap().is_empty(), "{r}");
         assert!(r["escopo"].is_null());
         let _ = std::fs::remove_dir_all(&p.dados);
+    }
+
+    /// Trabalho que só termina quando recebe um sinal.
+    fn presa() -> (crate::tarefas::Trabalho, std::sync::mpsc::Sender<()>) {
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        (
+            Box::new(move |c| {
+                loop {
+                    if c.cancelar.load(Ordering::SeqCst) {
+                        return Err("cancelado".into());
+                    }
+                    if rx.recv_timeout(Duration::from_millis(5)).is_ok() {
+                        return Ok("feito".into());
+                    }
+                }
+            }),
+            tx,
+        )
+    }
+
+    #[test]
+    fn so_pede_confirmacao_ao_fechar_com_tarefa_em_andamento() {
+        let sv = Servico::novo(pastas("fechar-com-tarefa"));
+        assert!(!crate::deve_pedir_confirmacao(&sv.agenda));
+        let (trabalho, solta) = presa();
+        sv.agenda
+            .enviar(
+                Fonte::Producao,
+                "Produção",
+                crate::tarefas::Quando::Agora,
+                trabalho,
+            )
+            .unwrap();
+        assert!(crate::deve_pedir_confirmacao(&sv.agenda));
+        sv.agenda.cancelar_tudo();
+        drop(solta);
+    }
+
+    #[test]
+    fn fase_vem_da_mensagem() {
+        for (m, f) in [
+            ("Baixando STMS2608.dbc", Fase::Baixando),
+            (
+                "Carregando Estabelecimentos (STMS2608.dbc)",
+                Fase::Carregando,
+            ),
+            ("Carregando no banco", Fase::Carregando),
+            ("Carregando os nomes dos estabelecimentos", Fase::Carregando),
+            ("Consultando o servidor do DATASUS", Fase::Baixando),
+            ("Verificando os bancos", Fase::Verificando),
+        ] {
+            assert_eq!(fase_da_mensagem(m), f, "{m}");
+        }
+    }
+
+    #[test]
+    fn situacao_lista_as_tarefas_e_ocupado_e_alguma() {
+        let sv = Servico::novo(pastas("situacao-tarefas"));
+        assert_eq!(sv.situacao().unwrap()["ocupado"], false);
+        assert_eq!(sv.situacao().unwrap()["tarefas"], serde_json::json!([]));
+        let (t, s) = presa();
+        sv.agenda
+            .enviar(Fonte::Cnes, "CNES de MS", crate::tarefas::Quando::Agora, t)
+            .unwrap();
+        let j = sv.situacao().unwrap();
+        assert_eq!(j["ocupado"], true);
+        assert_eq!(j["tarefas"][0]["fonte"], "cnes");
+        assert_eq!(j["tarefas"][0]["rotulo"], "CNES de MS");
+        s.send(()).unwrap();
+    }
+
+    #[test]
+    fn apagar_zips_so_recusa_com_o_sigtap_ocupado() {
+        let sv = Servico::novo(pastas("apagar-zips-fonte"));
+        let (t, s) = presa();
+        sv.agenda
+            .enviar(Fonte::Cnes, "CNES", crate::tarefas::Quando::Agora, t)
+            .unwrap();
+        // O CNES ocupado não impede apagar os ZIPs do SIGTAP.
+        if let Err(e) = sv.apagar_zips() {
+            assert!(!e.contains("em andamento"), "{e}");
+        }
+        s.send(()).unwrap();
+        let (t, s) = presa();
+        sv.agenda
+            .enviar(Fonte::Sigtap, "SIGTAP", crate::tarefas::Quando::Agora, t)
+            .unwrap();
+        assert!(
+            sv.apagar_zips()
+                .unwrap_err()
+                .contains("download do SIGTAP em andamento")
+        );
+        s.send(()).unwrap();
     }
 }
