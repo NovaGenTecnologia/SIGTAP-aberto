@@ -371,6 +371,7 @@ impl Servico {
     /// `forcar = true` (pedido do usuário): guarda e refaz mesmo bancos que parecem íntegros.
     /// `forcar = false` (recuperação automática): só refaz o que está faltando, porque o banco
     /// danificado já foi guardado na abertura e os íntegros não devem ser tocados.
+    #[cfg(test)]
     pub fn recriar(
         &self,
         emissor: &Emissor,
