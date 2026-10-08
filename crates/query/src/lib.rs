@@ -15,10 +15,12 @@ pub mod busca;
 pub mod cid;
 pub mod cnes;
 pub mod exportar;
+pub mod faturamento;
 pub mod ficha;
 pub mod historico;
 pub mod mudancas;
 pub mod preparo;
+pub mod producao;
 mod util;
 
 use sa_core::Competencia;

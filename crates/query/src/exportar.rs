@@ -370,6 +370,49 @@ mod testes {
         assert!(ler("[Content_Types].xml").contains("sheet3.xml"));
     }
 
+    /// A planilha que a tela de produção monta (`producao.js`): código como texto, quantidade
+    /// inteira, valor decimal (centavos / 100, como o JavaScript os serializa) e texto vazio.
+    #[test]
+    fn planilha_de_producao_exporta_em_xlsx_e_csv() {
+        let p: Planilha = serde_json::from_value(json!({
+            "titulo": "Produção de 02.01.01.018-6 em MS, 06/2026 a 07/2026",
+            "abas": [
+                {"nome": "SIA", "colunas": ["CNES", "Estabelecimento", "Município (código)", "Aprovados", "Valor (R$)", "Meses"],
+                 "linhas": [["4068823", "HOSPITAL", "500270", 235, 705, 2], ["2000002", "", "", 1, 0.07, 1]]},
+                {"nome": "Rejeições", "colunas": ["Motivo", "Descrição", "AIH", "Meses"],
+                 "linhas": [["023", "", 5, 1]]}
+            ]
+        }))
+        .unwrap();
+        p.validar().unwrap();
+        let csv = String::from_utf8(p.csv(0).unwrap()).unwrap();
+        let l: Vec<&str> = csv.split("\r\n").collect();
+        assert_eq!(l[1], "4068823;HOSPITAL;500270;235;705;2");
+        assert_eq!(l[2], "2000002;;;1;0,07;1");
+        let b = p.xlsx().unwrap();
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(b)).unwrap();
+        let mut f = String::new();
+        z.by_name("xl/worksheets/sheet1.xml")
+            .unwrap()
+            .read_to_string(&mut f)
+            .unwrap();
+        assert!(f.contains(r#"<c r="D2"><v>235</v></c>"#), "{f}");
+        assert!(f.contains(r#"<c r="E3"><v>0.07</v></c>"#), "{f}");
+        assert!(
+            f.contains(r#"<t xml:space="preserve">4068823</t>"#),
+            "o CNES fica como texto"
+        );
+        let mut r = String::new();
+        z.by_name("xl/worksheets/sheet2.xml")
+            .unwrap()
+            .read_to_string(&mut r)
+            .unwrap();
+        assert!(
+            r.contains(r#"<t xml:space="preserve">023</t>"#),
+            "o motivo \"023\" fica como texto, sem perder o zero"
+        );
+    }
+
     #[test]
     fn letras_de_coluna_e_limites() {
         assert_eq!(

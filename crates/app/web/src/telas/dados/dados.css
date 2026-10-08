@@ -1,0 +1,22 @@
+.dados { display: flex; flex-direction: column; gap: var(--esp-3); max-width: 1100px; }
+.dados__cabecalho { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--esp-4); flex-wrap: wrap; }
+.dados__titulo h1 { font-size: var(--texto-28); line-height: 1.15; }
+.dados__armazenamento { margin: var(--esp-1) 0 0; color: var(--cor-texto-2); }
+.dados__acoes-topo { display: flex; gap: var(--esp-3); flex-wrap: wrap; }
+
+.dados__aba { display: flex; flex-direction: column; gap: var(--esp-4); padding-top: var(--esp-4); }
+.dados__barra { display: flex; align-items: center; gap: var(--esp-3); flex-wrap: wrap; }
+.dados__escopo { min-width: 150px; }
+.dados__escopo .campo__rotulo { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.dados__ocupado, .dados__nota { margin: 0; color: var(--cor-texto-2); }
+.dados__territorio h2 { font-size: var(--texto-16); }
+.dados__territorio p { margin: var(--esp-1) 0 0; color: var(--cor-texto-2); }
+.dados .tabela { max-width: 100%; }
+.dados__escopo--curto { min-width: 90px; }
+.dados__estado { display: inline-flex; align-items: center; gap: var(--esp-2); }
+.dados__ate { display: inline-flex; align-items: center; gap: var(--esp-2); }
+.dados__linha-acoes { display: inline-flex; gap: var(--esp-2); justify-content: flex-end; width: 100%; }
+
+/* Células centradas na altura da linha (a grade não faz isso sozinha) */
+.dados .tabela__celula, .dados .tabela__coluna { box-sizing: border-box; height: 100%; display: flex; align-items: center; }
+.dados .tabela__celula--num, .dados .tabela__coluna--num { justify-content: flex-end; }

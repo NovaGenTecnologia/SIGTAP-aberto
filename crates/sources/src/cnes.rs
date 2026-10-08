@@ -38,6 +38,10 @@ pub struct Decodificador {
     pub fonte: String,
     /// Primeira competência (AAAAMM) em que a tabela vale; sem valor = desde sempre.
     pub desde: Option<String>,
+    /// Só para tabelas `.dbf` (como `REGRAS.DBF`): colunas do código e da descrição. Sem elas, o
+    /// arquivo é um `.cnv` do TabWin.
+    pub coluna_codigo: Option<String>,
+    pub coluna_descricao: Option<String>,
 }
 
 impl Decodificador {
@@ -126,6 +130,12 @@ impl Manifesto {
             if d.campos.is_empty() || d.campos.len() > 2 {
                 return Err(format!("decodificador {}: um ou dois campos", d.arquivo));
             }
+            if d.coluna_codigo.is_some() != d.coluna_descricao.is_some() {
+                return Err(format!(
+                    "decodificador {}: informe as duas colunas (código e descrição) ou nenhuma",
+                    d.arquivo
+                ));
+            }
         }
         for l in &m.leitos {
             if l.tp_leito.is_empty() == l.codleito.is_empty() {
@@ -166,6 +176,17 @@ impl Manifesto {
 /// (`1000-1999`) e códigos "curinga" (começados por `-`) são ignorados: servem só para agrupar
 /// no TabWin. O texto já vem decodificado (ISO-8859-1).
 pub fn ler_cnv(texto: &str) -> BTreeMap<String, String> {
+    ler_cnv_com(texto, false)
+}
+
+/// Como [`ler_cnv`], para tabelas em **árvore** (`CODOCO.CNV`): a linha do grupo lista os códigos de
+/// todas as folhas, e a folha (com `..` no começo do texto) diz o que cada um quer dizer. Aqui a
+/// última descrição de um código vence (a folha vem depois do grupo) e os pontos do começo saem.
+pub fn ler_cnv_folhas(texto: &str) -> BTreeMap<String, String> {
+    ler_cnv_com(texto, true)
+}
+
+fn ler_cnv_com(texto: &str, folhas: bool) -> BTreeMap<String, String> {
     let mut mapa = BTreeMap::new();
     for linha in texto.lines().skip(1) {
         let linha = linha.trim_end();
@@ -186,7 +207,11 @@ pub fn ler_cnv(texto: &str) -> BTreeMap<String, String> {
             }
             resto = &t[fim..];
         }
-        let descricao = resto.trim();
+        let descricao = if folhas {
+            resto.trim().trim_start_matches('.').trim()
+        } else {
+            resto.trim()
+        };
         if descricao.is_empty() {
             continue;
         }
@@ -194,8 +219,12 @@ pub fn ler_cnv(texto: &str) -> BTreeMap<String, String> {
             if codigo.starts_with('-') || codigo.contains('-') {
                 continue;
             }
-            mapa.entry(codigo.to_string())
-                .or_insert_with(|| descricao.to_string());
+            if folhas {
+                mapa.insert(codigo.to_string(), descricao.to_string());
+            } else {
+                mapa.entry(codigo.to_string())
+                    .or_insert_with(|| descricao.to_string());
+            }
         }
     }
     mapa
@@ -209,7 +238,10 @@ mod testes {
     fn manifesto_embutido_e_valido() {
         let m = Manifesto::carregar();
         let codigos: Vec<&str> = m.tipos.iter().map(|t| t.codigo.as_str()).collect();
-        assert_eq!(codigos, ["ST", "HB", "SR", "LT", "EQ", "PF"]);
+        assert_eq!(
+            codigos,
+            ["ST", "HB", "SR", "LT", "EQ", "PF", "RC", "IN", "GM", "EF"]
+        );
         assert!(m.tipo("pf").unwrap().so_cnes_escolhidos);
         assert!(!m.tipo("ST").unwrap().so_cnes_escolhidos);
         // O que a fase promete: nenhum CPF de pessoa física, nenhum identificador de profissional.
@@ -224,6 +256,16 @@ mod testes {
                 .any(|p| p.campos.contains(&"CPF_CNPJ".to_string()))
         );
         assert_eq!(m.leitos.len(), 14);
+    }
+
+    #[test]
+    fn cnv_em_arvore_fica_com_a_folha_e_nao_com_o_grupo() {
+        let texto = "14 2 L\n     01  PRODUCAO TOTALMENTE APROVADA                       1K,1R\n 01  02  ..APROVADO TOTALMENTE       (K)                    1K\n 01  03  ..TETO FINANCEIRO           (R)                    1R\n";
+        let m = ler_cnv_folhas(texto);
+        assert_eq!(m["1K"], "APROVADO TOTALMENTE       (K)");
+        assert_eq!(m["1R"], "TETO FINANCEIRO           (R)");
+        // Na leitura comum, o grupo vence (primeiro a aparecer).
+        assert_eq!(ler_cnv(texto)["1K"], "PRODUCAO TOTALMENTE APROVADA");
     }
 
     #[test]

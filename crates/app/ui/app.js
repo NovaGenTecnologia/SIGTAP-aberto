@@ -108,7 +108,27 @@ function erro(msg) {
     p.append(" ", el("button", { class: "link", type: "button", onclick: () => ir({ tipo: "modulos" }) }, "Verificar e refazer o banco"));
   return p;
 }
-function carregando(txt) { return el("p", { class: "carregando", text: txt || "Carregando…" }); }
+/**
+ * Indicador de espera: três pontos que pulam (movimento sempre visível, para a tela não parecer travada) e
+ * o texto do que está sendo feito. Passados 2 s, mostra há quanto tempo está trabalhando; passados 8 s,
+ * avisa que o programa não travou. O contador para sozinho quando o elemento sai da tela.
+ */
+function carregando(txt) {
+  const tempo = el("small", { class: "carregando-tempo" });
+  const p = el("p", { class: "carregando", role: "status" },
+    el("span", { class: "roda", "aria-hidden": "true" }, el("i"), el("i"), el("i")),
+    el("span", { class: "carregando-txt" }, el("span", { text: txt || "Carregando…" }), tempo));
+  const inicio = Date.now();
+  const relogio = setInterval(() => {
+    if (!p.isConnected) { if (Date.now() - inicio > 500) clearInterval(relogio); return; }
+    const s = Math.floor((Date.now() - inicio) / 1000);
+    if (s < 2) return;
+    tempo.textContent = s < 8
+      ? `Ainda trabalhando… ${s} s`
+      : `Ainda trabalhando… ${s} s. Isto pode levar um tempo (principalmente na primeira vez); o programa não travou.`;
+  }, 1000);
+  return p;
+}
 
 // ---------- navegação ----------
 const CONSULTA = new Set(["inicio", "busca", "ficha"]);
@@ -310,6 +330,7 @@ function telaInicio(c) {
   pg.append(ex);
   const cartoes = el("div", { class: "cartoes" });
   pg.append(cartoes);
+  painelFaturista(cartoes);
   const ult = E.comps[E.comps.length - 1];
   cartoes.append(el("section", { class: "bloco" },
     el("h2", { text: "Dados carregados" }),
@@ -583,6 +604,8 @@ function resumo(corpo, f, p, rel, codigo) {
     corpo.append(el("div", { class: "desc-bloco" }, el("span", { class: "rotulo", text: "Descrição oficial" }), d, b));
   }
   corpo.append(el("div", { class: "apt-secao" }, blocoAptidao(codigo)));
+  corpo.append(el("div", { class: "apt-secao" }, blocoProducao(codigo)));
+  corpo.append(el("div", { class: "apt-secao" }, blocoFaturamentoProcedimento(codigo, false)));
   const cols = el("div", { class: "colunas" });
   corpo.append(cols);
   const A = el("div", { class: "coluna" }), B = el("div", { class: "coluna" });
@@ -736,6 +759,7 @@ async function abaHistorico(corpo, codigo) {
       el("small", { text: `${h.competencias_carregadas} competência(s) carregadas; clique numa barra para ir ao mês` })),
     faixa, anos,
     h.competencias_carregadas < 2 ? el("p", { class: "aviso", text: "Só uma competência carregada: baixe o histórico completo em Módulos e dados para ver as mudanças." }) : null));
+  if (ufDaProducao()) sec.append(blocoFaturamentoProcedimento(codigo, true));
   const lista = el("section", { class: "bloco lista-eventos" });
   // Agrupa por competência e, dentro dela, inclusões/exclusões da mesma tabela numa linha só.
   const porComp = new Map();
@@ -804,6 +828,7 @@ async function telaMudou(c) {
     el("div", {}, el("b", { text: F.inteiro(proc ? proc.excluidos : 0) }), "procedimentos excluídos"),
     el("div", {}, el("b", { text: F.inteiro(soma(rl, "incluidos") + soma(rl, "excluidos") + soma(rl, "alterados") + soma(tb, "incluidos") + soma(tb, "excluidos") + soma(tb, "alterados")) }), "mudanças em vínculos e tabelas de apoio")));
   if (!m.tabelas.length) pg.append(el("p", { class: "quieto", text: "As duas competências são iguais em todas as tabelas." }));
+  await secaoImpactoMudancas(pg, m);
   for (const t of [proc, ...rl, ...tb].filter(Boolean)) {
     const b = el("section", { class: "bloco" }, el("div", { class: "cab-linha" },
       el("h2", { text: NOME_TABELA[t.tabela] || t.tabela }),
@@ -878,9 +903,8 @@ function telaModulos(c) {
         (ter.resumo.sem_regiao_saude.length ? ` Sem região de saúde na fonte: ${ter.resumo.sem_regiao_saude.join(", ")}.` : "") +
         ter.fontes.map((f) => ` ${f.fonte === "ibge" ? "IBGE" : "Ministério da Saúde"} obtido em ${f.origem.obtido_em}.`).join("") : "IBGE e Ministério da Saúde"],
   ];
-  const opcionais = [linhaModuloCnes()];
+  const opcionais = [linhaModuloCnes(), linhaModuloProducao()];
   const embreve = [
-    ["Produção ambulatorial e hospitalar (SIA, SIH)", "em breve", "—", "por UF e competência"],
     ["TUSS e TISS (ANS)", "em breve", "—", "correlação com o SIGTAP, com a data da fonte"],
   ];
   const grupo = (nome, ls) => [el("tr", { class: "grupo-linha" }, el("th", { colspan: "4", text: nome })),
@@ -917,6 +941,7 @@ function telaModulos(c) {
     painelProgresso()));
 
   pagina["Baixar e importar"].push(secaoCnes());
+  pagina["Baixar e importar"].push(secaoProducao());
 
   // Espaço em disco: apagar ZIPs já carregados.
   const conf = el("div", { class: "aviso", hidden: true },
@@ -1156,6 +1181,7 @@ async function fimTarefa(f) {
   }
   await atualizarSituacao();
   await atualizarCnes();
+  await atualizarProducao();
   if (!$("arvore-raiz").querySelector(".no")) await desenharArvore();
   if (!seguinte) mostrarProgresso({
     resumo: f.ok ? "Concluído." : f.cancelada ? "Cancelado." : "Não concluído.",
@@ -1296,6 +1322,7 @@ async function iniciar() {
     return;
   }
   await atualizarCnes();
+  await atualizarProducao();
   desenhar();
   $("arvore-raiz").append(el("li", {}, carregando("Carregando a árvore…")));
   desenharArvore().catch((e) => limpar($("arvore-raiz")).append(el("li", {}, erro(e))));

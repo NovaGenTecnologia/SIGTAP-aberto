@@ -1,0 +1,157 @@
+# Produção do SUS (arquivos .dbc do FTP do DATASUS): quais campos o programa lê para somar a
+# produção por estabelecimento, e quais campos pessoais existem no arquivo e NÃO são gravados.
+# Tudo aqui é dado: o código não tem nome de campo fixo.
+#
+# SITUAÇÃO (atualizada em 05/10/2026, com arquivos reais de MS, 08/2025 a 07/2026):
+#   - PA e RD: os nomes de campo abaixo existem nos 24 arquivos reais (12 PA e 12 RD) e a carga funcionou. No PA, quantidade e
+#     valor aprovados batem com a API DEMAS em todas as linhas comparadas. `confirmado = true` quer dizer só isto: os NOMES
+#     foram vistos em arquivo real. O significado dos totais ainda deve ser conferido no TabNet.
+#   - ER: o primeiro palpite estava errado. O arquivo real tem SEQUENCIA, REMESSA, CNES, AIH, ANO, MES, DT_INTER, DT_SAIDA,
+#     MUN_MOV, UF_ZI, MUN_RES, UF_RES e CO_ERRO. Corrigido e visto funcionando com o ERMS2607 real (847 rejeições, 38 motivos,
+#     37 com descrição no MOTERRO): `confirmado = true`.
+# Se o DATASUS mudar os nomes, a carga recusa o arquivo e a mensagem lista os campos que ele tem.
+#
+# `competencia`: um campo AAAAMM, ou dois campos (ano e mês). `contar_registros`: a quantidade é o
+# número de registros (uma AIH por registro), em vez de um campo.
+
+origem = "Disseminação do DATASUS (SIASUS e SIHSUS); nomes de PA, RD e ER vistos em arquivos reais de MS (08/2025 a 07/2026)"
+
+[[tipo]]
+codigo = "PA"
+nome = "Produção ambulatorial (SIA)"
+pasta = "/dissemin/publicos/SIASUS/200801_/Dados"
+confirmado = true
+cnes = "PA_CODUNI"
+competencia = ["PA_MVM"]
+procedimento = "PA_PROC_ID"
+quantidade = "PA_QTDAPR"
+valor = "PA_VALAPR"
+# Opcionais (esquema 2), vistos no PAMS2607 real: financiamento, apresentado (antes da crítica) e incremento.
+financiamento = "PA_TPFIN"
+quantidade_apresentada = "PA_QTDPRO"
+valor_apresentado = "PA_VALPRO"
+valor_incremento = "PA_VL_INC"
+# Opcionais (esquema 3): totais por valor do campo (tabela prod_dim) e somas de valor. Nenhum é pessoal.
+#   PA_INDICA = indicador de aprovação (5 aprovado, 6 aprovado parcial, 0 não aprovado); PA_CODOCO = código de ocorrência (CODOCO.CNV);
+#   PA_FLQT = flag da quantidade (limite/teto); PA_DOCORIG = instrumento de registro (C/I/P/S/A/B); PA_REGCT = regra contratual (RC do CNES);
+#   PA_SRV_C = serviço/classificação executado; PA_CMP = competência de processamento (reapresentação).
+dimensoes = ["PA_INDICA", "PA_CODOCO", "PA_FLQT", "PA_DOCORIG", "PA_REGCT", "PA_SRV_C", "PA_CMP"]
+dimensoes_uf = ["PA_DOCORIG", "PA_REGCT"]
+somas = ["PA_VL_CL", "PA_VL_CF", "PA_VL_CRD"]
+pessoais = ["PA_CNSMED", "PA_IDADE", "PA_SEXO", "PA_MUNPCN", "PA_RACACOR"]
+
+[[tipo]]
+codigo = "RD"
+nome = "AIH aprovadas (SIH)"
+pasta = "/dissemin/publicos/SIHSUS/200801_/Dados"
+confirmado = true
+cnes = "CNES"
+competencia = ["ANO_CMPT", "MES_CMPT"]
+procedimento = "PROC_REA"
+contar_registros = true
+valor = "VAL_TOT"
+# Opcionais (esquema 2), vistos no RDMS2607 real.
+financiamento = "FINANC"
+dias = "DIAS_PERM"
+dias_uti = "UTI_MES_TO"
+# Opcionais (esquema 3): regra contratual por valor; composição do valor da AIH (SH/SP federal e do gestor, UTI).
+dimensoes = ["REGCT"]
+somas = ["VAL_SH_FED", "VAL_SP_FED", "VAL_SH_GES", "VAL_SP_GES", "VAL_UTI"]
+pessoais = ["N_AIH", "NASC", "SEXO", "CEP", "MUNIC_RES", "CNS_PAC"]
+
+[[tipo]]
+codigo = "ER"
+nome = "AIH rejeitadas (SIH)"
+pasta = "/dissemin/publicos/SIHSUS/200801_/Dados"
+confirmado = true
+cnes = "CNES"
+competencia = ["ANO", "MES"]
+motivo = "CO_ERRO"
+contar_registros = true
+# AIH = número da AIH; DT_INTER e DT_SAIDA = datas da internação; MUN_RES e UF_RES = residência do paciente.
+pessoais = ["AIH", "DT_INTER", "DT_SAIDA", "MUN_RES", "UF_RES"]
+
+# SP = serviços profissionais do SIH: um registro por ato da AIH (esquema 3, tabela prod_ato). Os nomes vêm do Informe Técnico
+# IT_SIHSUS_1603 e foram vistos no SPMS2607 real (06/10/2026): a soma de SP_VALATO em prod_ato é igual à de VAL_TOT em prod_hosp
+# (R$ 29.053.487,20) e IN_TP_VAL = 1 soma R$ 22.419.923,93.
+# A soma de SP_VALATO é igual ao VAL_TOT do RD ao centavo. IN_TP_VAL fica como "financiamento" (parte da chave): 1 valor SH,
+# 2 valor SP, 3 e 4 complementos federais. CBO e CID do profissional/ato NÃO são lidos (dependem da decisão de privacidade).
+[[tipo]]
+codigo = "SP"
+nome = "Atos profissionais das AIH (SIH)"
+pasta = "/dissemin/publicos/SIHSUS/200801_/Dados"
+confirmado = true
+cnes = "SP_CNES"
+competencia = ["SP_AA", "SP_MM"]
+procedimento = "SP_ATOPROF"
+quantidade = "SP_QTD_ATO"
+valor = "SP_VALATO"
+financiamento = "IN_TP_VAL"
+dimensoes = ["SP_CO_FAEC", "SERV_CLA"]
+pessoais = ["SP_NAIH", "SP_DTINTER", "SP_DTSAIDA", "SP_CPFCGC", "SP_M_PAC", "SP_PF_CBO"]
+
+# Tabela oficial dos motivos de rejeição do SIH (MOTERRO), dentro do TAB_SIH.zip. Medido em 05/10/2026: 641 motivos;
+# CD_MOT_ERR (6 caracteres, com espaços à direita) é o mesmo código de CO_ERRO do arquivo ER; 37 dos 38 motivos de MS em
+# 07/2026 têm descrição.
+# Instrumento de registro da produção (PA_DOCORIG, DOCORIG.CNV) -> registro do SIGTAP (tb_registro). Conferido nos nomes: C BPA-C
+# = 01, I BPA-I = 02, P APAC principal = 06, S APAC secundário = 07, A RAAS atenção domiciliar = 08, B RAAS psicossocial = 09.
+[[instrumento]]
+docorig = "C"
+registro = "01"
+
+[[instrumento]]
+docorig = "I"
+registro = "02"
+
+[[instrumento]]
+docorig = "P"
+registro = "06"
+
+[[instrumento]]
+docorig = "S"
+registro = "07"
+
+[[instrumento]]
+docorig = "A"
+registro = "08"
+
+[[instrumento]]
+docorig = "B"
+registro = "09"
+
+# Tabelas auxiliares lidas por faixa de bytes dos ZIPs do FTP (Fase 4.5, Q05), todas sem dado de paciente:
+#   - CODOCO: PA_CODOCO + PA_FLQT (o código é os dois juntos, "3M" = parcialmente aprovada, ultrapassou teto financeiro);
+#   - INDICA: PA_INDICA (5 aprovado, 6 aprovado parcialmente, 0 não aprovado);
+#   - DOCORIG: PA_DOCORIG (instrumento de registro: C BPA-C, I BPA-I, P/S APAC, A RAAS-AD, B RAAS-PSI);
+#   - ERRO_VIGENCIA: erroebloqueio.xlsx, com a vigência de cada crítica (CO_TAB 0024 = bloqueio, 0027 = rejeição).
+# A regra contratual (REGCT) não está aqui: o REGCT.cnv do TAB_SIH.zip corta o texto em 50 caracteres; a descrição inteira vem de
+# REGRAS.DBF no CNES (decodificador RC_SGRUPHAB).
+[[auxiliar]]
+tabela = "CODOCO"
+zip = "/dissemin/publicos/SIASUS/200801_/Auxiliar/TAB_SIA.zip"
+entrada = "codoco.cnv"
+formato = "cnv_arvore"
+
+[[auxiliar]]
+tabela = "INDICA"
+zip = "/dissemin/publicos/SIASUS/200801_/Auxiliar/TAB_SIA.zip"
+entrada = "indica.cnv"
+formato = "cnv"
+
+[[auxiliar]]
+tabela = "DOCORIG"
+zip = "/dissemin/publicos/SIASUS/200801_/Auxiliar/TAB_SIA.zip"
+entrada = "docorig.cnv"
+formato = "cnv_arvore"
+
+[[auxiliar]]
+tabela = "ERRO_VIGENCIA"
+zip = "/dissemin/publicos/SIHSUS/200801_/Auxiliar/TAB_SIH.zip"
+entrada = "erroebloqueio.xlsx"
+formato = "xlsx"
+
+[moterro]
+zip = "/dissemin/publicos/SIHSUS/200801_/Auxiliar/TAB_SIH.zip"
+entrada = "moterro.dbf"
+codigo = "CD_MOT_ERR"
+descricao = "DS_MOT_ERR"

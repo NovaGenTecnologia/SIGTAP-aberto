@@ -43,3 +43,24 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check licenses
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates/app/web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: crates/app/web/package-lock.json
+      - name: Dependências
+        run: npm ci
+      - name: Tipos e compilação
+        run: npm run build
+      - name: Testes
+        run: npm test
+      - name: Licenças das dependências
+        run: npm run licencas

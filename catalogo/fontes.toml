@@ -163,6 +163,62 @@ fase = 3
 obrigatorio = false
 tamanho = "MS 2608: 5,1 MB; Brasil histórico: 46,3 GB (nunca em escopo nacional)"
 
+[cnes_rc]
+nome = "CNES — Regras contratuais (RC)"
+origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/CNES/200508_/Dados/RC/"
+padrao = "RC{UF}{AAMM}.dbc"
+formato = "dbc"
+escopos = ["uf", "cnes"]
+periodicidade = "mensal"
+leiaute = "cabeçalho do DBF (mesmo do ST) + REGRAS.DBF, incentivos.dbf, GESTAO.dbf, ESTABFIL.CNV do TAB_CNES.zip"
+campos_pessoais = "CPF_CNPJ de pessoa física: descartado; o arquivo bruto é apagado depois da carga"
+licenca = "dados.gov.br: Creative Commons Attribution (conjunto CNES)"
+fase = 4.5
+obrigatorio = false
+tamanho = "MS 2608: poucos KB"
+
+[cnes_in]
+nome = "CNES — Incentivos (IN)"
+origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/CNES/200508_/Dados/IN/"
+padrao = "IN{UF}{AAMM}.dbc"
+formato = "dbc"
+escopos = ["uf", "cnes"]
+periodicidade = "mensal"
+leiaute = "cabeçalho do DBF (mesmo do ST) + REGRAS.DBF, incentivos.dbf, GESTAO.dbf, ESTABFIL.CNV do TAB_CNES.zip"
+campos_pessoais = "CPF_CNPJ de pessoa física: descartado; o arquivo bruto é apagado depois da carga"
+licenca = "dados.gov.br: Creative Commons Attribution (conjunto CNES)"
+fase = 4.5
+obrigatorio = false
+tamanho = "MS 2608: poucos KB"
+
+[cnes_gm]
+nome = "CNES — Gestão e metas (GM)"
+origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/CNES/200508_/Dados/GM/"
+padrao = "GM{UF}{AAMM}.dbc"
+formato = "dbc"
+escopos = ["uf", "cnes"]
+periodicidade = "mensal"
+leiaute = "cabeçalho do DBF (mesmo do ST) + REGRAS.DBF, incentivos.dbf, GESTAO.dbf, ESTABFIL.CNV do TAB_CNES.zip"
+campos_pessoais = "CPF_CNPJ de pessoa física: descartado; o arquivo bruto é apagado depois da carga"
+licenca = "dados.gov.br: Creative Commons Attribution (conjunto CNES)"
+fase = 4.5
+obrigatorio = false
+tamanho = "MS 2608: poucos KB"
+
+[cnes_ef]
+nome = "CNES — Hospitais filantrópicos (EF)"
+origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/CNES/200508_/Dados/EF/"
+padrao = "EF{UF}{AAMM}.dbc"
+formato = "dbc"
+escopos = ["uf", "cnes"]
+periodicidade = "mensal"
+leiaute = "cabeçalho do DBF (mesmo do ST) + REGRAS.DBF, incentivos.dbf, GESTAO.dbf, ESTABFIL.CNV do TAB_CNES.zip"
+campos_pessoais = "CPF_CNPJ de pessoa física: descartado; o arquivo bruto é apagado depois da carga"
+licenca = "dados.gov.br: Creative Commons Attribution (conjunto CNES)"
+fase = 4.5
+obrigatorio = false
+tamanho = "MS 2608: poucos KB"
+
 [cnes_tab]
 nome = "Tabelas auxiliares do CNES"
 origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/CNES/200508_/Auxiliar/TAB_CNES.zip"
@@ -176,6 +232,7 @@ fase = 3
 obrigatorio = false
 tamanho = "127,5 MB"
 
+# Fase 4: nomes de campo em crates/sources/manifestos/producao.toml (confirmado = false até haver arquivo real).
 [sia_pa]
 nome = "SIA — produção ambulatorial (PA)"
 origem = "ftp://ftp.datasus.gov.br/dissemin/publicos/SIASUS/200801_/Dados/"
@@ -184,7 +241,7 @@ formato = "dbc"
 escopos = ["uf", "municipio"]
 periodicidade = "mensal"
 leiaute = "cabeçalho do DBF + Manual SIA"
-campos_pessoais = "CNS do profissional, idade, sexo e município do paciente: agregado na carga, linha descartada"
+campos_pessoais = "CNS do profissional, idade, sexo, município e raça do paciente: nunca lidos nem gravados; só totais; arquivo apagado depois da carga"
 licenca = "não declarada no FTP"
 fase = 4
 obrigatorio = false
@@ -225,9 +282,9 @@ formato = "dbc"
 escopos = ["uf", "municipio"]
 periodicidade = "mensal"
 leiaute = "cabeçalho do DBF + dicionário da AIH"
-campos_pessoais = "a estudar; agregado na carga"
+campos_pessoais = "número da AIH, datas, CPF, CBO do profissional e paciente: nunca lidos; só estabelecimento, mês, ato, quantidade e valor"
 licenca = "não declarada no FTP"
-fase = 4
+fase = 4.5
 obrigatorio = false
 tamanho = "MS 2607: 4,1 MB"
 
@@ -258,6 +315,8 @@ fase = 4
 obrigatorio = false
 tamanho = "6,0 MB"
 
+# Medido em 05/10/2026 (docs/fontes/producao.md): cerca de uma linha por estabelecimento e mês, não a produção por
+# procedimento. Descartada como fonte da Fase 4; os arquivos PA, RD e ER do FTP são a fonte.
 [api_demas_producao]
 nome = "API DEMAS — produção SIA e SIH agregada por CNES e procedimento"
 origem = "https://apidadosabertos.saude.gov.br/ (sia-procedimentos-ambulatoriais, sih-procedimentos-hospitalares)"

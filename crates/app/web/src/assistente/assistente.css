@@ -1,0 +1,47 @@
+.assistente { min-height: 100vh; background: var(--cor-pagina); display: flex; flex-direction: column; }
+.assistente__topo { padding: var(--esp-4) var(--esp-6); }
+.assistente__miolo { width: min(640px, 100% - 2 * var(--esp-5)); margin: var(--esp-5) auto 0; display: flex; flex-direction: column; gap: var(--esp-4); }
+
+.etapas { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--esp-2) 0; margin: 0 0 var(--esp-3); padding: 0; list-style: none; }
+.etapas__item { display: flex; align-items: center; gap: var(--esp-2); color: var(--cor-texto-2); font-size: var(--texto-14); }
+.etapas__item + .etapas__item::before { content: ""; width: 28px; height: 2px; margin: 0 var(--esp-2); background: var(--cor-linha); }
+.etapas__item--feita + .etapas__item::before, .etapas__item--feita + .etapas__item[aria-current="step"]::before { background: var(--cor-acao); }
+.etapas__marca { display: inline-grid; place-items: center; box-sizing: border-box; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--cor-linha-controle); color: var(--cor-casco-texto); font-size: var(--texto-12); font-weight: 700; }
+.etapas__item--feita .etapas__marca { background: var(--cor-acao); border-color: var(--cor-acao); }
+.etapas__item[aria-current="step"] { color: var(--cor-texto); font-weight: 700; }
+.etapas__item[aria-current="step"] .etapas__marca { border: 3px solid var(--cor-acao); background: var(--cor-superficie); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.assistente__cartao { background: var(--cor-superficie); border: 1px solid var(--cor-linha); border-radius: var(--raio-bloco); padding: var(--esp-5) var(--esp-6) var(--esp-6); display: flex; flex-direction: column; gap: var(--esp-3); }
+.assistente__titulo { font-size: var(--texto-22); line-height: 1.2; outline: none; }
+.assistente__apoio { color: var(--cor-texto-2); margin: 0; }
+.passo { display: flex; flex-direction: column; gap: var(--esp-4); margin-top: var(--esp-2); }
+.passo__acoes { display: flex; flex-wrap: wrap; gap: var(--esp-3); }
+.aviso-caixa { margin: 0; padding: var(--esp-3) var(--esp-4); border: 1px solid var(--cor-info); border-radius: var(--raio-controle); background: var(--cor-info-fundo); color: var(--cor-info-texto); font-size: var(--texto-14); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .assistente__cartao { animation: assistente-entra var(--mov-medio) var(--ease-saida, ease-out); }
+}
+@keyframes assistente-entra { from { opacity: 0; transform: translateY(4px); } }
+
+.passo__resumo { margin: 0; }
+.passo__vazio { margin: 0; color: var(--cor-texto-2); }
+.unidades { display: flex; flex-direction: column; gap: var(--esp-2); max-height: 320px; overflow: auto; padding: var(--esp-1); margin: calc(-1 * var(--esp-1)); outline: none; }
+.unidade { display: flex; flex-direction: column; gap: 2px; padding: var(--esp-2) var(--esp-3); background: var(--cor-superficie); border: 1px solid var(--cor-linha); border-radius: var(--raio-controle); cursor: pointer; }
+.unidade__nome { font-weight: 600; font-size: var(--texto-14); }
+.unidade__detalhe { color: var(--cor-texto-2); font-size: var(--texto-12); }
+.unidade[data-hovered] { background: var(--cor-pagina); }
+.unidade[data-selected] { background: var(--cor-item-ativo); border-color: var(--cor-acao); }
+.unidade[data-selected] .unidade__nome { color: var(--cor-acao-escura); }
+.unidade[data-focus-visible] { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: 2px; }
+
+.passo__falta { margin: 0; color: var(--cor-texto-2); }
+.pendencias { display: flex; flex-direction: column; gap: var(--esp-3); margin: 0; padding: 0; list-style: none; }
+.pendencia { display: flex; align-items: center; gap: var(--esp-4); }
+.pendencia__texto { display: flex; flex-direction: column; min-width: 0; flex: 0 1 28ch; }
+.pendencia__detalhe { color: var(--cor-texto-2); font-size: var(--texto-12); overflow-wrap: anywhere; }
+.pendencia .progresso { flex: 1; min-width: 120px; }
+.producao-opcional { display: flex; flex-direction: column; gap: var(--esp-3); padding-top: var(--esp-4); border-top: 1px solid var(--cor-linha); }
+.producao-opcional__titulo { margin: 0; font-size: var(--texto-14); font-weight: 700; }
+.passo__acoes--base { align-items: flex-end; }
+.passo__erro { margin: 0; color: var(--cor-texto); }

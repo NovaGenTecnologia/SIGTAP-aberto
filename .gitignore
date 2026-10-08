@@ -22,6 +22,8 @@
 dados_dev/
 dados/
 zips/
+# Código-fonte da interface com "dados" no nome (não são dados): precisa ir para o repositório
+!crates/app/web/src/**/dados/
 
 # Arquivos do hospital (dados de paciente): nunca no repositório
 modelos/
@@ -46,6 +48,17 @@ dados_webview/
 !Cargo.lock
 *.log
 
+# Segredos e lixo de ferramentas: nunca
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+__pycache__/
+*.pyc
+*.tsbuildinfo
+
 # Editores e sistema
 .vscode/
 .idea/
@@ -55,3 +68,9 @@ desktop.ini
 crates/app/gen/
 saida/
 _sincronizacao/
+
+# Interface nova (front)
+node_modules/
+crates/app/web/dist/
+crates/app/web/test-results/
+crates/app/web/playwright-report/

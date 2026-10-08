@@ -28,6 +28,10 @@ taskkill /im sigtap-aberto.exe /f >> "%LOG%" 2>&1
 timeout /t 3 /nobreak >nul
 echo --- pasta depois >> "%LOG%"
 dir /s /b "%TESTE%" >> "%LOG%" 2>&1
+echo --- E12: o que o programa criou ao lado do .exe >> "%LOG%"
+if exist "%TESTE%\dados_webview" (echo OK: dados_webview criada ao lado do .exe >> "%LOG%") else (echo FALHA: dados_webview nao foi criada ao lado do .exe >> "%LOG%")
+if exist "%TESTE%\dados" (echo OK: dados criada ao lado do .exe >> "%LOG%") else (echo AVISO: dados nao existe ainda; normal se a carga inicial nao foi iniciada >> "%LOG%")
+if exist "%TESTE%\dados\sigtap.db" (echo OK: sigtap.db em dados >> "%LOG%") else (echo primeira execucao: sem sigtap.db, a tela de carga inicial deve ter aparecido >> "%LOG%")
 echo --- pastas do perfil depois >> "%LOG%"
 if exist "%LOCALAPPDATA%\br.sigtap-aberto.app" (echo EXISTE %LOCALAPPDATA%\br.sigtap-aberto.app >> "%LOG%") else (echo nao existe LOCALAPPDATA\br.sigtap-aberto.app >> "%LOG%")
 if exist "%APPDATA%\br.sigtap-aberto.app" (echo EXISTE %APPDATA%\br.sigtap-aberto.app >> "%LOG%") else (echo nao existe APPDATA\br.sigtap-aberto.app >> "%LOG%")

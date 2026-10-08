@@ -159,7 +159,49 @@ impl Consulta {
         Ok(v)
     }
 
+    /// Códigos de CID vigentes que começam com `prefixo` (a categoria e suas subcategorias), com nome.
+    fn cids_com_prefixo(
+        &self,
+        seq: i64,
+        prefixo: &str,
+    ) -> Result<Vec<(String, Option<String>)>, ErroConsulta> {
+        let t = ident("tb_cid")?;
+        let v = ident_vig("tb_cid")?;
+        let mut st = self.conn().prepare_cached(&format!(
+            "SELECT DISTINCT c.co_cid, c.no_cid FROM {t} c JOIN {v} v ON v.sa_id = c.sa_id
+             WHERE v.vig_ini <= ?1 AND v.vig_fim >= ?1 AND c.co_cid >= ?2 AND c.co_cid < ?3
+             ORDER BY c.co_cid"
+        ))?;
+        let fim = format!("{prefixo}~");
+        let linhas = st
+            .query_map(rusqlite::params![seq, prefixo, fim], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(linhas)
+    }
+
     fn codigos_ligados(
+        &self,
+        seq: i64,
+        tabela: &str,
+        codigo: &[&str],
+    ) -> Result<BTreeSet<String>, ErroConsulta> {
+        // Categoria de CID (3 caracteres): leva junto os procedimentos das subcategorias (Z00 → Z000, Z001...).
+        if tabela == "tb_cid" && codigo.len() == 1 && codigo[0].len() == 3 {
+            let mut todos = BTreeSet::new();
+            for (c, _) in self.cids_com_prefixo(seq, codigo[0])? {
+                if c.len() != 3 {
+                    todos.extend(self.codigos_ligados(seq, tabela, &[c.as_str()])?);
+                }
+            }
+            todos.extend(self.codigos_ligados_exato(seq, tabela, codigo)?);
+            return Ok(todos);
+        }
+        self.codigos_ligados_exato(seq, tabela, codigo)
+    }
+
+    fn codigos_ligados_exato(
         &self,
         seq: i64,
         tabela: &str,
@@ -203,8 +245,22 @@ impl Consulta {
         Ok(out)
     }
 
-    /// Busca global na competência.
+    /// Busca global na competência (até `LIMITE_PROCEDIMENTOS` procedimentos; o total vem à parte).
     pub fn buscar(&self, comp: Competencia, entrada: &str) -> Result<Busca, ErroConsulta> {
+        self.buscar_ate(comp, entrada, Some(LIMITE_PROCEDIMENTOS))
+    }
+
+    /// A mesma busca, com todos os procedimentos encontrados (para exportar a lista inteira).
+    pub fn buscar_todos(&self, comp: Competencia, entrada: &str) -> Result<Busca, ErroConsulta> {
+        self.buscar_ate(comp, entrada, None)
+    }
+
+    fn buscar_ate(
+        &self,
+        comp: Competencia,
+        entrada: &str,
+        limite: Option<usize>,
+    ) -> Result<Busca, ErroConsulta> {
         let seq = self.exigir(comp)?;
         let entrada = entrada.trim();
         if entrada.is_empty() {
@@ -242,6 +298,13 @@ impl Consulta {
                     || r.chave.len() != 1
                     || !presentes.contains(&r.tabela)
                 {
+                    continue;
+                }
+                // CID de 3 caracteres: a categoria e todas as suas subcategorias (Z00 → Z00, Z000, Z001...).
+                if r.tabela == "tb_cid" && chave_apoio.len() == 3 {
+                    for (c, nome) in self.cids_com_prefixo(seq, &chave_apoio)? {
+                        apoio.insert((r.tabela.clone(), vec![c]), nome.unwrap_or_default());
+                    }
                     continue;
                 }
                 let cols = util::colunas(self.conn(), seq, &r.tabela)?;
@@ -305,7 +368,7 @@ impl Consulta {
         }
         let total = codigos.len();
         let mut procedimentos = Vec::new();
-        for c in codigos.iter().take(LIMITE_PROCEDIMENTOS) {
+        for c in codigos.iter().take(limite.unwrap_or(usize::MAX)) {
             if let Some(i) = self.item_procedimento(seq, c)? {
                 procedimentos.push(i);
             }
