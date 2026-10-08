@@ -44,7 +44,57 @@ def main():
     a = ap.parse_args()
     raiz = pathlib.Path(a.raiz).resolve() if a.raiz else RAIZ
     eventos, trava = [], threading.Lock()
-    estado = {"primeira": a.primeira, "ocupado": False, "cancelar": False}
+    estado = {"primeira": a.primeira, "territorio": not a.primeira, "brutos": False}
+    # Agenda por fonte, com a mesma semântica do backend: uma tarefa por fonte, fila dentro da fonte.
+    ESCALA = float(os.environ.get("PONTE_ESCALA", "1"))  # multiplica as esperas (e2e rápidos ou lentos)
+    agenda = {f: {"cur": None, "fila": []} for f in ("sigtap", "cnes", "producao")}
+    nomes_fonte = {"sigtap": "SIGTAP", "cnes": "CNES", "producao": "Produção"}
+    alock, prox = threading.Lock(), [0]
+
+    def dormir(t): time.sleep(t * ESCALA)
+
+    def ocupado(): return any(v["cur"] is not None or v["fila"] for v in agenda.values())
+
+    def prog(item, resumo, mensagem, fracao, indeterminado=False):
+        fase = "carregando" if mensagem.startswith("Carregando") else "baixando"
+        emitir("progresso", {"fonte": item["fonte"], "tarefa": item["id"], "rotulo": item["rotulo"], "fase": fase,
+                             "resumo": resumo, "mensagem": mensagem, "fracao": fracao, "indeterminado": indeterminado})
+
+    def fim(item, ok, cancelada, mensagem):
+        emitir("tarefa_fim", {"fonte": item["fonte"], "tarefa": item["id"], "ok": ok, "cancelada": cancelada, "mensagem": mensagem})
+
+    def rodar(item):
+        try: ok, cancelada, msg = item["fn"](item)
+        except Exception as e: ok, cancelada, msg = False, False, str(e)
+        with alock:
+            v = agenda[item["fonte"]]
+            v["cur"] = v["fila"].pop(0) if v["fila"] else None
+            proximo = v["cur"]
+        fim(item, ok, cancelada, msg)
+        if proximo: threading.Thread(target=rodar, args=(proximo,), daemon=True).start()
+
+    def enviar(fonte, rotulo, quando, fn):
+        with alock:
+            prox[0] += 1
+            item = {"id": prox[0], "fonte": fonte, "rotulo": rotulo, "fn": fn, "cancelar": False}
+            v = agenda[fonte]
+            if v["cur"] is None:
+                v["cur"] = item
+                threading.Thread(target=rodar, args=(item,), daemon=True).start()
+                return {"tarefa": item["id"], "posicao": 0}
+            if quando != "depois":
+                raise RuntimeError(f"Já há um download de {nomes_fonte[fonte]} em andamento.")
+            v["fila"].append(item)
+            return {"tarefa": item["id"], "posicao": len(v["fila"])}
+
+    def cancelar(fonte):
+        fontes = [fonte] if fonte else list(agenda)
+        for f in fontes:
+            with alock:
+                v = agenda[f]
+                if v["cur"]: v["cur"]["cancelar"] = True
+                descartadas, v["fila"] = v["fila"], []
+            for d in descartadas: fim(d, False, True, "Cancelado.")
 
     def emitir(nome, payload):
         with trava: eventos.append({"nome": nome, "payload": payload})
@@ -62,57 +112,65 @@ def main():
         return {"servidor": "simulado", "competencias": [
             {"competencia": c, "tamanho": t, "guardado": c in carregadas, "carregado": c in carregadas} for c, t in sorted(itens.items())]}
 
-    def simular(pedido):
-        estado["ocupado"] = True; estado["cancelar"] = False
+    def simular(pedido, item):
         n = {"vigente": 1, "6": 6, "12": 12, "24": 24, "tudo": 225}.get(pedido.get("sigtap", "vigente"), 1) if pedido.get("sigtap") != "nenhum" else 0
         ter = 2 if pedido.get("territorio") else 0
-        emitir("progresso", {"resumo": "", "mensagem": "Consultando o servidor (simulado)", "fracao": 0, "indeterminado": True})
-        time.sleep(1)
+        prog(item, "", "Consultando o servidor (simulado)", 0, True)
+        dormir(1)
         total = 2 * n + ter
         for k in range(n):
             for f in (0.25, 0.5, 0.75):
-                if estado["cancelar"]: break
-                emitir("progresso", {"resumo": f"Fazendo download {k+1} de {n}; carregadas no banco {max(0,k-1)} de {n}" + ("; território pendente" if ter else ""),
-                                     "mensagem": f"TabelaUnificada_simulada_{k+1}.zip: {f*2:.1f} de 2,0 MB".replace(".", ","), "fracao": (k + f + max(0, k - 1)) / total, "indeterminado": False})
-                time.sleep(0.25)
-            if estado["cancelar"]: break
-        estado["ocupado"] = False
-        if estado["cancelar"]:
-            emitir("tarefa_fim", {"ok": False, "cancelada": True, "mensagem": "cancelado; o que já foi baixado fica guardado (simulação)"})
-        else:
-            emitir("progresso", {"resumo": f"Download concluído ({n} de {n}); carregadas no banco {n} de {n}", "mensagem": "", "fracao": 1, "indeterminado": False})
-            emitir("tarefa_fim", {"ok": True, "cancelada": False, "mensagem": f"Concluído: {n} competência(s) baixada(s) (simulação; nada foi baixado)."})
+                if item["cancelar"]: break
+                prog(item, f"Fazendo download {k+1} de {n}; carregadas no banco {max(0,k-1)} de {n}" + ("; território pendente" if ter else ""),
+                     f"TabelaUnificada_simulada_{k+1}.zip: {f*2:.1f} de 2,0 MB".replace(".", ","), (k + f + max(0, k - 1)) / total)
+                dormir(0.25)
+            if item["cancelar"]: break
+        if item["cancelar"]:
+            return False, True, "cancelado; o que já foi baixado fica guardado (simulação)"
+        prog(item, f"Download concluído ({n} de {n}); carregadas no banco {n} de {n}", "", 1)
+        if pedido.get("territorio") or estado["territorio"]: estado["territorio"] = True; estado["primeira"] = False
+        return True, False, f"Concluído: {n} competência(s) baixada(s) (simulação; nada foi baixado)."
+
+    def simular_producao(item):
+        for i in range(1, 7):
+            if item["cancelar"]: return False, True, "cancelado (simulação)"
+            prog(item, "Baixando a produção", f"Arquivo {i} de 6 (simulado)", i / 6)
+            dormir(0.4)
+        return True, False, "Produção baixada (simulação; nada foi baixado)."
 
     def cli(*args):
-        p = subprocess.run([a.cli, *args, "--banco", a.banco], capture_output=True, text=True)
+        p = subprocess.run([a.cli, *args, "--banco", a.banco], capture_output=True, text=True, encoding="utf-8")
         if p.returncode != 0:
             raise RuntimeError(p.stderr.strip().removeprefix("ERRO: "))
         return json.loads(p.stdout)
 
     def cli_d(*args, entrada=None, texto=False):
         if not a.dados: raise RuntimeError("ponte sem --dados: comandos do CNES indisponíveis")
-        p = subprocess.run([a.cli, *args, "--banco", a.banco, "--dados", a.dados], capture_output=True, text=True, input=entrada)
+        p = subprocess.run([a.cli, *args, "--banco", a.banco, "--dados", a.dados], capture_output=True, text=True, encoding="utf-8", input=entrada)
         if p.returncode != 0:
             raise RuntimeError(p.stderr.strip().split("ERRO: ")[-1])
         return p.stdout.strip() if texto else (json.loads(p.stdout) if p.stdout.strip() else None)
 
-    def simular_cnes(uf):
-        estado["ocupado"] = True; estado["cancelar"] = False
+    def simular_cnes(uf, fase, item):
         resumo = f"Baixando o CNES de {uf}"
-        emitir("progresso", {"resumo": resumo, "mensagem": "Consultando o servidor do DATASUS (simulado)", "fracao": 0, "indeterminado": True})
-        time.sleep(0.8)
-        nomes = ["ST", "HB", "SR", "LT", "EQ"]
+        if fase in ("restante", "pessoas"):
+            # A ponte importa tudo na fase "busca"; as outras só simulam o andamento.
+            passos = ["HB", "SR", "LT", "EQ"] if fase == "restante" else ["PF"]
+            for i, t in enumerate(passos):
+                if item["cancelar"]: return False, True, "cancelado (simulação)"
+                prog(item, resumo, f"Baixando {t}{uf}2608.dbc", i / (len(passos) + 1)); dormir(0.6)
+            prog(item, resumo, "Carregando no banco", len(passos) / (len(passos) + 1)); dormir(0.8)
+            return True, False, f"CNES de {uf} ({fase}) carregado (simulação)."
+        prog(item, resumo, "Consultando o servidor do DATASUS (simulado)", 0, True)
+        dormir(0.8)
+        nomes = ["ST"] if fase == "busca" else ["ST", "HB", "SR", "LT", "EQ"]
         for i, t in enumerate(nomes):
-            if estado["cancelar"]: break
-            emitir("progresso", {"resumo": resumo, "mensagem": f"Baixando {t}{uf}2608.dbc", "fracao": i / 9, "indeterminado": False}); time.sleep(0.3)
-        ok, msg = True, ""
-        if not estado["cancelar"]:
-            emitir("progresso", {"resumo": resumo, "mensagem": "Carregando no banco", "fracao": 8 / 9, "indeterminado": False})
-            try: msg = cli_d("cnes-importar", uf, "--origem", a.cnes_origem or "", texto=True).splitlines()[-1] + " (ponte: importado da pasta local)"
-            except Exception as e: ok, msg = False, str(e)
-        estado["ocupado"] = False
-        if estado["cancelar"]: emitir("tarefa_fim", {"ok": False, "cancelada": True, "mensagem": "cancelado (simulação)"})
-        else: emitir("tarefa_fim", {"ok": ok, "cancelada": False, "mensagem": msg})
+            if item["cancelar"]: return False, True, "cancelado (simulação)"
+            prog(item, resumo, f"Baixando {t}{uf}2608.dbc", i / (len(nomes) + 1)); dormir(0.3)
+        prog(item, resumo, "Carregando no banco", len(nomes) / (len(nomes) + 1))
+        try: msg = cli_d("cnes-importar", uf, "--origem", a.cnes_origem or "", texto=True).splitlines()[-1] + " (ponte: importado da pasta local)"
+        except Exception as e: return False, False, str(e)
+        return True, False, msg
 
     def situacao():
         c = sqlite3.connect(a.banco)
@@ -122,9 +180,10 @@ def main():
         z = [x for x in (sorted(pathlib.Path(a.zips).glob("TabelaUnificada_*.zip")) if a.zips else []) if x.name[16:22] in {c["competencia"] for c in comps}]
         tam = sum(x.stat().st_size for x in z); ult = max((x.name[16:22] for x in z), default=None)
         apag = [x for x in z if x.name[16:22] != ult]
-        return dict(primeira_execucao=estado["primeira"], competencias=comps, territorio=None,
+        return dict(primeira_execucao=estado["primeira"], competencias=comps, territorio=({"simulado": True} if estado["territorio"] else None),
                     zips=dict(arquivos=len(z), bytes=tam, apagaveis=len(apag), bytes_apagaveis=sum(x.stat().st_size for x in apag), mantida=ult),
-                    pasta_dados="(ponte de desenvolvimento)", ocupado=estado["ocupado"],
+                    pasta_dados="(ponte de desenvolvimento)", ocupado=ocupado(),
+                    tarefas=[{"fonte": f, "tarefa": i["id"], "rotulo": i["rotulo"], "na_fila": k > 0} for f, v in agenda.items() for k, i in enumerate(([v["cur"]] if v["cur"] else []) + v["fila"])],
                     bloqueio=("Os dados em D:\\SIGTAP\\dados foram gravados por uma versão mais nova do SIGTAP Aberto: tabela de procedimentos (esquema 2; este programa usa o 1). Use a versão mais nova do programa (Sobre, Procurar atualizações, ou baixe do GitHub). Nada foi alterado." if a.bloqueio else None),
                     recuperacao=({"bancos": ["tabela de procedimentos"], "motivos": ["versao_anterior" if a.versao_anterior else "danificado"], "pastas": ["D:\\SIGTAP\\dados\\" + ("versao_anterior_1" if a.versao_anterior else "banco_com_problema_1")], "zips": 3, "territorio_local": True, "competencias_antes": ["202607", "202608", "202609"]} if (a.recuperacao or a.versao_anterior) and estado.get("recuperacao", True) else None))
 
@@ -133,6 +192,7 @@ def main():
         if cmd == "situacao": return situacao()
         if cmd == "arvore": return cli("arvore", *([args["pai"]] if args.get("pai") else []), *comp)
         if cmd == "buscar": return cli("buscar", args["texto"], *comp)
+        if cmd == "buscar_todos": return cli("buscar-todos", args["texto"], *comp)
         if cmd == "ficha":
             try: return cli("ficha", args["codigo"], *comp)
             except RuntimeError as e:
@@ -150,7 +210,7 @@ def main():
                 {"nome": "Tabela de procedimentos", "arquivo": "sigtap.db", "existe": True, "bytes": pathlib.Path(a.banco).stat().st_size, "ok": r == ["ok"], "danificado": r != ["ok"], "mensagens": [] if r == ["ok"] else r},
                 {"nome": "Território", "arquivo": "territorio.db", "existe": False, "bytes": 0, "ok": False, "danificado": False, "mensagens": []}]}
         if cmd == "recriar_banco":
-            threading.Thread(target=simular, args=({"sigtap": "6"},), daemon=True).start(); estado["recuperacao"] = False; return None
+            enviar("sigtap", "SIGTAP", "agora", lambda item: simular({"sigtap": "6"}, item)); estado["recuperacao"] = False; return None
         if cmd == "verificar_dados":
             time.sleep(0.5)
             if a.novidade and not estado.get("baixado"):
@@ -171,16 +231,33 @@ def main():
         if cmd == "ofertas": time.sleep(0.6); return ofertas()
         if cmd == "escolher_pasta": return "D:\\Downloads\\SIGTAP (simulado)"
         if cmd == "apagar_zips": return "simulação: nada foi apagado"
-        if cmd == "cancelar": estado["cancelar"] = True; return None
+        if cmd == "cancelar": cancelar(args.get("fonte")); return None
+        if cmd == "fechar_programa": cancelar(None); return None
         if cmd in ("baixar", "importar"):
-            if estado["ocupado"]: raise RuntimeError("já existe uma tarefa em andamento. Espere terminar ou cancele.")
-            threading.Thread(target=simular, args=(args.get("pedido") or {"sigtap": "vigente"},), daemon=True).start(); return None
+            pedido = args.get("pedido") or {"sigtap": "vigente", "territorio": True}
+            return enviar("sigtap", "SIGTAP", args.get("quando"), lambda item: simular(pedido, item))
+        # ---- Produção (SIA/SIH): tudo simulado; nada é baixado nem apagado ----
+        if cmd == "producao_situacao":
+            return {"manter_brutos": estado["brutos"], "ufs": [
+                {"uf": "SP", "bytes_banco": 432013312, "guardados": {"arquivos": 4, "bytes": 1395864371},
+                 "defasagem": {"sia_ate": "202607", "sih_ate": "202607", "sia_incompleto": "202607", "sih_incompleto": None}},
+                {"uf": "MS", "bytes_banco": 100663296, "defasagem": {"sia_ate": "202606", "sih_ate": "202607", "sia_incompleto": None, "sih_incompleto": None}}]}
+        if cmd == "producao_plano":
+            time.sleep(0.3)
+            n = max(1, int(args.get("meses", 12))) * 2
+            return {"uf": args["uf"], "itens": [{"arquivo": f"PA{args['uf']}{i:04d}.dbc", "bytes": 90_000_000, "competencia": "202607", "tipo": "SIA"} for i in range(n)],
+                    "total_bytes": 90_000_000 * n, "precisa_confirmar": n * 90_000_000 > 500 * 1024 * 1024}
+        if cmd in ("producao_baixar", "producao_importar", "producao_reconstruir"):
+            return enviar("producao", "Produção", args.get("quando"), simular_producao)
+        if cmd in ("producao_apagar", "producao_apagar_guardados"): return "simulação: nada foi apagado"
+        if cmd == "manter_brutos_definir": estado["brutos"] = bool(args.get("ligada")); return estado["brutos"]
         # ---- Fase 3: comandos reais do CLI sobre --dados ----
         if cmd == "cnes_situacao": return cli_d("cnes-situacao")
         if cmd in ("cnes_baixar", "cnes_importar"):
-            if estado["ocupado"]: raise RuntimeError("já existe uma tarefa em andamento. Espere terminar ou cancele.")
-            uf = (args.get("pedido") or {}).get("uf") or args.get("uf")
-            threading.Thread(target=simular_cnes, args=(uf,), daemon=True).start(); return None
+            pedido = args.get("pedido") or {}
+            uf = pedido.get("uf") or args.get("uf")
+            fase = pedido.get("fase") or "tudo"
+            return enviar("cnes", f"CNES de {uf}", args.get("quando"), lambda item: simular_cnes(uf, fase, item))
         if cmd == "cnes_competencias": time.sleep(0.5); return [{"competencia": c, "bytes": 310_000} for c in ("202608", "202607", "202606", "202605")]
         if cmd == "cnes_apagar": return cli_d("cnes-apagar", args["uf"], texto=True)
         if cmd == "cnes_buscar": return cli_d("cnes-buscar", args["uf"], args["texto"])
@@ -198,6 +275,17 @@ def main():
             return {"novas": [], "erro": None}
         if cmd == "aptidao": return cli_d("aptidao", args["codigo"], *comp)
         if cmd == "rede": return cli_d("rede", args["codigo"], "--escopo", args.get("escopo") or "municipio", *comp)
+        if args.get("tipo") == "cid" and cmd in ("marcar_favorito", "anotar", "marcado", "marcados"):
+            # O CLI só guarda favoritos de procedimento: o de CID é simulado em memória (só para a UI).
+            marcas = estado.setdefault("cid_marcas", {})
+            if cmd == "marcados":
+                return [{**m, "existe": True, "nome": ""} for m in marcas.values() if m["favorito"] or m["anotacao"]]
+            m = marcas.setdefault(args["codigo"], {"tipo": "cid", "codigo": args["codigo"], "favorito": False, "favorito_desde": None, "anotacao": None, "anotacao_de": None})
+            if cmd == "marcar_favorito":
+                m["favorito"] = bool(args["favorito"]); m["favorito_desde"] = "2026-10-08" if m["favorito"] else None
+            elif cmd == "anotar":
+                m["anotacao"] = args["texto"] or None; m["anotacao_de"] = "2026-10-08" if m["anotacao"] else None
+            return dict(m)
         if cmd == "marcar_favorito": return cli_d("favorito", args["codigo"], "sim" if args["favorito"] else "nao")
         if cmd == "anotar": return cli_d("anotar", args["codigo"], *([args["texto"]] if args["texto"] else []))
         if cmd == "marcado": return cli_d("marcado", args["codigo"])
