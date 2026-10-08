@@ -199,6 +199,66 @@ Prova (Linux): teste `versao_do_banco_decide_entre_usar_refazer_ou_bloquear` com
 - Tags não podem ser enviadas desta sessão (política de rede): quem lança cria a tag no computador do projeto.
 - Não testado: Linux e macOS em computadores reais com tela; pacotes ARM em máquinas ARM; atualizador do Windows de ponta a ponta (será provado com a 0.1.1).
 
-## 3. Fechamento
+## 3. Fechamento (05/10/2026): fechamento condicional
 
-(preenchido ao final da fase)
+Atualização do andamento (2): **E04** feito, a conferência das 30 fichas contra o site oficial está
+na Fase 3 (2.4: 780 comparações, 761 idênticas, 19 diferenças explicadas, nenhuma de dado);
+**E11** feito na Fase 3 (favoritos, anotações, CSV e XLSX).
+
+### 3.1 Provado no Windows em 05/10/2026 (Windows 11, `--release`, commit `0433c47`, sem rede)
+
+Dados: o banco e os 225 ZIPs da pasta `D:\Projetos\Tabela SIGTAP\SIGTAP Aberto\dados` (copiados para
+`saida\prova_fechamento`; a pasta do cliente não foi alterada). Logs em `saida\prova_fechamento\`.
+
+| Prova | Resultado |
+|---|---|
+| `cargo test --workspace --release --locked` | Passou (0 falhas) |
+| Carga completa e reconstrução exata (`SA_SIGTAP_ZIPS`, 225 competências) | Passou: 64.310.859 registros em 1.051,6 s; banco de 99,7 MB; 4 testes irmãos de `sigtap_real` passaram (chaves naturais, retroativo × incremental, republicação, domínios) |
+| Consulta com dados reais (`consulta_real`, 8 testes: fichas, histórico, o que mudou, árvores, busca) | Passou em 49,6 s |
+| Leitura de todos os ZIPs reais (`zips_reais`) | Passou |
+| Download e carga em paralelo com FTP local (`sa-app`, 8 testes, `SA_ZIPS_HISTORICO`) | Passou em 53,7 s (FTP falso local, não o do DATASUS) |
+| `cargo fmt --check` e `clippy -D warnings` (todos os alvos) | Passaram |
+| E13, tempo de resposta (CLI, inclui abrir o banco, banco já em cache) | Busca 19–30 ms; ficha 48–91 ms; "o que mudou" ~460 ms (**acima** da meta de 300 ms); competências 25 ms |
+
+### 3.2 O que NÃO foi provado
+
+- **E09** primeira execução em pasta vazia (a janela foi aberta com dados já carregados, ver 3.4);
+  download real; atualizador do programa; janela "Procurar pasta" e "Salvar como" (diálogos nativos).
+- **E10** aprovação do protótipo no Penpot.
+- Tempo de resposta **na janela** (só a CLI foi medida). A primeira chamada depois de um tempo parado
+  levou de 0,2 a 6 s (disco e antivírus); a meta de 300 ms não vale para a chamada fria.
+- `cargo deny check licenses` (não instalado neste computador).
+- **Download real pelo FTP do DATASUS:** em 05/10/2026 os servidores `ftp.datasus.gov.br` e
+  `ftp2.datasus.gov.br` aceitam a conexão de controle e não abrem a de dados (timeout em duas redes).
+  Por decisão do cliente nada foi baixado nesse dia.
+- `testar_portatil.bat` foi estendido (E12: confere `dados_webview`, `dados` e `sigtap.db` ao lado do
+  `.exe`), mas **não foi executado**.
+
+### 3.3 Para fechar de vez
+
+1. Rodar `compilar.bat`, `testar_portatil.bat` e `provar_fase2.bat` até o fim (o log de 01/10 parou em `error^C`).
+2. Passar a mão na janela: primeira execução em pasta vazia, Procurar pasta, Salvar como, atualizador.
+3. Rodar o download real quando o FTP voltar.
+
+### 3.4 Prova na janela do Windows (05/10/2026)
+
+Programa compilado do commit atual, aberto numa pasta portátil de teste com uma cópia dos dados do cliente (sem os ZIPs) e
+percorrido pela janela real. **0 erros de JavaScript** em toda a sessão.
+
+| Item | Resultado |
+|---|---|
+| Abertura | Abre direto, sem tela de carga inicial; 225 competências (01/2008 a 09/2026); janela 1376×899 |
+| Busca "desfibrilador" | 19 procedimentos (igual aos testes), agrupados por forma |
+| Ficha 04.06.01.056-0 | Completa: faixa-chave, abas (Resumo, Histórico, CID 3, CBO 2, Habilitação 8, Serviço 2, Leito 3...), "Para cobrar", valores, aptidão da unidade ("Não apta: falta habilitação e serviço") |
+| Minha unidade | Duas unidades, terceiros por unidade, habilitações 3 de 3, serviços 37, leitos SUS 50 de 57, 1.773 procedimentos |
+| Módulos e dados | Quatro abas; MS e MT (7.108 e 11.923 estabelecimentos) |
+| FTP fora do ar | A aba Atualizações mostra mensagem em português, sem travar a janela (~40 s até o erro). **Achado de texto:** a mensagem tem três níveis de parênteses aninhados |
+| Importação por pasta do CNES de MS | 7.108 / 537 / 15.968 / 1.036 / 15.658, iguais à referência; ver regra de privacidade na Fase 3 (2.10) |
+
+Capturas das telas reais ficam guardadas localmente, fora do repositório, como referência para o Penpot.
+
+### 3.5 Ações pendentes futuras
+
+1. **"O que mudou" em ~460 ms** (meta: 300 ms). Decisão do cliente em 05/10/2026: ficar como ação futura. Investigar a consulta antes de otimizar.
+2. **Penpot v2.3** (e v2.2): não foi possível operar o Penpot do cliente nesta sessão. Referência pronta nas capturas acima; falta redesenhar ou importar no Penpot.
+3. Texto da mensagem de FTP indisponível: tirar os parênteses aninhados e deixar uma frase com a orientação.

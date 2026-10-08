@@ -56,7 +56,8 @@ Fora do escopo (plano): produção do SIA e do SIH, glosas e rejeições.
 | Onde fica a lógica da unidade | Crate novo `sa-unidade`, usado pelo aplicativo e pela linha de comando | A ponte de desenvolvimento e os testes exercitam o mesmo código da janela |
 | Profissionais | Só da unidade escolhida; sem `CPF_PROF` e sem `CNS_PROF`; nome, CBO, conselho, vínculo e horas ficam | O faturista confere CBO de quem executa; identificadores pessoais não são necessários para isso. **A Fase 5 (conferência pré-envio) pode precisar casar o CNS do profissional do arquivo com o do CNES: decidir então, com resumo criptográfico e nunca o número** |
 | Arquivo bruto de PF | Apagado logo depois da carga | Traz todas as pessoas da UF. Trocar de unidade pede baixar de novo (2,5 MB em MS) |
-| Arquivos brutos ST, HB, SR, LT, EQ e `CADGER` | Guardados em `dados\cnes\arquivos\<UF>\` | O banco pode ser refeito sem baixar. **Risco aceito a confirmar com o cliente:** o ST e o cadastro oficiais trazem o CPF de titulares pessoa física (1.669 estabelecimentos em MS); o banco não grava, mas o arquivo oficial fica na pasta |
+| Arquivos brutos HB, SR, LT, EQ e `cnv\` | Guardados em `dados\cnes\arquivos\<UF>\` | O banco pode ser refeito sem baixar |
+| ST e `CADGER` | **Apagados depois da carga** (decisão do cliente, 05/10/2026) | Trazem o CPF de titulares pessoa física (1.669 estabelecimentos em MS). Em produção nunca ficam guardados, como o PF. Refazer o banco do CNES pede baixar de novo. A cópia local de desenvolvimento fica em `dados_dev\`, fora do programa e do repositório |
 | Unidade escolhida, favoritos, anotações | `dados\usuario.db`, separado dos bancos de dados oficiais | Não pode ser refeito de fonte oficial; não é tocado quando um banco é refeito |
 | Versão do esquema | `cnes` = 1, `usuario` = 1; versão anterior refaz dos arquivos guardados; versão mais nova recusa sem alterar | Mesma regra da Fase 2 |
 | Exportação | XLSX escrito à mão com o `zip` que o projeto já usa | Sem dependência nova |
@@ -143,11 +144,44 @@ Ver o diário do projeto (registro de 01/10/2026).
 - **Esfera administrativa (`ESFERA_A`).** Nas 7.108 linhas de MS é idêntica a `TPGESTAO` (D=45, E=48, M=7.015). O `EsferAdm.CNV` oficial descreve 01 Federal, 02 Estadual, 03 Municipal, 04 Privada, o que contradiz os dados reais. Os nomes (Dupla, Estadual, Municipal, Sem gestão) ficam fixos no manifesto (`[[valor_fixo]]`), conforme os valores de gestão. A esfera jurídica de fato vem de `NAT_JUR`.
 - **"Incentivo de SP".** Não existe dado com esse nome no SIGTAP nem no CNES. "SP" na ficha é Serviço Profissional (valores e incremento); as siglas passaram a ser escritas por extenso. Nenhuma ocultação por UF foi criada sem evidência de dado que varie por UF.
 
+### 2.9 Revisão de 05/10/2026 (Windows, sem rede)
+
+Mesmo ambiente e resultados da Fase 2 (3.1). Específico desta fase:
+
+- `cargo test --workspace` passou. Os 3 testes CNES reais (`packs/cnes_real`, `query/cnes_real`,
+  `unidade::cnes_do_download_a_aptidao_e_a_rede`) falharam na primeira rodada por falta do
+  `PFMS2608.dbc`, que o programa apaga de propósito. A pasta de dados do cliente tinha uma cópia
+  dele (e `tab_cnes\`); com `SA_CNES_DBC` apontando para ela, **os 3 passaram no Windows** (MS 08/2026:
+  7.108 / 537 / 15.968 / 1.036 / 15.658; cruzamentos; do download à aptidão e à rede em 12,5 s).
+  **F03, F04, F07 e F08 estão provados no Windows para MS.** Outras UFs seguem sem prova.
+- O `dbc_reais` terminou sem rodar (precisa de `SA_CNES_ORACULO`, ferramenta de referência externa).
+- A pasta de dados do cliente tem CNES de **MS e MT** já carregados (`MS.db` e `MT.db`) e um
+  `STMS2608.dbc.parcial` vazio, sobra de download interrompido (não apaguei; pode ser removido).
+- ~~Os arquivos oficiais ST e CADGER continuam guardados~~: decidido, ver 2.10.
+
+### 2.10 Regra de privacidade do ST e do CADGER (05/10/2026)
+
+Decisão do cliente: arquivos com CPF de titulares **nunca ficam salvos em produção**, mas deve existir
+uma cópia local para desenvolvimento, para não baixar a cada teste.
+
+- **Produção:** depois de uma carga completa do CNES, o programa apaga `ST<UF>AAMM.dbc` e
+  `CADGER<UF>.dbf` (`apagar_arquivos_com_cpf`, `crates/unidade/src/lib.rs`). Ficam `HB`, `SR`, `LT`, `EQ` e `cnv\`.
+  Carregar só os profissionais da unidade escolhida deixou de exigir o ST. Se o esquema do banco do CNES
+  mudar e não houver ST, o programa **não move** o banco antigo: pede para baixar de novo.
+- **Desenvolvimento:** `SA_MANTER_ARQUIVOS_CNES=1` mantém os arquivos; a cópia fica em
+  `D:\Projetos\Tabela SIGTAP\dados_dev\` (LEIAME próprio), fora de `sigtap-aberto\`.
+- **Prova:** teste `st_e_cadastro_oficial_nao_ficam_guardados_e_os_outros_ficam`; no programa real
+  (Windows), a importação por pasta de MS carregou 7.108 / 537 / 15.968 / 1.036 / 15.658 e deixou só
+  `EQ HB LT SR cnv`. Um defeito achado nessa prova (aviso falso "nomes indisponíveis", porque o
+  CADGER era conferido depois de apagado) foi corrigido e reconferido.
+- **Efeito:** o banco do CNES não pode mais ser refeito sozinho a partir da pasta; "Baixar de novo" é o caminho.
+- **Não testado:** baixar de novo pelo FTP real depois da mudança (servidor fora do ar).
+
 ## 3. Riscos que seguem
 
 1. Regra de aptidão e correspondência de leitos **não confirmadas**.
 2. Serviços terceirizados fora do arquivo público (2.3).
 3. CNES publicado depois do SIGTAP: a aptidão cruza competências diferentes (a tela avisa).
-4. Arquivos oficiais guardados com CPF de titulares pessoa física (1.3).
+4. ~~Arquivos oficiais guardados com CPF de titulares pessoa física~~: resolvido em 05/10/2026 (2.10); a cópia de desenvolvimento em `dados_dev\` segue com esses arquivos e não pode sair da máquina.
 5. `TP_UNID` 16 não tem descrição nas tabelas do DATASUS (mostrado como código).
 6. Prova no Windows pendente.

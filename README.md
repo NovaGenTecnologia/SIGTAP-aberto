@@ -17,6 +17,7 @@ Você digita um código, um nome, um CID ou um CBO. O programa responde na hora:
 - **Histórico.** Linha do tempo de cada campo e de cada relação, comparação entre duas competências e a tela "O que mudou" no mês.
 - **Minha unidade.** Baixe o CNES da sua UF, escolha o seu estabelecimento e veja habilitações (com portaria e vigência), serviços e classificações, leitos, equipamentos e profissionais por CBO.
 - **"Minha unidade pode cobrar?"** Em cada procedimento, o programa compara o cadastro do CNES com a habilitação, o serviço e o leito que o SIGTAP exige, diz o que falta e mostra quem mais faz na rede (município, região de saúde, UF). A regra está marcada como **não confirmada** e o arquivo público do CNES não traz serviço terceirizado: é apoio, não veredito.
+- **Produção do SUS e rejeições.** Baixe a produção do SIA e do SIH da sua UF (os meses mais recentes) e veja, em cada procedimento, quem produziu e quanto, e em Minha unidade o que a unidade produziu e o que o SIH rejeitou. Só ficam **totais por estabelecimento**: o arquivo oficial, que traz dado de paciente, é apagado depois da soma. Em Minha unidade e na ficha do procedimento, a produção vira informação de faturamento: rejeições por 100 AIH com os motivos oficiais, tendência, curva ABC, apresentado × aprovado no SIA, valor por financiamento, o que a unidade produz × o que o cadastro permite, impacto das mudanças da tabela e um painel no início. As análises usam os meses completos e dizem seus limites na tela.
 - **Favoritos, anotações e exportação.** Guarde procedimentos e notas no seu computador; exporte ficha, busca, unidade e rede para Excel ou CSV.
 - **Avisa quando há novidade.** Confere o servidor oficial de tempos em tempos e diz se saiu uma competência nova ou republicada. Não baixa nada sem você mandar.
 - **Baixa as tabelas oficiais sozinho,** com cortesia com os servidores (uma conexão, um arquivo por vez, retomada), e tem passo a passo para quem precisa baixar à mão.
@@ -27,8 +28,8 @@ Você digita um código, um nome, um CID ou um CBO. O programa responde na hora:
 
 - Não é prontuário, agendamento nem substituto do sistema de gestão do hospital.
 - Não transmite nada ao DATASUS nem à ANS. Ele confere e orienta; quem envia é você.
-- **Conferência dos arquivos de faturamento (BPA, APAC, AIH) ainda não está pronta.** É o próximo grande módulo. Cada regra só deixa de ser "não confirmada" depois de provada com arquivo rejeitado real e o retorno oficial.
-- Cruzamento com a produção do SIA e do SIH e correlação TUSS × SIGTAP estão no roteiro, não no programa.
+- **Conferência dos arquivos de faturamento (BPA, APAC, AIH) ainda não está pronta.** É o grande módulo seguinte, depois da Fase 4.5 (teto, composição da AIH, regras contratuais e desempenho em UF grande, ver [`docs/fases/fase-4-5.md`](docs/fases/fase-4-5.md)). Cada regra só deixa de ser "não confirmada" depois de provada com arquivo rejeitado real e o retorno oficial.
+- A correlação TUSS × SIGTAP está no roteiro, não no programa.
 
 ## Princípios
 
