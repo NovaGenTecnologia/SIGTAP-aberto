@@ -85,6 +85,16 @@ pub(crate) fn exigir_uf(uf: &str) -> Result<(), String> {
     }
 }
 
+/// CNES de estabelecimento: 7 dígitos.
+pub(crate) fn exigir_cnes(cnes: &str) -> Result<(), String> {
+    if cnes.len() == 7 && cnes.bytes().all(|b| b.is_ascii_digit()) {
+        Ok(())
+    } else {
+        let visto: String = cnes.chars().take(20).collect();
+        Err(format!("\"{visto}\" não é um CNES: use 7 dígitos"))
+    }
+}
+
 /// Abre o banco do usuário (cria a pasta de dados se preciso).
 pub fn usuario(p: &Pastas) -> Result<BancoUsuario, String> {
     std::fs::create_dir_all(&p.dados).map_err(|e| {
@@ -200,6 +210,8 @@ pub fn adicionar_terceiro(
 ) -> Result<serde_json::Value, String> {
     exigir_uf(uf)?;
     exigir_uf(tuf)?;
+    exigir_cnes(cnes)?;
+    exigir_cnes(tcnes)?;
     if uf == tuf && cnes == tcnes {
         return Err("a unidade não pode ser terceira de si mesma".into());
     }
@@ -842,6 +854,7 @@ pub fn situacao(p: &Pastas) -> serde_json::Value {
 /// se o arquivo já estiver guardado. Escolher a que já está ativa não muda nada.
 pub fn definir_minha(p: &Pastas, uf: &str, cnes: &str) -> Result<serde_json::Value, String> {
     exigir_uf(uf)?;
+    exigir_cnes(cnes)?;
     let q = consulta_cnes(p, uf)?;
     let achado = q
         .buscar(cnes, 5)
@@ -1381,6 +1394,15 @@ mod testes {
     use std::io::Write;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
+
+    #[test]
+    fn cnes_precisa_ter_sete_digitos_e_a_mensagem_nao_repete_tudo() {
+        assert!(exigir_cnes("4068823").is_ok());
+        for ruim in ["", "abc", "406882", "40688230", "40688a3"] {
+            assert!(exigir_cnes(ruim).is_err(), "{ruim}");
+        }
+        assert!(exigir_cnes(&"9".repeat(1_000_000)).unwrap_err().len() < 80);
+    }
 
     #[test]
     fn st_e_cadastro_oficial_nao_ficam_guardados_e_os_outros_ficam() {

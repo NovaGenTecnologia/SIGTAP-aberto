@@ -132,6 +132,8 @@ fn texto_comp(c: Competencia) -> String {
 pub struct Servico {
     pub pastas: Pastas,
     consulta: Mutex<Option<Consulta>>,
+    /// Data de gravação do banco do SIGTAP quando a consulta foi aberta: mudou por fora (CLI, outra janela) = reabrir.
+    carimbo: Mutex<Option<std::time::SystemTime>>,
     /// Última listagem do servidor do SIGTAP (para mostrar tamanhos dos downloads parciais).
     servidor: Mutex<Option<Vec<dl::Disponivel>>>,
     /// Vagas e filas das tarefas longas, uma vaga por fonte (SIGTAP, CNES, produção).
@@ -142,7 +144,16 @@ pub struct Servico {
     recuperacao: Mutex<Option<serde_json::Value>>,
     /// Dados gravados por uma versão mais nova do programa: nada é aberto nem alterado.
     bloqueio: Mutex<Option<String>>,
+    /// Última `situacao` calculada (com a geração em que foi calculada) e o cadeado que faz as
+    /// chamadas simultâneas esperarem um só cálculo em vez de repeti-lo.
+    cache_situacao: Mutex<Option<(std::time::Instant, u64, serde_json::Value)>>,
+    calculo_situacao: Mutex<()>,
+    /// Sobe a cada mudança conhecida nos dados; invalida a `situacao` guardada.
+    geracao: std::sync::atomic::AtomicU64,
 }
+
+/// Quanto tempo uma `situacao` guardada vale (mudança feita por fora do programa aparece em até isso).
+const VALIDADE_SITUACAO: std::time::Duration = std::time::Duration::from_millis(300);
 
 impl Servico {
     pub fn novo(pastas: Pastas) -> Self {
@@ -156,11 +167,15 @@ impl Servico {
         Self {
             pastas,
             consulta: Mutex::new(None),
+            carimbo: Mutex::new(None),
             servidor: Mutex::new(None),
             agenda,
             ligacao,
             recuperacao: Mutex::new(None),
             bloqueio: Mutex::new(None),
+            cache_situacao: Mutex::new(None),
+            calculo_situacao: Mutex::new(()),
+            geracao: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -229,6 +244,18 @@ impl Servico {
                 }
                 _ => {}
             }
+        }
+        // Favoritos e anotações nunca são refeitos nem guardados à parte: só bloqueiam se forem de versão mais nova.
+        let usuario = crate::unidade::banco_usuario(&crate::unidade::local(&self.pastas));
+        if usuario.exists()
+            && let Ok(g) = saude::versao_esquema(&usuario)
+            && let saude::Compatibilidade::MaisNova(v) =
+                saude::compatibilidade(g.as_deref(), sa_packs::usuario::VERSAO_ESQUEMA)
+        {
+            bloqueios.push(format!(
+                "favoritos e anotações (esquema {v}; este programa usa o {})",
+                sa_packs::usuario::VERSAO_ESQUEMA
+            ));
         }
         if !bloqueios.is_empty() {
             let msg = format!(
@@ -401,7 +428,14 @@ impl Servico {
             *g = None;
         }
         let mut guardados = Vec::new();
-        if forcar && self.pastas.sigtap_db().exists() {
+        // Sem ZIP guardado não há de onde refazer: o banco que existe não pode ser trocado por um vazio.
+        let tem_zips = !dl::locais(&self.pastas.zips()).is_empty();
+        let json_territorio = self.pastas.territorio().join(ter::ARQ_IBGE).exists()
+            && self.pastas.territorio().join(ter::ARQ_DEMAS).exists();
+        if forcar && !tem_zips && !json_territorio && self.pastas.sigtap_db().exists() {
+            return Err("não há ZIPs guardados para refazer o banco. Os dados atuais foram mantidos; baixe a tabela em Baixar do DATASUS se precisar refazer.".into());
+        }
+        if forcar && tem_zips && self.pastas.sigtap_db().exists() {
             let q = saude::por_em_quarentena(
                 &self.pastas.sigtap_db(),
                 &self.pastas.dados,
@@ -411,7 +445,11 @@ impl Servico {
         }
         let json_ok = self.pastas.territorio().join(ter::ARQ_IBGE).exists()
             && self.pastas.territorio().join(ter::ARQ_DEMAS).exists();
-        if forcar && json_ok && self.pastas.territorio_db().exists() {
+        // Sem ZIPs não há o que refazer do SIGTAP: o território só é trocado se estiver danificado,
+        // para chamadas repetidas não encherem `dados` de cópias de um banco saudável.
+        let refazer_territorio =
+            tem_zips || saude::verificar(&self.pastas.territorio_db(), false).danificado;
+        if forcar && json_ok && refazer_territorio && self.pastas.territorio_db().exists() {
             let q = saude::por_em_quarentena(
                 &self.pastas.territorio_db(),
                 &self.pastas.dados,
@@ -426,9 +464,13 @@ impl Servico {
         ac.mudar(|p| p.indeterminado = false);
         let mut partes = Vec::new();
         let n = carregar_zips(&self.pastas, cancelar, &ac, false)?;
-        partes.push(format!(
-            "{n} competência(s) do SIGTAP refeitas a partir dos ZIPs guardados"
-        ));
+        if tem_zips {
+            partes.push(format!(
+                "{n} competência(s) do SIGTAP refeitas a partir dos ZIPs guardados"
+            ));
+        } else {
+            partes.push("sem ZIPs guardados: o banco do SIGTAP não foi mexido".into());
+        }
         if json_ok && !self.pastas.territorio_db().exists() {
             ac.mudar(|p| {
                 p.territorio = 1;
@@ -443,7 +485,7 @@ impl Servico {
             .map(|m| m.keys().copied().collect())
             .unwrap_or_default();
         let faltam: Vec<String> = antes.difference(&agora).map(|c| mes_ano(*c)).collect();
-        if !faltam.is_empty() {
+        if tem_zips && !faltam.is_empty() {
             let mostra: Vec<&str> = faltam.iter().take(8).map(String::as_str).collect();
             partes.push(format!(
                 "faltam {} competência(s) que estavam no banco e não têm ZIP guardado ({}{}). Baixe-as em Baixar do DATASUS",
@@ -522,12 +564,38 @@ impl Servico {
         } else {
             None
         };
+        let carimbo = self.carimbo_do_banco();
         let mut g = self
             .consulta
             .lock()
             .map_err(|_| "estado interno travado".to_string())?;
         *g = nova;
+        if let Ok(mut c) = self.carimbo.lock() {
+            *c = carimbo;
+        }
+        self.invalidar_situacao();
         Ok(())
+    }
+
+    /// Última gravação do banco do SIGTAP (arquivo e diário WAL).
+    fn carimbo_do_banco(&self) -> Option<std::time::SystemTime> {
+        let db = self.pastas.sigtap_db();
+        let mut wal = db.clone().into_os_string();
+        wal.push("-wal");
+        [db, std::path::PathBuf::from(wal)]
+            .iter()
+            .filter_map(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok())
+            .max()
+    }
+
+    /// O banco foi alterado por outro processo desde a última abertura? Durante uma tarefa do
+    /// próprio programa não confere (ele mesmo reabre ao terminar).
+    fn banco_mudou_por_fora(&self) -> bool {
+        if self.ocupado() {
+            return false;
+        }
+        let agora = self.carimbo_do_banco();
+        self.carimbo.lock().map(|c| *c != agora).unwrap_or(false)
     }
 
     /// Executa uma função com a consulta aberta.
@@ -535,6 +603,9 @@ impl Servico {
         &self,
         f: impl FnOnce(&Consulta) -> Result<T, String>,
     ) -> Result<T, String> {
+        if self.banco_mudou_por_fora() {
+            let _ = self.reabrir();
+        }
         let g = self
             .consulta
             .lock()
@@ -556,8 +627,55 @@ impl Servico {
         }
     }
 
-    /// Situação geral para a tela inicial e "Módulos e dados".
+    /// Dados de versão mais nova do programa: nenhuma tarefa pode mexer neles.
+    pub fn exigir_sem_bloqueio(&self) -> Result<(), String> {
+        match self.bloqueio.lock().ok().and_then(|g| g.clone()) {
+            Some(b) => Err(b),
+            None => Ok(()),
+        }
+    }
+
+    fn invalidar_situacao(&self) {
+        self.geracao
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Situação geral para a tela inicial e "Módulos e dados". O cálculo abre bancos e lista
+    /// pastas, então fica guardado por instantes e é refeito a cada mudança conhecida; as
+    /// tarefas e o "ocupado" são sempre lidos na hora.
     pub fn situacao(&self) -> Result<serde_json::Value, String> {
+        use std::sync::atomic::Ordering::SeqCst;
+        let guardada = || {
+            let c = self.cache_situacao.lock().ok()?;
+            let (t, g, v) = c.as_ref()?;
+            (t.elapsed() < VALIDADE_SITUACAO && *g == self.geracao.load(SeqCst)).then(|| v.clone())
+        };
+        let mut v = match guardada() {
+            Some(v) => v,
+            None => {
+                let _um_por_vez = self
+                    .calculo_situacao
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                match guardada() {
+                    Some(v) => v,
+                    None => {
+                        let geracao = self.geracao.load(SeqCst);
+                        let v = self.situacao_calculada()?;
+                        if let Ok(mut c) = self.cache_situacao.lock() {
+                            *c = Some((std::time::Instant::now(), geracao, v.clone()));
+                        }
+                        v
+                    }
+                }
+            }
+        };
+        v["ocupado"] = serde_json::json!(self.ocupado());
+        v["tarefas"] = serde_json::json!(self.agenda.lista());
+        Ok(v)
+    }
+
+    fn situacao_calculada(&self) -> Result<serde_json::Value, String> {
         let bloqueio = self.bloqueio.lock().ok().and_then(|g| g.clone());
         if let Some(b) = bloqueio {
             // Dados de versão mais nova: não abre nenhum banco e nunca oferece a carga inicial.
@@ -673,10 +791,10 @@ impl Servico {
 
     /// Apaga os ZIPs já carregados no banco, menos o da competência mais recente.
     pub fn apagar_zips(&self) -> Result<String, String> {
+        self.exigir_sem_bloqueio()?;
         if self.agenda.ocupada(Fonte::Sigtap) {
             return Err(
-                "há um download do SIGTAP em andamento. Espere terminar para apagar os ZIPs."
-                    .into(),
+                "há uma tarefa do SIGTAP em andamento. Espere terminar para apagar os ZIPs.".into(),
             );
         }
         let (_, apagaveis, manter) = zips_apagaveis(&self.pastas)?;
@@ -690,6 +808,7 @@ impl Servico {
                 Err(e) => falhas.push(format!("{c}: {e}")),
             }
         }
+        self.invalidar_situacao();
         let mut m = format!("{n} ZIP(s) apagados, {} liberados", mb(bytes));
         if let Some(c) = manter {
             m.push_str(&format!("; o da competência {} foi mantido", mes_ano(c)));
@@ -959,6 +1078,8 @@ fn executar_download_de(
             ));
         };
         plano = dl::planejar(&disp, &pastas.zips(), |c| c >= corte);
+        // Já no banco na versão do servidor (ou mais nova): não baixa de novo, mesmo sem o ZIP guardado.
+        plano.retain(|d| ja.get(&d.competencia).is_none_or(|v| *v < d.versao));
         plano.reverse();
         let no_plano: BTreeSet<Competencia> = plano.iter().map(|d| d.competencia).collect();
         // Já guardados mas ainda não carregados: entram na fila de carga de imediato.
@@ -1273,6 +1394,12 @@ pub fn importar(
     emissor: &Emissor,
     apagar: bool,
 ) -> Result<String, String> {
+    if !origem.is_dir() {
+        return Err(format!(
+            "a pasta {} não existe ou não está acessível",
+            origem.display()
+        ));
+    }
     let ac = Acompanhamento::novo(emissor.clone());
     ac.mudar(|p| {
         p.indeterminado = true;
@@ -1480,10 +1607,12 @@ mod testes {
         let s = Servico::novo(ps.clone());
         let info = s.zips_guardados().unwrap();
         assert_eq!(info["mantida"], zips[3].0.to_string());
-        assert_eq!(info["apagaveis"], 3);
+        // Só a competência baixada agora (a mais antiga) está guardada: as outras já estavam no banco
+        // e não foram baixadas de novo.
+        assert_eq!(info["apagaveis"], 1);
         eprintln!("PROVA apagar: {}", s.apagar_zips().unwrap());
         let guardados: Vec<Competencia> = dl::locais(&ps.zips()).into_keys().collect();
-        assert_eq!(guardados, [zips[3].0]);
+        assert!(guardados.is_empty(), "{guardados:?}");
         let _ = std::fs::remove_dir_all(&ps.dados);
     }
 
@@ -1612,6 +1741,69 @@ mod testes {
     }
 
     #[test]
+    fn dados_de_versao_mais_nova_recusam_tarefas_e_apagar_zips() {
+        let p = pastas("bloqueio-recusa");
+        let sv = Servico::novo(p.clone());
+        assert!(sv.exigir_sem_bloqueio().is_ok());
+        *sv.bloqueio.lock().unwrap() = Some("dados de versão mais nova".into());
+        assert_eq!(
+            sv.exigir_sem_bloqueio().unwrap_err(),
+            "dados de versão mais nova"
+        );
+        assert!(sv.apagar_zips().unwrap_err().contains("versão mais nova"));
+        let _ = std::fs::remove_dir_all(&p.dados);
+    }
+
+    #[test]
+    fn favoritos_de_versao_mais_nova_bloqueiam_na_abertura() {
+        let p = pastas("bloqueio-usuario");
+        std::fs::create_dir_all(&p.dados).unwrap();
+        let caminho = crate::unidade::banco_usuario(&crate::unidade::local(&p));
+        drop(sa_packs::usuario::BancoUsuario::abrir(&caminho).unwrap());
+        rusqlite::Connection::open(&caminho)
+            .unwrap()
+            .execute("UPDATE sa_info SET valor = '9'", [])
+            .unwrap();
+        let sv = Servico::novo(p.clone());
+        sv.iniciar();
+        let s = sv.situacao().unwrap();
+        assert!(
+            s["bloqueio"]
+                .as_str()
+                .unwrap()
+                .contains("favoritos e anotações"),
+            "{s}"
+        );
+        assert!(sv.exigir_sem_bloqueio().is_err());
+        let _ = std::fs::remove_dir_all(&p.dados);
+    }
+
+    #[test]
+    fn situacao_guardada_ainda_mostra_tarefas_na_hora() {
+        let p = pastas("situacao-guardada");
+        let sv = Servico::novo(p.clone());
+        assert_eq!(sv.situacao().unwrap()["ocupado"], false);
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        sv.agenda
+            .enviar(
+                Fonte::Cnes,
+                "CNES",
+                crate::tarefas::Quando::Agora,
+                Box::new(move |_| {
+                    let _ = rx.recv_timeout(std::time::Duration::from_secs(5));
+                    Ok("ok".into())
+                }),
+            )
+            .unwrap();
+        // Dentro da validade da situação guardada, mas "ocupado" e "tarefas" vêm do agora.
+        let s = sv.situacao().unwrap();
+        assert_eq!(s["ocupado"], true, "{s}");
+        assert_eq!(s["tarefas"].as_array().unwrap().len(), 1, "{s}");
+        let _ = tx.send(());
+        let _ = std::fs::remove_dir_all(&p.dados);
+    }
+
+    #[test]
     fn banco_danificado_vai_para_quarentena_e_e_refeito_dos_zips() {
         let Some(zips) = zips_reais(3) else { return };
         let p = pastas("saude");
@@ -1693,6 +1885,46 @@ mod testes {
         eprintln!(
             "PROVA saúde: banco com 64 páginas estragadas achado na abertura, guardado em quarentena e refeito de 3 ZIPs reais com as mesmas competências e SHA-256"
         );
+        let _ = std::fs::remove_dir_all(&p.dados);
+    }
+
+    #[test]
+    fn consulta_acompanha_mudanca_feita_por_outro_processo() {
+        let Some(zips) = zips_reais(2) else { return };
+        let p = pastas("mudou-por-fora");
+        std::fs::create_dir_all(p.zips()).unwrap();
+        for (_, z) in &zips {
+            std::fs::copy(z, p.zips().join(z.file_name().unwrap())).unwrap();
+        }
+        let (em, _) = emissor();
+        let sv = Servico::novo(p.clone());
+        sv.recriar(&em, &|_| {}, true).unwrap();
+        sv.reabrir().unwrap();
+        let n = |sv: &Servico| {
+            sv.com_consulta(|q| Ok(q.competencias().unwrap().len()))
+                .unwrap()
+        };
+        assert_eq!(n(&sv), 2);
+        // Outro processo (a CLI) tira uma competência do banco.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        let mut b = BancoSigtap::abrir(&p.sigtap_db()).unwrap();
+        b.remover(zips[1].0).unwrap();
+        drop(b);
+        assert_eq!(n(&sv), 1);
+        let _ = std::fs::remove_dir_all(&p.dados);
+    }
+
+    #[test]
+    fn recriar_sem_zips_guardados_nao_troca_o_banco() {
+        let p = pastas("recriar-sem-zips");
+        std::fs::create_dir_all(p.zips()).unwrap();
+        std::fs::write(p.sigtap_db(), b"banco do usuario").unwrap();
+        let (em, _) = emissor();
+        let sv = Servico::novo(p.clone());
+        let erro = sv.recriar(&em, &|_| {}, true).unwrap_err();
+        assert!(erro.contains("não há ZIPs guardados"), "{erro}");
+        assert_eq!(std::fs::read(p.sigtap_db()).unwrap(), b"banco do usuario");
+        assert!(!p.dados.join("banco_com_problema_1").exists());
         let _ = std::fs::remove_dir_all(&p.dados);
     }
 
@@ -1907,7 +2139,7 @@ mod testes {
         assert!(
             sv.apagar_zips()
                 .unwrap_err()
-                .contains("download do SIGTAP em andamento")
+                .contains("tarefa do SIGTAP em andamento")
         );
         s.send(()).unwrap();
     }

@@ -29,7 +29,10 @@ fn json<T: serde::Serialize>(v: T) -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 async fn situacao(s: Estado<'_>) -> Result<serde_json::Value, String> {
-    s.situacao()
+    let s = s.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || s.situacao())
+        .await
+        .map_err(|e| format!("falha interna ao ler a situação ({e})"))?
 }
 
 #[tauri::command]
@@ -190,8 +193,14 @@ async fn verificar_dados(s: Estado<'_>) -> Result<serde_json::Value, String> {
 
 /// Perfil de usuário do GitHub (`https://github.com/<login>`), usado na lista de contribuidores.
 fn perfil_github(u: &str) -> bool {
+    // Regra do GitHub: letras e números, hífens só no meio e nunca dois seguidos.
     u.strip_prefix("https://github.com/").is_some_and(|l| {
-        !l.is_empty() && l.len() <= 39 && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        !l.is_empty()
+            && l.len() <= 39
+            && !l.starts_with('-')
+            && !l.ends_with('-')
+            && !l.contains("--")
+            && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
     })
 }
 
@@ -363,6 +372,7 @@ fn em_segundo_plano(
     + Send
     + 'static,
 ) -> Result<Recibo, String> {
+    s.exigir_sem_bloqueio()?;
     let (sv, nome) = (s.clone(), rotulo.to_string());
     let trabalho: tarefas::Trabalho = Box::new(move |ctx| {
         let (a, r, id) = (app.clone(), nome.clone(), ctx.tarefa);
@@ -486,7 +496,10 @@ async fn ofertas(s: Estado<'_>, de_novo: Option<bool>) -> Result<serde_json::Val
 
 #[tauri::command]
 async fn apagar_zips(s: Estado<'_>) -> Result<String, String> {
-    s.apagar_zips()
+    let s = s.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || s.apagar_zips())
+        .await
+        .map_err(|e| format!("falha interna ao apagar os ZIPs ({e})"))?
 }
 
 // ---- Fase 3: CNES, minha unidade, favoritos, anotações e exportação ----
@@ -1341,6 +1354,9 @@ mod testes {
             format!("{repo}x/outro"),
             format!("{repo}/issues/new?title=a b"),
             "https://github.com/outro/repo".to_string(),
+            "https://github.com/-x".to_string(),
+            "https://github.com/x-".to_string(),
+            "https://github.com/a--b".to_string(),
             format!("{repo}/\"\n"),
         ] {
             assert!(!url_permitida(&ruim), "{ruim:?}");

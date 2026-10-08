@@ -99,8 +99,9 @@ pub fn normalizar_codigo(entrada: &str) -> Result<String, ErroConsulta> {
     if d.len() == 10 && d.bytes().all(|b| b.is_ascii_digit()) {
         Ok(d)
     } else {
+        let mostrado: String = entrada.chars().take(40).collect();
         Err(ErroConsulta::Entrada(format!(
-            "código de procedimento inválido: '{entrada}'. Use 10 dígitos, com ou sem pontos (ex.: 04.06.01.057-9)."
+            "código de procedimento inválido: '{mostrado}'. Use 10 dígitos, com ou sem pontos (ex.: 04.06.01.057-9)."
         )))
     }
 }
@@ -404,5 +405,26 @@ mod testes {
         assert_eq!(normalizar_codigo("0406010579").unwrap(), "0406010579");
         assert!(normalizar_codigo("040601057").is_err());
         assert!(normalizar_codigo("04060105a9").is_err());
+    }
+
+    #[test]
+    fn erro_de_codigo_nao_repete_a_entrada_inteira() {
+        let msg = normalizar_codigo(&"9".repeat(1_000_000))
+            .unwrap_err()
+            .to_string();
+        assert!(msg.len() < 300, "{}", msg.len());
+    }
+
+    #[test]
+    fn padrao_longo_demais_nao_manda_refazer_o_banco() {
+        let e = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(1),
+            Some("LIKE or GLOB pattern too complex".into()),
+        );
+        let msg = ErroConsulta::Sql(e).to_string();
+        assert!(
+            msg.contains("longo demais") && !msg.contains("refaça"),
+            "{msg}"
+        );
     }
 }
