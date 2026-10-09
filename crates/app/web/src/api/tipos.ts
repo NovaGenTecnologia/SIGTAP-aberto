@@ -38,6 +38,8 @@ export interface ItemProcedimento {
   tp_complexidade: string; complexidade: string | null;
   valor_total_centavos: number; instrumentos: string[];
   forma: string; forma_nome: string | null;
+  /** Achado só pela descrição oficial (não pelo nome nem pelo código). */
+  na_descricao: boolean;
 }
 export interface Busca {
   consulta: string; competencia: string; modo: "codigo" | "texto";
@@ -74,6 +76,16 @@ export interface PlanoProducao { uf: string; itens: ItemPlano[]; total_bytes: nu
 export interface PedidoProducao { uf: string; meses: number; confirmado: boolean }
 
 // ---- Consultar (formas conferidas contra crates/query/src/{busca,ficha,historico,arvore,cid}.rs em 07/10/2026) ----
+/** Filtros da busca paginada; lista vazia = sem restrição. `tipo`: "procedimento" ou o nome da tabela de apoio. */
+export interface FiltrosDaBusca { tipo: string[]; complexidade: string[]; instrumento: string[]; grupo: string[]; forma: string[]; codigos: string[] | null }
+export interface Faceta { valor: string; rotulo: string | null; n: number }
+export interface Facetas { tipo: Faceta[]; complexidade: Faceta[]; instrumento: Faceta[]; grupo: Faceta[]; forma: Faceta[] }
+export interface BuscaPaginada {
+  consulta: string; competencia: string; modo: "codigo" | "texto";
+  /** Achados sem filtro; `total_filtrado` passa nos filtros. `pagina` começa em 1. */
+  total: number; total_filtrado: number; pagina: number; paginas: number;
+  procedimentos: ItemProcedimento[]; apoio: ItemDeApoio[]; facetas: Facetas;
+}
 export interface ItemDeApoio { tabela: string; colunas: string[]; codigo: string[]; nome: string; procedimentos: number }
 export interface CampoOficial {
   coluna: string; coluna_origem: string; valor: string | number | null;

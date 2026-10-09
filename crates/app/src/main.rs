@@ -72,6 +72,41 @@ async fn buscar_todos(
     })
 }
 
+/// Uma página da busca, com filtros e a contagem das opções de filtro.
+#[tauri::command]
+async fn buscar_pagina(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    texto: String,
+    filtros: sa_query::busca::Filtros,
+    pagina: usize,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|q| {
+        let c = s.competencia(q, competencia.as_deref())?;
+        json(
+            q.buscar_pagina(c, &texto, &filtros, pagina)
+                .map_err(|e| e.to_string())?,
+        )
+    })
+}
+
+/// Todos os procedimentos que passam nos filtros, para exportar a lista inteira.
+#[tauri::command]
+async fn buscar_exportar(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    texto: String,
+    filtros: sa_query::busca::Filtros,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|q| {
+        let c = s.competencia(q, competencia.as_deref())?;
+        json(
+            q.buscar_filtrado_todos(c, &texto, &filtros)
+                .map_err(|e| e.to_string())?,
+        )
+    })
+}
+
 #[tauri::command]
 async fn ficha(
     s: Estado<'_>,
@@ -1250,6 +1285,8 @@ fn main() {
             atualizar_programa,
             buscar,
             buscar_todos,
+            buscar_pagina,
+            buscar_exportar,
             ficha,
             historico,
             mudou,

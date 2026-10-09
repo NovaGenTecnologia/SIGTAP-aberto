@@ -1,6 +1,6 @@
 import { chamar } from "./tauri";
 import type {
-  AtualizacaoDoPrograma, Busca, ItemMarcado, Marcado, Planilha, Ficha, Historico, ItemProcedimento, NoDeArvore, NoDeCid, Estabelecimento, Fonte, InfoPrograma, Ofertas, Quando, PedidoDownload, PedidoProducao, PlanoProducao,
+  AtualizacaoDoPrograma, Busca, BuscaPaginada, FiltrosDaBusca, ItemMarcado, Marcado, Planilha, Ficha, Historico, ItemProcedimento, NoDeArvore, NoDeCid, Estabelecimento, Fonte, InfoPrograma, Ofertas, Quando, PedidoDownload, PedidoProducao, PlanoProducao,
   Situacao, SituacaoCnesCompleta, SituacaoProducao, Painel, Impacto, Mudancas,
   UnidadeCompleta, AptidaoUnidade, GrupoDeAptidao, UnidadeComNome, FaturamentoUnidade, FaturamentoIndisponivel, ProcedimentosDaUnidade,
 } from "./tipos";
@@ -13,6 +13,12 @@ export const buscar = (texto: string, competencia?: string) =>
 /** A mesma busca, com todos os procedimentos encontrados (a lista da tela pára em 200). */
 export const buscarTodos = (texto: string, competencia?: string) =>
   chamar<Busca>("buscar_todos", { competencia: competencia ?? null, texto });
+/** Uma página (100 procedimentos) da busca, com filtros e a contagem das opções de filtro. */
+export const buscarPagina = (texto: string, filtros: FiltrosDaBusca, pagina: number, competencia?: string) =>
+  chamar<BuscaPaginada>("buscar_pagina", { competencia: competencia ?? null, texto, filtros, pagina });
+/** Todos os procedimentos que passam nos filtros, para exportar. */
+export const buscarExportar = (texto: string, filtros: FiltrosDaBusca, competencia?: string) =>
+  chamar<Busca>("buscar_exportar", { competencia: competencia ?? null, texto, filtros });
 export const ficha = (codigo: string, competencia?: string) =>
   chamar<Ficha | null>("ficha", { competencia: competencia ?? null, codigo });
 export const historico = (codigo: string) => chamar<Historico>("historico", { codigo });

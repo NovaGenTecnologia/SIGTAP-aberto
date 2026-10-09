@@ -9,11 +9,16 @@ use sa_core::Competencia;
 use sa_sources::sigtap::dominios::Descricao;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+
+pub use crate::pagina::{BuscaPaginada, Faceta, Facetas, Filtros, TAMANHO_DA_PAGINA};
 
 /// Limite de procedimentos devolvidos numa busca (o total vem à parte).
 pub const LIMITE_PROCEDIMENTOS: usize = 200;
 /// Limite de itens de apoio.
 pub const LIMITE_APOIO: usize = 50;
+/// Buscas guardadas por `(competência, texto)`: trocar de página ou de filtro não refaz a busca.
+const BUSCAS_GUARDADAS: usize = 6;
 
 /// Procedimento num resultado.
 #[derive(Debug, Clone, Serialize)]
@@ -30,6 +35,8 @@ pub struct ItemProcedimento {
     /// Forma de organização (6 dígitos) e seu nome na competência, para agrupar listas.
     pub forma: String,
     pub forma_nome: Option<String>,
+    /// Achado só pela descrição oficial (não pelo nome nem pelo código).
+    pub na_descricao: bool,
 }
 
 /// Código de uma tabela de apoio encontrado.
@@ -53,6 +60,34 @@ pub struct Busca {
     pub total_procedimentos: usize,
     pub procedimentos: Vec<ItemProcedimento>,
     pub apoio: Vec<ItemApoio>,
+}
+
+/// O que uma busca achou, antes de filtro e página.
+#[derive(Debug)]
+pub(crate) struct Achados {
+    numerico: bool,
+    /// Códigos de procedimento: primeiro os achados pelo nome ou código, depois os achados só
+    /// pela descrição (`true`).
+    codigos: Vec<(String, bool)>,
+    apoio: Vec<ItemApoio>,
+}
+
+/// Buscas recentes, da mais antiga para a mais nova.
+pub(crate) type BuscasGuardadas = std::sync::Mutex<Vec<((i64, String), Arc<Achados>)>>;
+
+impl Achados {
+    pub(crate) fn modo(&self) -> &'static str {
+        if self.numerico { "codigo" } else { "texto" }
+    }
+    pub(crate) fn procedimentos(&self) -> usize {
+        self.codigos.len()
+    }
+    pub(crate) fn codigos(&self) -> &[(String, bool)] {
+        &self.codigos
+    }
+    pub(crate) fn apoio(&self) -> &[ItemApoio] {
+        &self.apoio
+    }
 }
 
 /// Máximo de caracteres da entrada e de termos distintos usados no índice de texto.
@@ -94,7 +129,7 @@ fn termos_fts(entrada: &str) -> Option<String> {
 
 impl Consulta {
     /// Resumo de um procedimento vigente para listas.
-    fn item_procedimento(
+    pub(crate) fn item_procedimento(
         &self,
         seq: i64,
         codigo: &str,
@@ -158,6 +193,7 @@ impl Consulta {
             complexidade,
             valor_total_centavos: num(&v[3]) + num(&v[4]) + num(&v[5]),
             instrumentos,
+            na_descricao: false,
         }))
     }
 
@@ -284,18 +320,59 @@ impl Consulta {
         limite: Option<usize>,
     ) -> Result<Busca, ErroConsulta> {
         let seq = self.exigir(comp)?;
+        let a = self.achados(seq, entrada)?;
+        let mut procedimentos = Vec::new();
+        for (c, na_descricao) in a.codigos.iter().take(limite.unwrap_or(usize::MAX)) {
+            if let Some(mut i) = self.item_procedimento(seq, c)? {
+                i.na_descricao = *na_descricao;
+                procedimentos.push(i);
+            }
+        }
+        Ok(Busca {
+            consulta: entrada.trim().to_string(),
+            competencia: comp.to_string(),
+            modo: a.modo(),
+            total_procedimentos: a.codigos.len(),
+            procedimentos,
+            apoio: a.apoio.clone(),
+        })
+    }
+
+    /// O que a busca acha (sem filtro nem página); guardado por `(competência, texto)`.
+    pub(crate) fn achados(&self, seq: i64, entrada: &str) -> Result<Arc<Achados>, ErroConsulta> {
         let entrada = entrada.trim();
         if entrada.is_empty() {
             return Err(ErroConsulta::Entrada(
                 "digite um código, parte do nome, CID, CBO ou habilitação".into(),
             ));
         }
+        let chave = (seq, entrada.to_lowercase());
+        if let Some((_, a)) = self
+            .buscas
+            .lock()
+            .expect("buscas")
+            .iter()
+            .find(|(k, _)| *k == chave)
+        {
+            return Ok(Arc::clone(a));
+        }
+        let novo = Arc::new(self.achar(seq, entrada)?);
+        let mut guardadas = self.buscas.lock().expect("buscas");
+        if guardadas.len() >= BUSCAS_GUARDADAS {
+            guardadas.remove(0);
+        }
+        guardadas.push((chave, Arc::clone(&novo)));
+        Ok(novo)
+    }
+
+    fn achar(&self, seq: i64, entrada: &str) -> Result<Achados, ErroConsulta> {
         let digitos: String = entrada
             .chars()
             .filter(|c| !matches!(c, '.' | '-' | ' '))
             .collect();
         let numerico = digitos.len() >= 2 && digitos.bytes().all(|b| b.is_ascii_digit());
         let mut codigos: BTreeSet<String> = BTreeSet::new();
+        let mut so_descricao: BTreeSet<String> = BTreeSet::new();
         let mut apoio: BTreeMap<(String, Vec<String>), String> = BTreeMap::new();
         let presentes: BTreeSet<String> = util::tabelas(self.conn(), seq)?.into_iter().collect();
         let t = ident("tb_procedimento")?;
@@ -352,6 +429,22 @@ impl Consulta {
             for c in st.query_map(rusqlite::params![seq, q], |r| r.get::<_, String>(0))? {
                 codigos.insert(c?);
             }
+            // Descrição oficial: só procedimentos vigentes; quem já veio pelo nome não é repetido.
+            if presentes.contains("tb_descricao") {
+                let td = ident("tb_descricao")?;
+                let vd = ident_vig("tb_descricao")?;
+                let mut st = self.conn().prepare_cached(&format!(
+                    "SELECT DISTINCT c.co_procedimento FROM sa_q_busca b
+                     JOIN {td} c ON c.sa_id = b.sa_id JOIN {vd} d ON d.sa_id = c.sa_id
+                     WHERE sa_q_busca MATCH ?2 AND b.tabela = 'tb_descricao'
+                       AND d.vig_ini <= ?1 AND d.vig_fim >= ?1
+                       AND c.co_procedimento IN (SELECT p.co_procedimento FROM {t} p JOIN {v} pv ON pv.sa_id = p.sa_id
+                                                 WHERE pv.vig_ini <= ?1 AND pv.vig_fim >= ?1)"
+                ))?;
+                for c in st.query_map(rusqlite::params![seq, q], |r| r.get::<_, String>(0))? {
+                    so_descricao.insert(c?);
+                }
+            }
             for r in &self.refs {
                 if r.tabela == "tb_procedimento" || !presentes.contains(&r.tabela) {
                     continue;
@@ -388,13 +481,16 @@ impl Consulta {
                 }
             }
         }
-        let total = codigos.len();
-        let mut procedimentos = Vec::new();
-        for c in codigos.iter().take(limite.unwrap_or(usize::MAX)) {
-            if let Some(i) = self.item_procedimento(seq, c)? {
-                procedimentos.push(i);
-            }
-        }
+        // Primeiro os achados pelo nome (ou código), depois os achados só pela descrição.
+        let extras: Vec<String> = so_descricao
+            .into_iter()
+            .filter(|c| !codigos.contains(c))
+            .collect();
+        let codigos: Vec<(String, bool)> = codigos
+            .into_iter()
+            .map(|c| (c, false))
+            .chain(extras.into_iter().map(|c| (c, true)))
+            .collect();
         let mut itens = Vec::new();
         for ((tabela, codigo), nome) in apoio.into_iter().take(LIMITE_APOIO) {
             let r = self
@@ -412,12 +508,9 @@ impl Consulta {
                 procedimentos,
             });
         }
-        Ok(Busca {
-            consulta: entrada.to_string(),
-            competencia: comp.to_string(),
-            modo: if numerico { "codigo" } else { "texto" },
-            total_procedimentos: total,
-            procedimentos,
+        Ok(Achados {
+            numerico,
+            codigos,
             apoio: itens,
         })
     }

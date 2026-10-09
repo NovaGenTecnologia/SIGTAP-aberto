@@ -55,7 +55,8 @@
 .estado:not(.estado--erro) .estado__texto { color: var(--cor-texto-2); }
 
 .carregando { display: flex; flex-direction: column; gap: var(--esp-2); padding: var(--esp-4); }
-.carregando--espera { flex-direction: row; align-items: center; gap: var(--esp-3); }
+.carregando--espera { align-items: center; justify-content: center; text-align: center; gap: var(--esp-4); min-height: 60vh; padding: var(--esp-6, 32px) var(--esp-4); }
+.carregando--espera > span:not(.num):not(.carregando__aviso) { max-width: 44ch; font-size: var(--texto-18); }
 .esqueleto { height: 14px; border-radius: 4px; background: var(--cor-linha); animation: pisca 1.4s ease-in-out infinite alternate; }
 .esqueleto--titulo { height: 22px; width: 40%; }
 .esqueleto--curto { width: 55%; }

@@ -1,4 +1,4 @@
-import { DESTINOS, caminhoConsultar, caminhoUnidade, lerConsultar, lerRota, lerUnidade, substituir } from "./rotas";
+import { DESTINOS, FILTROS_NA_ROTA_VAZIOS, caminhoConsultar, caminhoUnidade, lerConsultar, lerRota, lerUnidade, substituir } from "./rotas";
 
 test("os cinco destinos, na ordem da spec", () => {
   expect(DESTINOS.map((d) => d.rotulo)).toEqual(["Painel", "Consultar", "Mudanças", "Conferir arquivo", "Dados"]);
@@ -11,14 +11,37 @@ test("lerRota entende hash vazio, destino, resto e galeria", () => {
 });
 
 describe("rotas de Consultar", () => {
-  test("sem segmentos abre a busca vazia", () => {
-    expect(lerConsultar([])).toEqual({ tela: "buscar", texto: "" });
+  const SEM_FILTROS = { tipo: [], complexidade: [], instrumento: [], grupo: [], forma: [], fav: false };
+  test("sem segmentos abre a árvore (procedimentos, sem nó)", () => {
+    expect(lerConsultar([])).toEqual({ tela: "arvore", arvore: "procedimentos", no: null });
   });
-  test("q/<texto> carrega o texto buscado, decodificado", () => {
-    expect(lerConsultar(["q", "consulta%20m%C3%A9dica"])).toEqual({ tela: "buscar", texto: "consulta médica" });
+  test("q/<texto> abre os resultados com o texto decodificado", () => {
+    expect(lerConsultar(["q", "consulta%20m%C3%A9dica"])).toEqual({ tela: "resultados", texto: "consulta médica", filtros: SEM_FILTROS, pagina: 1 });
   });
   test("texto com codificação inválida não quebra", () => {
-    expect(lerConsultar(["q", "100%"])).toEqual({ tela: "buscar", texto: "100%" });
+    expect(lerConsultar(["q", "100%"])).toEqual({ tela: "resultados", texto: "100%", filtros: SEM_FILTROS, pagina: 1 });
+  });
+  test("texto com barra e acento volta igual", () => {
+    const c = ["q", encodeURIComponent("urgência/emergência")];
+    expect(lerConsultar(c)).toMatchObject({ tela: "resultados", texto: "urgência/emergência" });
+    expect(caminhoConsultar(lerConsultar(c))).toEqual(c);
+  });
+  test("q vazio cai na árvore", () => {
+    expect(lerConsultar(["q"])).toEqual({ tela: "arvore", arvore: "procedimentos", no: null });
+    expect(lerConsultar(["q", ""])).toEqual({ tela: "arvore", arvore: "procedimentos", no: null });
+    expect(lerConsultar(["q", "?pg=2"])).toEqual({ tela: "arvore", arvore: "procedimentos", no: null });
+  });
+  test("filtros e página moram na query da rota", () => {
+    const r = lerConsultar(["q", "consulta?tipo=procedimento,tb_cid&cx=2&ins=BPA-C,BPA%20(Individualizado)&grupo=03&forma=030101&fav=1&pg=3"]);
+    expect(r).toEqual({
+      tela: "resultados", texto: "consulta", pagina: 3,
+      filtros: { tipo: ["procedimento", "tb_cid"], complexidade: ["2"], instrumento: ["BPA-C", "BPA (Individualizado)"], grupo: ["03"], forma: ["030101"], fav: true },
+    });
+  });
+  test("página inválida volta para 1", () => {
+    expect(lerConsultar(["q", "consulta?pg=abc"])).toMatchObject({ pagina: 1 });
+    expect(lerConsultar(["q", "consulta?pg=0"])).toMatchObject({ pagina: 1 });
+    expect(lerConsultar(["q", "consulta?pg=-4"])).toMatchObject({ pagina: 1 });
   });
   test("código de 10 dígitos abre a ficha no Resumo", () => {
     expect(lerConsultar(["0301010072"])).toEqual({ tela: "ficha", codigo: "0301010072", aba: "resumo" });
@@ -32,24 +55,37 @@ describe("rotas de Consultar", () => {
     expect(lerConsultar(["0301010072", "exigencias", "rl_procedimento_cid"])).toEqual(
       { tela: "ficha", codigo: "0301010072", aba: "exigencias", secao: "rl_procedimento_cid" });
   });
-  test("explorar: padrão, CID e nó", () => {
-    expect(lerConsultar(["explorar"])).toEqual({ tela: "explorar", arvore: "procedimentos", no: null });
-    expect(lerConsultar(["explorar", "cid", "I10"])).toEqual({ tela: "explorar", arvore: "cid", no: "I10" });
-    expect(lerConsultar(["explorar", "procedimentos", "030101"])).toEqual({ tela: "explorar", arvore: "procedimentos", no: "030101" });
+  test("árvore: padrão, CID e nó", () => {
+    expect(lerConsultar(["arvore"])).toEqual({ tela: "arvore", arvore: "procedimentos", no: null });
+    expect(lerConsultar(["arvore", "cid", "I10"])).toEqual({ tela: "arvore", arvore: "cid", no: "I10" });
+    expect(lerConsultar(["arvore", "procedimentos", "030101"])).toEqual({ tela: "arvore", arvore: "procedimentos", no: "030101" });
   });
-  test("segmento sem sentido cai na busca vazia", () => {
-    expect(lerConsultar(["xyz"])).toEqual({ tela: "buscar", texto: "" });
+  test("o endereço antigo explorar/... ainda abre a árvore", () => {
+    expect(lerConsultar(["explorar"])).toEqual({ tela: "arvore", arvore: "procedimentos", no: null });
+    expect(lerConsultar(["explorar", "cid", "I10"])).toEqual({ tela: "arvore", arvore: "cid", no: "I10" });
+    expect(lerConsultar(["explorar", "procedimentos", "030101"])).toEqual({ tela: "arvore", arvore: "procedimentos", no: "030101" });
+  });
+  test("segmento sem sentido cai na árvore", () => {
+    expect(lerConsultar(["xyz"])).toEqual({ tela: "arvore", arvore: "procedimentos", no: null });
   });
   test("ida e volta devolve o caminho canônico", () => {
     const casos: string[][] = [
-      [], ["q", "consulta%20m%C3%A9dica"], ["0301010072"], ["0301010072", "historico"],
-      ["0301010072", "exigencias", "rl_procedimento_cid"], ["explorar"], ["explorar", "cid"],
-      ["explorar", "cid", "I10"], ["explorar", "procedimentos", "030101"],
+      [], ["arvore", "cid"], ["arvore", "cid", "I10"], ["arvore", "procedimentos", "030101"],
+      ["q", "consulta%20m%C3%A9dica"], ["q", "consulta?pg=2"],
+      ["q", "consulta?tipo=procedimento,tb_cid&cx=2&ins=BPA-C,BPA%20(Individualizado)&grupo=03&forma=030101&fav=1&pg=3"],
+      ["0301010072"], ["0301010072", "historico"], ["0301010072", "exigencias", "rl_procedimento_cid"],
     ];
     for (const c of casos) expect(caminhoConsultar(lerConsultar(c))).toEqual(c);
     expect(caminhoConsultar(lerConsultar(["03.01.01.007-2"]))).toEqual(["0301010072"]);
-    expect(caminhoConsultar({ tela: "buscar", texto: "" })).toEqual([]);
-    expect(caminhoConsultar({ tela: "buscar", texto: "  " })).toEqual([]);
+    expect(caminhoConsultar(lerConsultar(["explorar", "cid", "I10"]))).toEqual(["arvore", "cid", "I10"]);
+  });
+  test("texto em branco vira a árvore; filtros vazios e página 1 não aparecem", () => {
+    expect(caminhoConsultar({ tela: "resultados", texto: "  ", filtros: SEM_FILTROS, pagina: 1 })).toEqual([]);
+    expect(caminhoConsultar({ tela: "resultados", texto: " consulta ", filtros: SEM_FILTROS, pagina: 1 })).toEqual(["q", "consulta"]);
+  });
+  test("os nomes antigos buscar/explorar continuam escrevendo o endereço (até a tela nova)", () => {
+    expect(caminhoConsultar({ tela: "resultados", texto: "abc", filtros: FILTROS_NA_ROTA_VAZIOS, pagina: 1 })).toEqual(["q", "abc"]);
+    expect(caminhoConsultar({ tela: "arvore", arvore: "cid", no: "I10" })).toEqual(["arvore", "cid", "I10"]);
   });
 });
 

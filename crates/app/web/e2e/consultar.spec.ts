@@ -18,27 +18,47 @@ async function semViolacoes(page: Page) {
   expect(r.violations.map((v) => `${v.id}: ${v.nodes[0]?.html}`)).toEqual([]);
 }
 
-test("Buscar vazio: campo focado, exemplos, sem violação de acessibilidade", async ({ page }) => {
+const campo = (page: Page) => page.getByRole("combobox", { name: "Buscar" });
+
+test("vazio: campo único focado e a árvore, sem abas nem exemplos, sem violação de acessibilidade", async ({ page }) => {
   await abrirBuscar(page);
-  await expect(page.getByRole("searchbox", { name: "Buscar" })).toBeFocused();
-  await expect(page.getByRole("button", { name: "consulta médica" })).toBeVisible();
+  await expect(campo(page)).toBeFocused();
+  await expect(page.getByRole("tree", { name: "Procedimentos" }).getByRole("treeitem").first()).toBeVisible({ timeout: 30000 });
+  await expect(page.getByRole("tab")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "consulta médica" })).toHaveCount(0);
   await semViolacoes(page);
+});
+
+test("clicar no campo vazio mostra as pesquisas recentes; escolher uma refaz a busca", async ({ page }) => {
+  await abrirBuscar(page);
+  await campo(page).fill("consulta");
+  await campo(page).press("Enter");
+  await expect(page.getByRole("grid", { name: "Procedimentos" })).toBeVisible({ timeout: 30000 });
+  await campo(page).fill("");
+  await expect(page.getByRole("tree", { name: "Procedimentos" })).toBeVisible({ timeout: 30000 });
+  await campo(page).click();
+  const recentes = page.getByRole("listbox");
+  await expect(recentes.getByRole("option", { name: /consulta/ })).toBeVisible();
+  await semViolacoes(page);
+  await recentes.getByRole("option", { name: /consulta/ }).click();
+  await expect(page).toHaveURL(/#\/consultar\/q\/consulta/);
+  await expect(page.getByRole("grid", { name: "Procedimentos" })).toBeVisible();
 });
 
 test("digitar, seta para baixo e Enter chegam à ficha só pelo teclado; Voltar restaura a busca", async ({ page }) => {
   await abrirBuscar(page);
-  await page.getByRole("searchbox", { name: "Buscar" }).fill("consulta");
+  await campo(page).fill("consulta");
   const tabela = page.getByRole("grid", { name: "Procedimentos" });
   await expect(tabela).toBeVisible();
   await semViolacoes(page);
-  await page.getByRole("searchbox", { name: "Buscar" }).press("ArrowDown");
+  await campo(page).press("ArrowDown");
   const primeira = tabela.getByRole("row").nth(1);
   await expect(primeira).toBeFocused();
   const codigo = (await primeira.getByRole("rowheader").innerText()).replace(/\D/g, "");
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(new RegExp(`#/consultar/${codigo}$`));
   await page.goBack();
-  await expect(page.getByRole("searchbox", { name: "Buscar" })).toHaveValue("consulta");
+  await expect(campo(page)).toHaveValue("consulta");
   await expect(page.getByRole("grid", { name: "Procedimentos" })).toBeVisible();
   await expect(page.getByRole("row", { name: new RegExp(codigo.slice(0, 2)) }).first()).toBeVisible();
   await expect(page.getByRole("grid", { name: "Procedimentos" }).getByRole("row").nth(1)).toBeFocused();
@@ -46,7 +66,8 @@ test("digitar, seta para baixo e Enter chegam à ficha só pelo teclado; Voltar 
 
 test("capturas para conferir com o desenho", async ({ page }) => {
   await abrirBuscar(page, "/#/consultar/q/consulta");
-  await expect(page.getByRole("grid", { name: "Apoio" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Apoio/ })).toBeVisible({ timeout: 30000 });
+  await expect(page.getByRole("grid", { name: "Procedimentos" })).toBeVisible();
   await page.screenshot({ path: "test-results/buscar-1366.png" });
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.screenshot({ path: "test-results/buscar-1024.png" });
@@ -59,7 +80,7 @@ test("busca por código com máscara dá o mesmo resultado do código simples", 
 
 test("sem resultado explica o que tentar", async ({ page }) => {
   await abrirBuscar(page);
-  await page.getByRole("searchbox", { name: "Buscar" }).fill("xyzabcqq");
+  await campo(page).fill("xyzabcqq");
   await expect(page.getByText(/Nada encontrado para “xyzabcqq”/)).toBeVisible();
   await expect(page.getByText("Tente o código, parte do nome ou um CID.")).toBeVisible();
   await semViolacoes(page);
@@ -69,6 +90,7 @@ test("em 1024 px a tela não rola na horizontal e continua sem violações", asy
   await page.setViewportSize({ width: 1024, height: 768 });
   await abrirBuscar(page, "/#/consultar/q/consulta");
   await expect(page.getByRole("grid", { name: "Procedimentos" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Filtros/ })).toBeVisible();
   const rolagem = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(rolagem).toBeLessThanOrEqual(0);
   await semViolacoes(page);
@@ -76,7 +98,10 @@ test("em 1024 px a tela não rola na horizontal e continua sem violações", asy
 
 test("apoio: escolher um CID lista os procedimentos ligados", async ({ page }) => {
   await abrirBuscar(page, "/#/consultar/q/I10");
+  const barra = page.getByRole("button", { name: /Apoio/ });
+  await expect(barra).toBeVisible({ timeout: 30000 });
   const apoio = page.getByRole("grid", { name: "Apoio" });
+  if (!(await apoio.isVisible())) await barra.click();
   await expect(apoio).toBeVisible();
   await apoio.getByRole("row").nth(1).click();
   await expect(page.getByRole("button", { name: "Voltar à busca" })).toBeVisible();
@@ -139,16 +164,64 @@ async function abrirFicha(page: Page, codigo: string) {
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 }
 
-test("filtro por instrumento limita a lista e continua sem violações", async ({ page }) => {
+test("filtro de complexidade muda a rota, mostra o chip e a contagem; Limpar filtros volta", async ({ page }) => {
   await abrirBuscar(page, "/#/consultar/q/consulta");
-  const grupo = page.getByRole("radiogroup", { name: "Instrumento" });
-  await expect(grupo).toBeVisible();
-  const todos = await page.getByRole("grid", { name: "Procedimentos" }).getAttribute("aria-rowcount");
-  await grupo.getByRole("radio").nth(1).check({ force: true });
-  const filtrado = await page.getByRole("grid", { name: "Procedimentos" }).getAttribute("aria-rowcount");
-  expect(Number(filtrado)).toBeLessThanOrEqual(Number(todos));
+  const filtros = page.getByRole("group", { name: "Complexidade" });
+  await expect(filtros).toBeVisible({ timeout: 30000 });
+  const contagem = page.locator(".consultar__contagem");
+  const antes = await contagem.innerText();
+  await filtros.getByRole("checkbox").nth(1).check({ force: true });
+  await expect(page).toHaveURL(/cx=/);
+  await expect(page.getByRole("button", { name: /^Remover filtro/ })).toBeVisible();
+  await expect(contagem).not.toHaveText(antes);
   await page.screenshot({ path: "test-results/buscar-filtro.png" });
   await semViolacoes(page);
+  await page.getByRole("button", { name: "Limpar filtros" }).click();
+  await expect(page).not.toHaveURL(/cx=/);
+  await expect(contagem).toHaveText(antes);
+});
+
+test("paginação: 100 por página, a página 2 põe pg=2 na rota e Voltar da ficha restaura a página", async ({ page }) => {
+  await abrirBuscar(page, "/#/consultar/q/consulta");
+  const tabela = page.getByRole("grid", { name: "Procedimentos" });
+  await expect(page.getByText(/^1–100 de [\d.]+ procedimentos$/)).toBeVisible({ timeout: 30000 });
+  await page.getByRole("button", { name: "Página 2" }).click();
+  await expect(page).toHaveURL(/pg=2/);
+  await expect(page.getByText(/^101–/)).toBeVisible();
+  await semViolacoes(page);
+  await tabela.getByRole("row").nth(1).click();
+  await expect(page).toHaveURL(/#\/consultar\/\d{10}$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/pg=2/);
+  await expect(page.getByText(/^101–/)).toBeVisible();
+});
+
+test("o pé da página (paginação) fica à vista sem rolar a janela, em 1366 e 2560 px", async ({ page }) => {
+  for (const [largura, altura] of [[1366, 768], [2560, 1300]] as const) {
+    await page.setViewportSize({ width: largura, height: altura });
+    await abrirBuscar(page, "/#/consultar/q/consulta");
+    const pe = page.getByRole("navigation", { name: "Paginação" });
+    await expect(pe).toBeInViewport({ timeout: 30000 });
+    await expect(page.getByRole("grid", { name: "Procedimentos" })).toBeInViewport();
+    const rolagem = await page.locator(".shell__conteudo").evaluate((n) => n.scrollHeight - n.clientHeight);
+    expect(rolagem).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: `test-results/buscar-pe-${largura}.png` });
+  }
+});
+
+test("em 1024 px os filtros viram o botão Filtros e o painel abre e fecha por teclado", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await abrirBuscar(page, "/#/consultar/q/consulta");
+  const botao = page.getByRole("button", { name: /^Filtros/ });
+  await expect(botao).toBeVisible({ timeout: 30000 });
+  await botao.click();
+  const painel = page.getByRole("dialog", { name: "Filtros" });
+  await expect(painel).toBeVisible();
+  await page.screenshot({ path: "test-results/buscar-painel-1024.png" });
+  await semViolacoes(page);
+  await page.keyboard.press("Escape");
+  await expect(painel).toHaveCount(0);
+  await expect(botao).toBeFocused();
 });
 
 test("exigências: 'ver' do Resumo abre a seção, filtra, e um compatível leva à ficha dele", async ({ page }) => {
@@ -227,16 +300,11 @@ test("explorar: percorrer a árvore até a ficha só pelo teclado; Voltar reabre
   await expect(page.getByRole("treeitem", { selected: true })).toBeVisible();
 });
 
-test("explorar: árvore de CID e filtro, sem violações", async ({ page }) => {
+test("explorar: árvore de CID, sem violações", async ({ page }) => {
   await page.goto("/#/consultar/explorar/cid");
   const arvore = page.getByRole("tree", { name: "CID" });
   await expect(arvore.getByRole("treeitem").first()).toBeVisible({ timeout: 30000 });
   await page.screenshot({ path: "test-results/explorar-cid-1366.png" });
-  await semViolacoes(page);
-  await page.goto("/#/consultar/explorar/procedimentos");
-  await page.getByRole("searchbox").fill("consulta");
-  await expect(page.getByRole("status").filter({ hasText: /procedimentos/ })).toBeVisible({ timeout: 30000 });
-  await page.screenshot({ path: "test-results/explorar-filtro-1366.png" });
   await semViolacoes(page);
 });
 
@@ -265,7 +333,7 @@ async function limparMarcas(page: Page, codigo: string) {
   }, codigo);
 }
 
-test("favoritar e anotar na ficha; a Buscar vazia lista os dois; sem violações, também em 1024 px", async ({ page }) => {
+test("favoritar e anotar na ficha; o campo vazio lista o favorito; sem violações, também em 1024 px", async ({ page }) => {
   await page.goto("/#/consultar/0301010072");
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible({ timeout: 30000 });
   await limparMarcas(page, "0301010072");
@@ -277,14 +345,14 @@ test("favoritar e anotar na ficha; a Buscar vazia lista os dois; sem violações
     await page.keyboard.press("Enter");
     await expect(estrela).toHaveAttribute("aria-pressed", "true");
     await page.getByRole("button", { name: "Anotar" }).click();
-    const campo = page.getByRole("textbox", { name: "Anotação" });
-    await expect(campo).toBeFocused();
-    await campo.fill("Conferir o CBO antes de lançar. Na unidade só o 225125 está cadastrado.");
+    const anotacao = page.getByRole("textbox", { name: "Anotação" });
+    await expect(anotacao).toBeFocused();
+    await anotacao.fill("Conferir o CBO antes de lançar. Na unidade só o 225125 está cadastrado.");
     await page.keyboard.press("Control+Enter");
     await expect(page.getByText("Salvo", { exact: true })).toBeVisible();
     await page.screenshot({ path: "test-results/marcas-1366.png" });
     await semViolacoes(page);
-    await campo.press("Escape");
+    await anotacao.press("Escape");
     await expect(page.getByRole("button", { name: "Editar" })).toBeVisible();
     await page.setViewportSize({ width: 1024, height: 768 });
     await page.screenshot({ path: "test-results/marcas-1024.png" });
@@ -292,9 +360,8 @@ test("favoritar e anotar na ficha; a Buscar vazia lista os dois; sem violações
     await semViolacoes(page);
     await page.setViewportSize({ width: 1366, height: 768 });
     await page.goto("/#/consultar");
-    const favoritos = page.getByRole("region", { name: "Favoritos" });
-    await expect(favoritos.getByRole("link", { name: "03.01.01.007-2" })).toBeVisible({ timeout: 30000 });
-    await expect(page.getByRole("region", { name: "Anotações" })).toContainText("Conferir o CBO");
+    await campo(page).click();
+    await expect(page.getByRole("listbox").getByRole("option", { name: /03\.01\.01\.007-2/ })).toBeVisible({ timeout: 30000 });
     await page.screenshot({ path: "test-results/marcas-buscar-1366.png" });
     await semViolacoes(page);
   } finally {
@@ -361,11 +428,11 @@ test("explorar: prévia mostra CBO e CID e deixa favoritar; CID favorito ganha m
   await expect(favorito).toHaveAttribute("aria-pressed", "false");
 });
 
-test("exportar a busca leva todos os procedimentos, além dos 200 da tela", async ({ page }) => {
+test("exportar a busca leva todos os procedimentos, além dos 100 da página", async ({ page }) => {
   await page.goto("/#/consultar/q/tratamento");
-  await expect(page.getByText(/^Mostrando 200 de \d+/)).toBeVisible({ timeout: 30000 });
+  await expect(page.getByText(/^1–100 de [\d.]+ procedimentos$/)).toBeVisible({ timeout: 30000 });
   await page.getByRole("button", { name: "Exportar" }).click();
-  await expect(page.getByText(/^Planilha salva com [3-9]\d\d procedimentos\.$/)).toBeVisible({ timeout: 60000 });
+  await expect(page.getByText(/^Planilha salva com ([2-9]\d\d|[\d.]{5,}) procedimentos\.$/)).toBeVisible({ timeout: 60000 });
 });
 
 test("tabela rolada: o cabeçalho fica fixo no topo e tem fundo próprio", async ({ page }) => {
@@ -380,7 +447,10 @@ test("tabela rolada: o cabeçalho fica fixo no topo e tem fundo próprio", async
 
 test("buscar uma categoria de CID (Z00) lista as subcategorias e a ficha tem Voltar", async ({ page }) => {
   await page.goto("/#/consultar/q/Z00");
+  const barra = page.getByRole("button", { name: /Apoio/ });
+  await expect(barra).toBeVisible({ timeout: 30000 });
   const apoio = page.getByRole("grid", { name: "Apoio" });
+  if (!(await apoio.isVisible())) await barra.click();
   await expect(apoio.getByRole("row").filter({ hasText: "Z005" })).toBeVisible({ timeout: 30000 });
   await expect(apoio.getByRole("row").filter({ hasText: "Z001" })).toBeVisible();
   await apoio.getByRole("row").filter({ hasText: "Z005" }).click();

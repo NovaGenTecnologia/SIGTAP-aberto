@@ -37,6 +37,8 @@ Comandos:
   buscar <texto> [--competencia AAAAMM]
                                   busca por código, nome, CID, CBO, habilitação..., em JSON
   buscar-todos <texto> [--competencia AAAAMM]
+  buscar-pagina <texto> [--pagina N] [--filtros JSON] [--competencia AAAAMM]
+  buscar-exportar <texto> [--filtros JSON] [--competencia AAAAMM]
                                   a mesma busca, sem o limite de procedimentos
   arvore [nó] [--competencia AAAAMM]
   arvore-cid [letra|categoria] [--competencia AAAAMM]
@@ -131,6 +133,8 @@ struct Opcoes {
     sistema: Option<String>,
     classe: Option<String>,
     ordem: Option<String>,
+    pagina: usize,
+    filtros: Option<String>,
 }
 
 fn pasta_do_programa() -> PathBuf {
@@ -167,6 +171,8 @@ fn ler_opcoes(args: &[String]) -> Result<Opcoes, String> {
         sistema: None,
         classe: None,
         ordem: None,
+        pagina: 1,
+        filtros: None,
     };
     let mut i = 0;
     let valor = |i: usize, nome: &str| -> Result<String, String> {
@@ -247,6 +253,16 @@ fn ler_opcoes(args: &[String]) -> Result<Opcoes, String> {
             }
             "--ordem" => {
                 o.ordem = Some(valor(i, "--ordem")?);
+                i += 1;
+            }
+            "--pagina" => {
+                o.pagina = valor(i, "--pagina")?
+                    .parse()
+                    .map_err(|_| "--pagina espera um número".to_string())?;
+                i += 1;
+            }
+            "--filtros" => {
+                o.filtros = Some(valor(i, "--filtros")?);
                 i += 1;
             }
             "--hab" => {
@@ -428,6 +444,25 @@ fn cmd_consulta(cmd: &str, o: &Opcoes) -> Result<(), String> {
         "buscar-todos" => {
             exigir("o texto da busca")?;
             serde_json::to_string_pretty(&q.buscar_todos(comp, &livre).map_err(|e| e.to_string())?)
+        }
+        "buscar-pagina" | "buscar-exportar" => {
+            exigir("o texto da busca")?;
+            let filtros: sa_query::busca::Filtros = match &o.filtros {
+                Some(j) => serde_json::from_str(j)
+                    .map_err(|e| format!("--filtros não é um JSON válido: {e}"))?,
+                None => sa_query::busca::Filtros::default(),
+            };
+            if cmd == "buscar-pagina" {
+                serde_json::to_string_pretty(
+                    &q.buscar_pagina(comp, &livre, &filtros, o.pagina)
+                        .map_err(|e| e.to_string())?,
+                )
+            } else {
+                serde_json::to_string_pretty(
+                    &q.buscar_filtrado_todos(comp, &livre, &filtros)
+                        .map_err(|e| e.to_string())?,
+                )
+            }
         }
         "arvore" => {
             let pai = if livre.is_empty() { None } else { Some(livre.as_str()) };
@@ -1084,8 +1119,8 @@ fn main() -> ExitCode {
         "importar" => cmd_importar(&o),
         "territorio" => cmd_territorio(&o),
         "mudou" if o.unidade => cmd_unidade("mudou", &o),
-        "ficha" | "buscar" | "buscar-todos" | "arvore" | "arvore-cid" | "ligados" | "historico"
-        | "mudou" => cmd_consulta(cmd.as_str(), &o),
+        "ficha" | "buscar" | "buscar-todos" | "buscar-pagina" | "buscar-exportar" | "arvore"
+        | "arvore-cid" | "ligados" | "historico" | "mudou" => cmd_consulta(cmd.as_str(), &o),
         "cnes-competencias"
         | "cnes-baixar"
         | "cnes-importar"

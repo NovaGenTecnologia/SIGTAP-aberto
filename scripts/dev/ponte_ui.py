@@ -193,6 +193,8 @@ def main():
         if cmd == "arvore": return cli("arvore", *([args["pai"]] if args.get("pai") else []), *comp)
         if cmd == "buscar": return cli("buscar", args["texto"], *comp)
         if cmd == "buscar_todos": return cli("buscar-todos", args["texto"], *comp)
+        if cmd == "buscar_pagina": return cli("buscar-pagina", args["texto"], "--pagina", str(args["pagina"]), "--filtros", json.dumps(args["filtros"]), *comp)
+        if cmd == "buscar_exportar": return cli("buscar-exportar", args["texto"], "--filtros", json.dumps(args["filtros"]), *comp)
         if cmd == "ficha":
             try: return cli("ficha", args["codigo"], *comp)
             except RuntimeError as e:
