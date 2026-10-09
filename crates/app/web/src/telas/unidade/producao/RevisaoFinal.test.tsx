@@ -68,3 +68,21 @@ test("Exportar não vira zero o SIA apresentado que não veio", async () => {
   const linhas = m.exportar.mock.calls[0]![0].abas[0]!.linhas;
   expect(linhas.every((l) => l[2] === null)).toBe(true);
 });
+
+test("quantidade atípica avisa quando a lista foi cortada em 10", async () => {
+  const f = faturamentoExemplo();
+  const base = f.apresentado!.atipicas[0]!;
+  const dez = Array.from({ length: 10 }, (_, i) => ({ ...base, procedimento: `02010${String(i).padStart(5, "0")}` }));
+  m.faturamentoUnidade.mockResolvedValue(faturamentoExemplo({ apresentado: { ...f.apresentado!, atipicas: dez } }));
+  abrir("#/painel/producao/fora-do-padrao");
+  const b = await screen.findByRole("region", { name: "Quantidade atípica" });
+  expect(within(b).getByText(/Mostra os 10 mais atípicos/)).toBeInTheDocument();
+});
+
+test("Ver mais dos motivos deixa o foco dentro da lista, no botão que recolhe", async () => {
+  const u = userEvent.setup();
+  abrir("#/painel/producao/rejeicoes");
+  await screen.findByRole("table", { name: /Motivos de rejeição/ });
+  await u.click(screen.getByRole("button", { name: /^Ver mais/ }));
+  expect(screen.getByRole("button", { name: /^Mostrar só os/ })).toHaveFocus();
+});

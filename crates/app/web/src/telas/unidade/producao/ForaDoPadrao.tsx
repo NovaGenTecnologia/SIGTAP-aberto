@@ -60,6 +60,9 @@ function Secao({ id, titulo, origem, limite, resumo, recolhido, children, alvo }
   );
 }
 
+/** O mesmo teto que o cálculo aplica à lista de quantidades atípicas. */
+const LIMITE_DE_ATIPICAS = 10;
+
 function Quantidade({ f, alvo }: { f: FaturamentoUnidade; alvo: boolean }) {
   const a: Apresentado | null = f.apresentado;
   const meses = f.sem_campos_novos;
@@ -77,6 +80,7 @@ function Quantidade({ f, alvo }: { f: FaturamentoUnidade; alvo: boolean }) {
     const comUf = a.atipicas.some((x) => x.mediana_uf !== null);
     corpo = (
       <div className="un__cartao un__rolagem">
+        {a.atipicas.length >= LIMITE_DE_ATIPICAS && <p className="un__sub">Mostra os {LIMITE_DE_ATIPICAS} mais atípicos; pode haver outros.</p>}
         <table className="un__tabela" aria-label="Quantidades atípicas">
           <thead>
             <tr>

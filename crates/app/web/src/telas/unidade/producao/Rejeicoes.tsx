@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Apresentado, FaturamentoUnidade, MotivoDeRejeicao, Planilha, UnidadeCompleta } from "../../../api/tipos";
 import { ehAusente } from "../../../api/tipos";
 import { CampoBusca } from "../../../componentes/base/CampoBusca";
@@ -96,6 +96,9 @@ function ApresentadoEAprovado({ a }: { a: Apresentado | null }) {
 /** Rejeições do SIH: a taxa, todos os motivos com a descrição oficial e a evolução, e o apresentado × aprovado do SIA. */
 export function Rejeicoes({ f, unidade, rota }: { f: FaturamentoUnidade; unidade: UnidadeCompleta; rota: Rota }) {
   const [todos, setTodos] = useState(false);
+  const recolher = useRef<HTMLButtonElement>(null);
+  const moveu = useRef(false);
+  useEffect(() => { if (todos && moveu.current) recolher.current?.focus(); }, [todos]);
   const gravar = (motivo: string) => substituir("painel", ...caminhoUnidade({ ...rota, aba: "rejeicoes", motivo }));
   const [digitado, setDigitado] = useBuscaNaRota(rota.motivo, gravar);
   const { motivos: lista } = f.rejeicoes;
@@ -163,8 +166,8 @@ export function Rejeicoes({ f, unidade, rota }: { f: FaturamentoUnidade; unidade
                   </table>
                 </div>
               )}
-              {resto > 0 && <button type="button" className="un__mais" onClick={() => setTodos(true)}>Ver mais {inteiro(resto)} {resto === 1 ? "motivo" : "motivos"}</button>}
-              {!agulha && todos && filtrados.length > PRIMEIROS && <button type="button" className="un__mais" onClick={() => setTodos(false)}>Mostrar só os {PRIMEIROS} maiores</button>}
+              {resto > 0 && <button type="button" className="un__mais" onClick={() => { moveu.current = true; setTodos(true); }}>Ver mais {inteiro(resto)} {resto === 1 ? "motivo" : "motivos"}</button>}
+              {!agulha && todos && filtrados.length > PRIMEIROS && <button type="button" className="un__mais" ref={recolher} onClick={() => setTodos(false)}>Mostrar só os {PRIMEIROS} maiores</button>}
             </div>
           )}
         </>

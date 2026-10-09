@@ -24,7 +24,7 @@ a.un__irmao:focus-visible { outline: var(--anel-foco) solid var(--cor-foco); out
 .un__contagem { padding-bottom: 6px; font-size: var(--texto-12); color: var(--cor-texto-2); }
 .un__mais { align-self: flex-start; padding: 0; background: none; border: 0; color: var(--cor-acao); font: inherit; font-size: var(--texto-12); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; min-height: 24px; }
 .un__mais:focus-visible { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: 2px; }
-.un__mais:disabled { color: var(--cor-texto-2); cursor: default; }
+.un__mais[aria-disabled="true"] { color: var(--cor-texto-2); cursor: default; }
 .un__rolagem { position: relative; overflow-x: auto; }
 .un__rolagem:focus-visible { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: -3px; }
 .un__vazio { padding: var(--esp-4); color: var(--cor-texto-2); }

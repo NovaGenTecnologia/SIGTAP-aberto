@@ -147,7 +147,7 @@ export function Procedimentos({ unidade, rota, competencia }: { unidade: Unidade
             </div>
           )}
           {restantes > 0 && (
-            <button type="button" className="un__mais" disabled={lista.isFetchingNextPage} onClick={() => void lista.fetchNextPage()}>
+            <button type="button" className="un__mais" aria-disabled={lista.isFetchingNextPage || undefined} onClick={() => { if (!lista.isFetchingNextPage) void lista.fetchNextPage(); }}>
               {lista.isFetchingNextPage ? "Carregando…" : `Ver mais (${inteiro(restantes)} restantes)`}
             </button>
           )}
