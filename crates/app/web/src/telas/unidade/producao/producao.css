@@ -31,12 +31,12 @@
 .un__situacao--atencao { color: var(--cor-atencao-texto); }
 .un__situacao--info { color: var(--cor-info-texto); }
 
-@media (max-width: 1100px) {
+@container pagina (max-width: 900px) {
   .pr__cartoes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pr__olhar-item { grid-template-columns: 6rem minmax(0, 1fr) auto; }
   .pr__olhar-texto { grid-column: 2 / 4; grid-row: 2; }
 }
-@media (max-width: 760px) {
+@container pagina (max-width: 640px) {
   .pr__series { grid-template-columns: minmax(0, 1fr); }
 }
 .pr__serie .serie__grafico { max-height: none; }
@@ -51,7 +51,7 @@
 .pr__apresentado-topo { display: flex; align-items: center; justify-content: space-between; gap: var(--esp-3); }
 .pr__apresentado-valores { margin: 0; font-weight: 600; }
 .pr__apresentado .pr__lista { display: flex; flex-direction: column; gap: var(--esp-1); font-size: var(--texto-14); }
-@media (max-width: 1100px) { .pr__taxa { grid-template-columns: minmax(0, 1fr); } }
+@container pagina (max-width: 900px) { .pr__taxa { grid-template-columns: minmax(0, 1fr); } }
 
 /* Procedimentos */
 .pr__abc { display: flex; flex-direction: column; gap: var(--esp-2); }
@@ -98,8 +98,12 @@
 .pr__ficha { padding: 2px var(--esp-2); background: var(--cor-pagina); border: 1px solid var(--cor-linha); border-radius: var(--raio-controle); font-size: var(--texto-12); }
 .pr__linha { display: block; }
 .un__codigo-fraco { color: var(--cor-texto-2); font-size: var(--texto-12); }
-@media (max-width: 1100px) {
+@container pagina (max-width: 900px) {
   .pr__lados { grid-template-columns: minmax(0, 1fr); }
   .pr__marca { grid-template-columns: minmax(0, 1fr); gap: var(--esp-1); }
 }
 .pr__barra { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); align-items: center; gap: var(--esp-2); }
+
+/* Blocos que cabem dois a dois quando a página tem espaço; abaixo disso, um por linha. */
+.pr__pares { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 38rem), 1fr)); gap: var(--esp-4); align-items: start; }
+.pr__pares > * { min-width: 0; }

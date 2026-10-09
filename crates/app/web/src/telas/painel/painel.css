@@ -36,7 +36,7 @@
 .resumo__sub--alta { color: var(--cor-ok-texto); font-weight: 600; }
 
 /* Corpo: pendências à esquerda, lateral à direita */
-.painel__corpo { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--esp-4); align-items: start; }
+.painel__corpo { display: grid; grid-template-columns: minmax(0, 1fr) clamp(320px, 22cqw, 400px); gap: var(--esp-4); align-items: start; }
 .painel__corpo--sozinho { grid-template-columns: minmax(0, 1fr); max-width: 560px; }
 .painel__principal, .painel__lateral { display: flex; flex-direction: column; gap: var(--esp-3); min-width: 0; }
 .painel__secao { font-size: var(--texto-16); font-weight: 700; }
@@ -96,7 +96,7 @@
 .falta__texto { color: var(--cor-texto-2); }
 
 /* Janela estreita (1024 px): as colunas empilham */
-@media (max-width: 1100px) {
+@container pagina (max-width: 900px) {
   .painel__corpo { grid-template-columns: minmax(0, 1fr); }
   .resumo { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .resumo__coluna:nth-child(3) { border-left: 0; }
@@ -112,3 +112,9 @@
 .lateral__ligacao .lateral__breve-titulo { color: var(--cor-acao); text-decoration: underline; text-underline-offset: 2px; }
 .lateral__ligacao:focus-visible { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: 2px; }
 .lateral__seta { color: var(--cor-texto-2); font-weight: 700; }
+
+/* Janela larga: a lateral vira duas colunas, uma para cada cartão. */
+@container pagina (min-width: 2000px) {
+  .painel__corpo { grid-template-columns: minmax(0, 1fr) 776px; }
+  .painel__lateral { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+}

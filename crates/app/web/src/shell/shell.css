@@ -27,7 +27,7 @@
 .trilho__item:hover { background: var(--cor-pagina); }
 .trilho__item[aria-current="page"] { background: var(--cor-item-ativo); border-left-color: var(--cor-acao); color: var(--cor-acao-escura); font-weight: 700; }
 .trilho__item:focus-visible { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: -3px; }
-.shell__conteudo { grid-area: conteudo; overflow: auto; padding: var(--esp-5); outline: none; min-width: 0; }
+.shell__conteudo { grid-area: conteudo; overflow: auto; padding: var(--esp-5); outline: none; min-width: 0; container: pagina / inline-size; }
 .rodape { grid-area: rodape; display: flex; align-items: center; gap: var(--esp-4); padding: 0 var(--esp-4); border-top: 1px solid var(--cor-linha); background: var(--cor-superficie); color: var(--cor-texto-2); font-size: var(--texto-12); }
 
 .rodape .topo__espaco { flex: 1; }

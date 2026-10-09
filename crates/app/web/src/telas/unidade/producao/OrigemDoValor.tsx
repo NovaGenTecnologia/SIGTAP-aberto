@@ -356,10 +356,14 @@ export function OrigemDoValor({ f }: { f: FaturamentoUnidade }) {
           <TabelaDeFinanciamento sistema="SIH" itens={f.financiamento.sih} />
         </div>
       </Bloco>
-      <Composicao c={f.composicao_aih} f={f} />
-      <Perfil p={f.perfil} f={f} />
-      <ReapresentacaoDoMes r={f.reapresentacao} f={f} />
-      <Leitos l={f.leitos} f={f} />
+      <div className="pr__pares">
+        <Composicao c={f.composicao_aih} f={f} />
+        <Perfil p={f.perfil} f={f} />
+      </div>
+      <div className="pr__pares">
+        <ReapresentacaoDoMes r={f.reapresentacao} f={f} />
+        <Leitos l={f.leitos} f={f} />
+      </div>
       <ComPares p={f.pares} f={f} />
     </div>
   );
