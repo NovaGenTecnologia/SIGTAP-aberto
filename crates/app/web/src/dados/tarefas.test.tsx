@@ -161,3 +161,12 @@ test("algumaCarregando vale só durante a fase de carga", async () => {
   act(() => aoFim(fim("sigtap")));
   expect(result.current.todas.algumaCarregando).toBe(false);
 });
+
+test("ao fim de uma tarefa, o fechamento da unidade e a lista de procedimentos da produção são refeitos", async () => {
+  montar();
+  await pronto();
+  const invalidar = vi.spyOn(cliente, "invalidateQueries");
+  act(() => aoFim(fim("producao")));
+  const chaves = invalidar.mock.calls.map((c) => (c[0] as { queryKey: string[] }).queryKey[0]);
+  expect(chaves).toEqual(expect.arrayContaining(["faturamento-unidade", "producao-procedimentos"]));
+});

@@ -6,7 +6,7 @@ import type { FimDeTarefa, Fonte, ProgressoDeTarefa } from "../api/tipos";
 import { useSituacao } from "./consultas";
 import { ContextoDeTarefas, FONTES, mensagemOcupado, type TarefaDeFonte, type ValorDasTarefas } from "./tarefas";
 
-const CHAVES_A_ATUALIZAR = ["situacao", "cnes_situacao", "producao_situacao", "ofertas"];
+const CHAVES_A_ATUALIZAR = ["situacao", "cnes_situacao", "producao_situacao", "ofertas", "faturamento-unidade", "producao-procedimentos"];
 
 interface PorFonte { emAndamento: boolean; progresso: ProgressoDeTarefa | null; fim: FimDeTarefa | null }
 type Estado = Record<Fonte, PorFonte>;
