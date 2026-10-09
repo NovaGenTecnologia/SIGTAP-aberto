@@ -43,7 +43,7 @@ Comandos:
   ligados <tabela> <código> [--competencia AAAAMM]   (ex.: ligados tb_cid T742)
                                   grupos, ou filhos do nó (2, 4 ou 6 dígitos), em JSON
   historico <código>              linha do tempo do procedimento, em JSON
-  mudou [TABELA] [--de AAAAMM] [--competencia AAAAMM] [--desde N]
+  mudou [TABELA] [--de AAAAMM] [--competencia AAAAMM] [--desde N] [--unidade [--so-afeta]]
                                   o que mudou da competência anterior (ou de --de), em JSON;
                                   com TABELA, só ela, a partir do item N (padrão 0)
   cnes-competencias <UF>          competências do CNES no FTP oficial para a UF
@@ -114,6 +114,8 @@ struct Opcoes {
     meses: usize,
     confirmar: bool,
     uf: Option<String>,
+    unidade: bool,
+    so_afeta: bool,
 }
 
 fn pasta_do_programa() -> PathBuf {
@@ -141,6 +143,8 @@ fn ler_opcoes(args: &[String]) -> Result<Opcoes, String> {
         meses: 0,
         confirmar: false,
         uf: None,
+        unidade: false,
+        so_afeta: false,
     };
     let mut i = 0;
     let valor = |i: usize, nome: &str| -> Result<String, String> {
@@ -206,6 +210,8 @@ fn ler_opcoes(args: &[String]) -> Result<Opcoes, String> {
             "--confirmar" => o.confirmar = true,
             "--ultima" => o.ultima = true,
             "--todas" => o.todas = true,
+            "--unidade" => o.unidade = true,
+            "--so-afeta" => o.so_afeta = true,
             x if x.starts_with("--") => {
                 return Err(format!(
                     "opção desconhecida {x}. Veja: sigtap-aberto-cli ajuda"
@@ -824,6 +830,34 @@ fn cmd_unidade(cmd: &str, o: &Opcoes) -> Result<(), String> {
                 &p, &q, o.de, c, None,
             )?)
         }
+        "mudou" => {
+            let (q, para) = sigtap()?;
+            let de = match o.de {
+                Some(d) => d,
+                None => {
+                    let cs = q.competencias().map_err(|e| e.to_string())?;
+                    let pos = cs
+                        .iter()
+                        .position(|c| c.competencia == para.to_string())
+                        .ok_or_else(|| format!("competência {para} não carregada"))?;
+                    if pos == 0 {
+                        return Err(format!(
+                            "não há competência carregada antes de {para}; use --de"
+                        ));
+                    }
+                    Competencia::de_texto(&cs[pos - 1].competencia).map_err(|e| e.to_string())?
+                }
+            };
+            mostrar(un::faturamento::mudancas_da_unidade(
+                &p,
+                &q,
+                de,
+                para,
+                livres.first().map(String::as_str),
+                o.desde.unwrap_or(0),
+                o.so_afeta,
+            )?)
+        }
         "faturamento-painel" => {
             let (q, c) = sigtap()?;
             mostrar(un::faturamento::painel_do_faturista(&p, &q, c)?)
@@ -952,6 +986,7 @@ fn main() -> ExitCode {
         "baixar" => cmd_baixar(&o),
         "importar" => cmd_importar(&o),
         "territorio" => cmd_territorio(&o),
+        "mudou" if o.unidade => cmd_unidade("mudou", &o),
         "ficha" | "buscar" | "buscar-todos" | "arvore" | "arvore-cid" | "ligados" | "historico"
         | "mudou" => cmd_consulta(cmd.as_str(), &o),
         "cnes-competencias"

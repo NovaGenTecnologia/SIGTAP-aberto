@@ -856,7 +856,7 @@ async function telaMudou(c) {
         mais.disabled = true; mais.textContent = "Carregando…";
         try {
           const r = await invoke("mudou", { de: m.de, para: m.para, tabela: t.tabela, desde: t.itens.length });
-          if (r) { t.itens.push(...r.itens); t.itens_omitidos = r.itens_omitidos; }
+          const nt = r && r.tabelas ? r.tabelas[0] : r; if (nt) { t.itens.push(...nt.itens); t.itens_omitidos = nt.itens_omitidos; }
         } catch (e) { b.append(erro(e)); }
         mais.disabled = false;
       }

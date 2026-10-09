@@ -51,6 +51,13 @@ const casos: [string, () => Promise<unknown>, string, Record<string, unknown>?][
   ["manter brutos", () => c.manterBrutosDefinir(true), "manter_brutos_definir", { ligada: true }],
   ["verificar bancos rápido", () => c.verificarBancos(false), "verificar_bancos", { completo: false }],
   ["recriar banco", () => c.recriarBanco(), "recriar_banco", { forcar: true }],
+  ["painel do faturista", () => c.faturamentoPainel("202609"), "faturamento_painel", { competencia: "202609" }],
+  ["painel sem competência", () => c.faturamentoPainel(), "faturamento_painel", { competencia: null }],
+  ["impacto das mudanças", () => c.faturamentoImpacto("202608", "202609"), "faturamento_impacto", { de: "202608", para: "202609" }],
+  ["mudou com o filtro", () => c.mudou("202608", "202609", { soAfeta: true }), "mudou",
+    { de: "202608", para: "202609", tabela: null, desde: null, soAfeta: true }],
+  ["mudou: ver mais de uma tabela", () => c.mudou("202608", "202609", { tabela: "rl_procedimento_habilitacao", desde: 300 }), "mudou",
+    { de: "202608", para: "202609", tabela: "rl_procedimento_habilitacao", desde: 300, soAfeta: false }],
 ];
 
 test.each(casos)("%s", async (_nome, chamarFuncao, comando, args) => {

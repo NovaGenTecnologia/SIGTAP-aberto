@@ -1,7 +1,7 @@
 import { chamar } from "./tauri";
 import type {
   AtualizacaoDoPrograma, Busca, ItemMarcado, Marcado, Planilha, Ficha, Historico, ItemProcedimento, NoDeArvore, NoDeCid, Estabelecimento, Fonte, InfoPrograma, Ofertas, Quando, PedidoDownload, PedidoProducao, PlanoProducao,
-  Situacao, SituacaoCnesCompleta, SituacaoProducao,
+  Situacao, SituacaoCnesCompleta, SituacaoProducao, Painel, Impacto, Mudancas,
 } from "./tipos";
 
 export const situacao = () => chamar<Situacao>("situacao");
@@ -60,3 +60,11 @@ export const manterBrutosDefinir = (ligada: boolean) => chamar<boolean>("manter_
 
 export const verificarBancos = (completo: boolean) => chamar<unknown>("verificar_bancos", { completo });
 export const recriarBanco = (forcar = true) => chamar<void>("recriar_banco", { forcar });
+
+export const faturamentoPainel = (competencia?: string) =>
+  chamar<Painel>("faturamento_painel", { competencia: competencia ?? null });
+export const faturamentoImpacto = (de?: string, para?: string) =>
+  chamar<Impacto>("faturamento_impacto", { de: de ?? null, para: para ?? null });
+/** O que mudou entre duas competências, com a marca `afeta` da unidade ativa; `tabela`/`desde` pedem mais itens de uma tabela. */
+export const mudou = (de: string | undefined, para: string | undefined, opcoes: { tabela?: string; desde?: number; soAfeta?: boolean } = {}) =>
+  chamar<Mudancas>("mudou", { de: de ?? null, para: para ?? null, tabela: opcoes.tabela ?? null, desde: opcoes.desde ?? null, soAfeta: opcoes.soAfeta ?? false });
