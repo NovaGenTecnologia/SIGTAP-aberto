@@ -83,3 +83,19 @@ export function caminhoConsultar(t: TelaConsultar): string[] {
   if (t.aba === "resumo") return [t.codigo];
   return t.secao ? [t.codigo, t.aba, encodeURIComponent(t.secao)] : [t.codigo, t.aba];
 }
+
+// ---- Mudanças: De, Para e o filtro moram na rota ("-" no lugar de um De ainda não escolhido) ----
+export interface TelaMudancas { de: string | null; para: string | null; soAfeta: boolean }
+
+const competenciaDe = (t: string | undefined): string | null => (t && /^\d{6}$/.test(t) ? t : null);
+
+export function lerMudancas(resto: string[]): TelaMudancas {
+  return { de: competenciaDe(resto[0]), para: competenciaDe(resto[1]), soAfeta: resto[2] === "afeta" };
+}
+
+/** Segmentos para `ir("mudancas", ...caminhoMudancas(t))`. */
+export function caminhoMudancas(t: TelaMudancas): string[] {
+  if (!t.de && !t.para && !t.soAfeta) return [];
+  const base = [t.de ?? "-", t.para ?? "-"];
+  return t.soAfeta ? [...base, "afeta"] : t.de ? base : t.para ? base : [];
+}

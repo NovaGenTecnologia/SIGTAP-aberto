@@ -99,3 +99,63 @@ export interface Historico {
 }
 export interface NoDeArvore { nivel: "grupo" | "subgrupo" | "forma" | "procedimento"; codigo: string; codigo_mascarado: string; nome: string | null; procedimentos: number }
 export interface NoDeCid { nivel: "letra" | "categoria" | "subcategoria"; codigo: string; codigo_mascarado: string; nome: string | null; codigos: number; procedimentos: number }
+
+// ---- Painel e Mudanças (sub-projeto D) ----
+export interface PendenciaItem { codigo: string; nome: string | null; valor_centavos: number }
+export interface Pendencia {
+  id: string;
+  tipo: string;
+  gravidade: "atencao" | "info";
+  titulo: string;
+  texto: string;
+  valor_envolvido_centavos: number | null;
+  perda_estimada: { centavos: number; horizonte_meses: number; premissa: string } | null;
+  origem: { fonte: string; competencias: string[]; conta: string; nao_prova: string };
+  acao: { rotulo: string; destino: "itens" | "origem" };
+  itens: PendenciaItem[];
+}
+export interface ResumoDeSistema {
+  competencia: string; valor_centavos: number; quantidade: number;
+  variacao_mes_anterior: number | null; variacao_media_3_meses: number | null;
+}
+export interface Oportunidade {
+  codigo: string; nome: string; estado: string; uf: { valor_centavos: number };
+}
+export type Painel =
+  | { disponivel: false; mensagem: string }
+  | {
+      disponivel: true; uf: string; cnes: string; aviso: string;
+      sia: ResumoDeSistema | null; sih: ResumoDeSistema | null;
+      rejeicoes: { por_100_aih: number | null; janela_rejeicoes: number; janela_aih: number };
+      pares?: { taxa_da_unidade?: number | null; taxa_mediana_dos_pares?: number | null };
+      oportunidades: { total: number; itens: Oportunidade[] | null } | null;
+      pendencias: Pendencia[];
+      fontes: { producao_sia_ate: string | null; producao_sih_ate: string | null; sigtap: string };
+    };
+export interface ValorDoProcedimento { sa: number; sh: number; sp: number; financiamento?: string | null }
+export interface ValorAlterado {
+  procedimento: string; nome: string | null;
+  antes: ValorDoProcedimento; depois: ValorDoProcedimento;
+  impacto_uf_anual_centavos: number; impacto_unidade_anual_centavos: number;
+  unidade_produz: boolean; unidade_apta: boolean | null; afeta: boolean;
+}
+export type Impacto =
+  | { disponivel: false; mensagem: string }
+  | {
+      disponivel: true; uf: string; cnes: string | null; de: string; para: string;
+      mudancas_de_valor: number; mudancas_com_producao: number;
+      impacto_uf_anual_centavos: number; impacto_unidade_anual_centavos: number;
+      valores: ValorAlterado[]; aviso: string;
+      excluidos_com_producao: { procedimento: string; nome: string | null; unidade_produz: boolean }[];
+      exigencias_novas_com_producao: { procedimento: string; nome: string | null; unidade_produz: boolean; estado_da_unidade: string | null }[];
+    };
+export interface ItemDeMudanca {
+  tipo: "incluido" | "excluido" | "alterado"; chave: Record<string, string>;
+  antes: LinhaOficial | null; depois: LinhaOficial | null; campos_alterados: string[]; afeta?: boolean;
+}
+export interface TabelaDeMudanca {
+  tabela: string; presente_antes: boolean; presente_depois: boolean;
+  incluidos: number; excluidos: number; alterados: number;
+  itens: ItemDeMudanca[]; desde: number; itens_omitidos: number; afetam?: number;
+}
+export interface Mudancas { de: string; para: string; tabelas: TabelaDeMudanca[]; unidade?: boolean; unidade_com_cadastro?: boolean }

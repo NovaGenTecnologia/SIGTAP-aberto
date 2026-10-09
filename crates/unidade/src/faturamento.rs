@@ -10,7 +10,7 @@ use crate::producao::consulta_producao;
 use crate::{Pastas, consulta_cnes, exigir_uf};
 use sa_core::Competencia;
 use sa_query::Consulta;
-use sa_query::cnes::{CriterioPar, EstadoDetalhado};
+use sa_query::cnes::{CriterioPar, Estado, EstadoDetalhado};
 use sa_query::faturamento::{
     JANELA_LONGA_MESES, JANELA_MESES, classificar_procedimento, curva_abc, dias_no_mes, janela,
     mediana, mesmo_mes_do_ano_anterior, percentil_abaixo, por_100_aih, tendencia,
@@ -1047,6 +1047,10 @@ pub fn impacto_das_mudancas(
         }
     };
     let (ns, nh) = (j.sia.len(), j.sih.len());
+    let estados_unidade = match (&cnes, consulta_cnes(p, &uf)) {
+        (Some(c), Ok(cn)) => cn.estados_detalhados(sig, para, c).ok().flatten(),
+        _ => None,
+    };
     let mut valores = Vec::new();
     let (mut total_uf, mut total_unidade) = (0i64, 0i64);
     for m in sig.mudancas_de_valor(de, para).map_err(e)? {
@@ -1060,6 +1064,13 @@ pub fn impacto_das_mudancas(
         let imp_un = anual(d_sa * i128::from(u_q_sia), ns) + anual(d_h * i128::from(u_q_sih), nh);
         total_uf += imp_uf;
         total_unidade += imp_un;
+        let produz = u_q_sia > 0 || u_q_sih > 0;
+        let apta = estados_unidade.as_ref().map(|mapa| {
+            matches!(
+                mapa.get(&m.procedimento).map(|e| e.estado),
+                Some(Estado::Apta | Estado::Ressalva)
+            )
+        });
         valores.push((
             imp_uf.unsigned_abs(),
             json!({
@@ -1070,7 +1081,9 @@ pub fn impacto_das_mudancas(
                 "quantidade_sia_uf": q_sia,
                 "aih_uf": q_sih,
                 "impacto_uf_anual_centavos": imp_uf,
-                "unidade_produz": u_q_sia > 0 || u_q_sih > 0,
+                "unidade_produz": produz,
+                "unidade_apta": apta,
+                "afeta": afeta(produz, apta),
                 "impacto_unidade_anual_centavos": imp_un,
             }),
         ));
@@ -1108,10 +1121,6 @@ pub fn impacto_das_mudancas(
         })
         .collect();
     let novas = sig.exigencias_novas(de, para).map_err(e)?;
-    let estados_unidade = match (&cnes, consulta_cnes(p, &uf)) {
-        (Some(c), Ok(cn)) => cn.estados_detalhados(sig, para, c).ok().flatten(),
-        _ => None,
-    };
     let mut exigencias: Vec<(i64, Value)> = novas
         .into_iter()
         .filter_map(|nova| {
@@ -1162,11 +1171,45 @@ pub fn impacto_das_mudancas(
 const REAPRESENTACAO_MINIMA_PCT: f64 = 10.0;
 const REAPRESENTACAO_VEZES_A_UF: f64 = 2.0;
 
+/// Valor em reais no formato brasileiro: "R$ 1.234,56" (negativo com "−").
+fn reais_br(centavos: i64) -> String {
+    let c = centavos.unsigned_abs();
+    let inteiro = (c / 100).to_string();
+    let mut milhar = String::new();
+    for (i, ch) in inteiro.chars().enumerate() {
+        if i > 0 && (inteiro.len() - i).is_multiple_of(3) {
+            milhar.push('.');
+        }
+        milhar.push(ch);
+    }
+    format!(
+        "{}R$ {milhar},{:02}",
+        if centavos < 0 { "−" } else { "" },
+        c % 100
+    )
+}
+
+/// Número com uma casa decimal e vírgula ("1,7").
+fn dec1(x: f64) -> String {
+    format!("{x:.1}").replace('.', ",")
+}
+
+/// Tira do texto do alerta a remissão a abas da interface antiga ("(ver a aba …)").
+fn sem_remissao_a_abas(texto: &str) -> String {
+    match texto.find(" (ver a aba ") {
+        Some(i) => match texto[i..].find(')') {
+            Some(f) => format!("{}{}", &texto[..i], &texto[i + f + 1..]),
+            None => texto.to_string(),
+        },
+        None => texto.to_string(),
+    }
+}
+
 /// Alertas que saem dos blocos de produção da Fase 4.5 (serviço fora do cadastro, reapresentação, permanência,
 /// motivo de rejeição encerrado, regra sem geração de crédito), a partir do JSON da unidade. `(tipo, gravidade, texto)`.
 fn alertas_de_perfil(f: &Value) -> Vec<(&'static str, &'static str, String)> {
     let mut v = Vec::new();
-    let reais = |c: i64| format!("R$ {:.2}", c as f64 / 100.0);
+    let reais = reais_br;
 
     let sv = &f["servicos"];
     let fora = sv["fora_do_cadastro_centavos"].as_i64().unwrap_or(0);
@@ -1202,8 +1245,9 @@ fn alertas_de_perfil(f: &Value) -> Vec<(&'static str, &'static str, String)> {
                 "reapresentacao_alta",
                 "atencao",
                 format!(
-                    "{:.1}% do valor apresentado no SIA é de meses anteriores (na UF: {:.1}%). Pode ser atraso no envio ou reapresentação de produção recusada.",
-                    minha, da_uf
+                    "{}% do valor apresentado no SIA é de meses anteriores (na UF: {}%). Pode ser atraso no envio ou reapresentação de produção recusada.",
+                    dec1(minha),
+                    dec1(da_uf)
                 ),
             ));
         }
@@ -1255,6 +1299,338 @@ fn alertas_de_perfil(f: &Value) -> Vec<(&'static str, &'static str, String)> {
     v
 }
 
+/// Título curto de cada tipo de alerta; a queda de valor leva o sistema.
+fn titulo_da_pendencia(tipo: &str, sistema: Option<&str>) -> String {
+    let nome_sistema = if sistema == Some("sih") { "SIH" } else { "SIA" };
+    match tipo {
+        "queda_de_valor" => format!("Valor aprovado do {nome_sistema} em queda"),
+        "apresentado_maior_que_aprovado" => "Apresentado acima do aprovado".into(),
+        "servico_fora_do_cadastro" => "Serviço fora do cadastro do CNES".into(),
+        "reapresentacao_alta" => "Reapresentação acima da UF".into(),
+        "quantidade_atipica" => "Quantidade apresentada atípica".into(),
+        "produz_sem_aptidao" => "Produz sem aptidão no cadastro".into(),
+        "produz_com_ressalva" => "Produz sem o serviço no cadastro".into(),
+        "rejeicao_acima_dos_pares" => "Rejeições acima dos pares".into(),
+        "permanencia_fora_do_previsto" => "Permanência fora do previsto".into(),
+        "motivo_de_rejeicao_encerrado" => "Motivo de rejeição encerrado".into(),
+        "regra_sem_geracao_de_credito" => "Regra sem geração de crédito".into(),
+        "habilitacao_sem_producao" => "Habilitação sem produção".into(),
+        "mes_incompleto" => "Mês incompleto na fonte".into(),
+        "baixar_de_novo" => "Produção a baixar de novo".into(),
+        outro => outro.replace('_', " "),
+    }
+}
+
+/// Valor envolvido, perda estimada e itens de uma pendência, a partir do JSON da unidade.
+fn valor_da_pendencia(
+    tipo: &str,
+    sistema: Option<&str>,
+    f: &Value,
+    pr: Option<&Value>,
+) -> (Option<i64>, Option<Value>, Vec<Value>) {
+    let classe = |nome: &str| -> (Option<i64>, Vec<Value>) {
+        let c = &pr.map_or(Value::Null, |p| p["classes"][nome].clone());
+        let valor = c["valor_da_unidade_centavos"].as_i64().filter(|v| *v > 0);
+        let mut itens: Vec<(i64, Value)> = c["itens"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .map(|x| {
+                        let v = x["sia"]["valor_centavos"].as_i64().unwrap_or(0)
+                            + x["sih"]["valor_centavos"].as_i64().unwrap_or(0);
+                        (v, json!({ "codigo": x["codigo"], "nome": x["nome"], "valor_centavos": v }))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        itens.sort_by_key(|x| std::cmp::Reverse(x.0));
+        (valor, itens.into_iter().take(10).map(|x| x.1).collect())
+    };
+    match tipo {
+        "queda_de_valor" => {
+            let k = if sistema == Some("sih") {
+                "sih_valor"
+            } else {
+                "sia_valor"
+            };
+            let t = &f["tendencia"][k];
+            match (t["media_anterior"].as_f64(), t["media_recente"].as_f64()) {
+                (Some(ant), Some(rec)) if ant - rec > 0.0 => {
+                    let d = ant - rec;
+                    (
+                        Some((d * 3.0).round() as i64),
+                        Some(json!({
+                            "centavos": (d * 12.0).round() as i64,
+                            "horizonte_meses": 12,
+                            "premissa": "se a queda se mantiver",
+                        })),
+                        Vec::new(),
+                    )
+                }
+                _ => (None, None, Vec::new()),
+            }
+        }
+        "apresentado_maior_que_aprovado" => {
+            let a = f["apresentado"]["valor_apresentado_centavos"].as_i64();
+            let b = f["apresentado"]["valor_aprovado_centavos"].as_i64();
+            (
+                a.zip(b).map(|(a, b)| a - b).filter(|v| *v > 0),
+                None,
+                Vec::new(),
+            )
+        }
+        "servico_fora_do_cadastro" => (
+            f["servicos"]["fora_do_cadastro_centavos"]
+                .as_i64()
+                .filter(|v| *v > 0),
+            None,
+            Vec::new(),
+        ),
+        "reapresentacao_alta" => (
+            f["reapresentacao"]["anteriores_centavos"]
+                .as_i64()
+                .filter(|v| *v > 0),
+            None,
+            Vec::new(),
+        ),
+        "quantidade_atipica" => {
+            let itens: Vec<Value> = f["apresentado"]["atipicas"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .map(|x| json!({
+                            "codigo": x["procedimento"], "nome": x["nome"],
+                            "valor_centavos": x["valor_apresentado_centavos"].as_i64().unwrap_or(0),
+                        }))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let soma: i64 = itens
+                .iter()
+                .map(|x| x["valor_centavos"].as_i64().unwrap_or(0))
+                .sum();
+            (
+                (soma > 0).then_some(soma),
+                None,
+                itens.into_iter().take(10).collect(),
+            )
+        }
+        "produz_sem_aptidao" => {
+            let (v, i) = classe("produz_sem_aptidao");
+            (v, None, i)
+        }
+        "produz_com_ressalva" => {
+            let (v, i) = classe("produz_com_ressalva");
+            (v, None, i)
+        }
+        _ => (None, None, Vec::new()),
+    }
+}
+
+/// De onde vem o número: fonte, competências, conta e o que ela não prova.
+fn origem_da_pendencia(tipo: &str, sistema: Option<&str>, f: &Value) -> Value {
+    let (fonte, chave) = if sistema == Some("sih") {
+        ("SIH", "sih")
+    } else {
+        ("SIA", "sia")
+    };
+    let competencias = f["janela"][chave].clone();
+    let (fonte, competencias, conta, nao_prova) = match tipo {
+        "queda_de_valor" => (
+            fonte,
+            competencias,
+            "(média dos 3 meses anteriores − média dos 3 últimos) × 3 meses",
+            "Não prova a causa da queda; mostra só a diferença de valor aprovado.",
+        ),
+        "apresentado_maior_que_aprovado" => (
+            "SIA",
+            f["janela"]["sia"].clone(),
+            "valor apresentado − valor aprovado, nos meses carregados",
+            "Não diz quanto será pago nem o motivo da glosa.",
+        ),
+        "servico_fora_do_cadastro" => (
+            "SIA e CNES",
+            f["janela"]["sia"].clone(),
+            "soma do apresentado em serviços que o CNES da unidade não tem",
+            "Não prova que o serviço não exista; o cadastro pode estar desatualizado.",
+        ),
+        "reapresentacao_alta" => (
+            "SIA",
+            f["janela"]["sia"].clone(),
+            "valor apresentado de meses anteriores dentro da janela",
+            "Não separa atraso de envio de reapresentação recusada.",
+        ),
+        "quantidade_atipica" => (
+            "SIA",
+            f["janela"]["sia"].clone(),
+            "soma do apresentado nos procedimentos fora da série da unidade e dos pares",
+            "Não prova erro; só aponta o que foge do padrão.",
+        ),
+        "rejeicao_acima_dos_pares"
+        | "motivo_de_rejeicao_encerrado"
+        | "permanencia_fora_do_previsto" => (
+            "SIH",
+            f["janela"]["sih"].clone(),
+            "contagem e valor das AIH da unidade contra os pares e o previsto no SIGTAP",
+            "Não prova erro da unidade; só aponta o que foge do padrão.",
+        ),
+        "produz_sem_aptidao" | "produz_com_ressalva" => (
+            "SIA, SIH e CNES",
+            f["janela"]["sia"].clone(),
+            "valor produzido pela unidade nos procedimentos da classe",
+            "Não diz se o cadastro está errado ou se o serviço é de terceiros.",
+        ),
+        _ => (fonte, competencias, "", ""),
+    };
+    json!({ "fonte": fonte, "competencias": competencias, "conta": conta, "nao_prova": nao_prova })
+}
+
+/// Transforma os alertas do painel em pendências: valor em R$, origem, itens e ordem por valor.
+pub(crate) fn montar_pendencias(alertas: &[Value], f: &Value, pr: Option<&Value>) -> Vec<Value> {
+    let mut v: Vec<(Option<i64>, u8, usize, Value)> = Vec::new();
+    for (i, a) in alertas.iter().enumerate() {
+        let tipo = a["tipo"].as_str().unwrap_or("");
+        let sistema = a["sistema"].as_str();
+        let gravidade = a["gravidade"].as_str().unwrap_or("info");
+        let (valor, perda, itens) = valor_da_pendencia(tipo, sistema, f, pr);
+        let id = match sistema {
+            Some(s) => format!("{tipo}:{s}"),
+            None => tipo.to_string(),
+        };
+        let tem_itens = !itens.is_empty();
+        v.push((
+            valor,
+            u8::from(gravidade != "atencao"),
+            i,
+            json!({
+                "id": id,
+                "tipo": tipo,
+                "gravidade": gravidade,
+                "titulo": titulo_da_pendencia(tipo, sistema),
+                "texto": sem_remissao_a_abas(a["texto"].as_str().unwrap_or("")),
+                "valor_envolvido_centavos": valor,
+                "perda_estimada": perda,
+                "origem": origem_da_pendencia(tipo, sistema, f),
+                "acao": { "rotulo": "Ver itens", "destino": if tem_itens { "itens" } else { "origem" } },
+                "itens": itens,
+            }),
+        ));
+    }
+    v.sort_by(|a, b| {
+        let (va, vb) = (a.0.unwrap_or(i64::MIN), b.0.unwrap_or(i64::MIN));
+        vb.cmp(&va).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2))
+    });
+    v.into_iter().map(|x| x.3).collect()
+}
+
+/// Alerta da queda de valor aprovado de um sistema (`sistema`: "SIA" ou "SIH"; `queda_pct` positivo).
+fn alerta_de_queda(sistema: &str, queda_pct: f64) -> Value {
+    json!({
+        "tipo": "queda_de_valor",
+        "gravidade": "atencao",
+        "sistema": sistema.to_lowercase(),
+        "texto": format!(
+            "O valor aprovado no {sistema} caiu {queda_pct:.0}% (3 últimos meses contra os 3 anteriores)."
+        ),
+    })
+}
+
+/// A unidade é afetada por um procedimento se produz ou está apta. Sem cadastro, só a produção conta.
+fn afeta(produz: bool, apta: Option<bool>) -> bool {
+    produz || apta == Some(true)
+}
+
+/// Marca cada item das tabelas com `co_procedimento` com `afeta` (e conta `afetam` por tabela). Com
+/// `so_afeta`, deixa só os que afetam. Tabelas sem `co_procedimento` ficam como estão.
+pub fn anotar_afeta(
+    m: &mut Value,
+    produzidos: &HashSet<String>,
+    aptos: Option<&HashSet<String>>,
+    so_afeta: bool,
+) {
+    let Some(tabelas) = m["tabelas"].as_array_mut() else {
+        return;
+    };
+    for t in tabelas {
+        let Some(itens) = t["itens"].as_array_mut() else {
+            continue;
+        };
+        if !itens
+            .iter()
+            .any(|i| i["chave"]["co_procedimento"].is_string())
+        {
+            continue;
+        }
+        let mut afetam = 0usize;
+        for i in itens.iter_mut() {
+            let Some(cod) = i["chave"]["co_procedimento"].as_str().map(String::from) else {
+                continue;
+            };
+            let a = afeta(produzidos.contains(&cod), aptos.map(|s| s.contains(&cod)));
+            i["afeta"] = json!(a);
+            afetam += usize::from(a);
+        }
+        if so_afeta {
+            itens.retain(|i| i["afeta"] != json!(false));
+        }
+        t["afetam"] = json!(afetam);
+    }
+}
+
+/// O que mudou entre `de` e `para`, com a marca `afeta` por procedimento para a unidade ativa.
+/// Sem unidade escolhida, devolve o mesmo que `o_que_mudou`, sem marcas. Com `tabela`, devolve só
+/// ela (no mesmo formato, com uma tabela).
+pub fn mudancas_da_unidade(
+    p: &Pastas,
+    sig: &Consulta,
+    de: Competencia,
+    para: Competencia,
+    tabela: Option<&str>,
+    desde: usize,
+    so_afeta: bool,
+) -> Result<Value, String> {
+    let e = |x: sa_query::ErroConsulta| x.to_string();
+    let mut m = match tabela {
+        Some(t) => {
+            let t = sig
+                .o_que_mudou_tabela(de, para, t, desde, sa_query::mudancas::LIMITE_ITENS)
+                .map_err(e)?;
+            json!({ "de": de.to_string(), "para": para.to_string(), "tabelas": [t] })
+        }
+        None => serde_json::to_value(
+            sig.o_que_mudou(de, para, sa_query::mudancas::LIMITE_ITENS)
+                .map_err(e)?,
+        )
+        .map_err(|x| x.to_string())?,
+    };
+    let Some((uf, cnes)) = crate::minha(p) else {
+        m["unidade"] = json!(false);
+        return Ok(m);
+    };
+    let mut produzidos: HashSet<String> = HashSet::new();
+    if let Ok(q) = consulta_producao(p, &uf) {
+        let (j, _) = janelas(&q)?;
+        for (origem, janela) in [(Origem::Ambulatorial, &j.sia), (Origem::Hospitalar, &j.sih)] {
+            for (proc_, _, _) in q.da_unidade_na_janela(origem, &cnes, janela).map_err(e)? {
+                produzidos.insert(proc_);
+            }
+        }
+    }
+    let aptos: Option<HashSet<String>> = consulta_cnes(p, &uf)
+        .ok()
+        .and_then(|cn| cn.estados_detalhados(sig, para, &cnes).ok().flatten())
+        .map(|mapa| {
+            mapa.into_iter()
+                .filter(|(_, e)| matches!(e.estado, Estado::Apta | Estado::Ressalva))
+                .map(|(k, _)| k)
+                .collect()
+        });
+    anotar_afeta(&mut m, &produzidos, aptos.as_ref(), so_afeta);
+    m["unidade"] = json!(true);
+    m["unidade_com_cadastro"] = json!(aptos.is_some());
+    Ok(m)
+}
+
 /// Painel do faturista (tela de início): o resumo da unidade ativa com os alertas que merecem olhar.
 pub fn painel_do_faturista(p: &Pastas, sig: &Consulta, comp: Competencia) -> Result<Value, String> {
     let Some((uf, cnes)) = crate::minha(p) else {
@@ -1268,9 +1644,11 @@ pub fn painel_do_faturista(p: &Pastas, sig: &Consulta, comp: Competencia) -> Res
     if f["disponivel"] != json!(true) {
         return Ok(f);
     }
-    let mut alertas: Vec<Value> = Vec::new();
-    let mut alerta = |tipo: &str, gravidade: &str, texto: String| {
-        alertas.push(json!({ "tipo": tipo, "gravidade": gravidade, "texto": texto }));
+    let alertas: std::cell::RefCell<Vec<Value>> = std::cell::RefCell::new(Vec::new());
+    let alerta = |tipo: &str, gravidade: &str, texto: String| {
+        alertas
+            .borrow_mut()
+            .push(json!({ "tipo": tipo, "gravidade": gravidade, "texto": texto }));
     };
 
     // Último mês completo e variação.
@@ -1334,6 +1712,9 @@ pub fn painel_do_faturista(p: &Pastas, sig: &Consulta, comp: Competencia) -> Res
                     u["estabelecimentos"]
                 ),
             );
+            if let Some(ultimo) = alertas.borrow_mut().last_mut() {
+                ultimo["sistema"] = json!(s);
+            }
         }
     }
     if !f["sem_campos_novos"].as_array().is_none_or(Vec::is_empty) {
@@ -1356,7 +1737,9 @@ pub fn painel_do_faturista(p: &Pastas, sig: &Consulta, comp: Competencia) -> Res
             "rejeicao_acima_dos_pares",
             "atencao",
             format!(
-                "Rejeições por 100 AIH: {t:.1} na unidade contra {m:.1} (mediana das unidades do mesmo tipo)."
+                "Rejeições por 100 AIH: {} na unidade contra {} (mediana das unidades do mesmo tipo).",
+                dec1(t),
+                dec1(m)
             ),
         );
     }
@@ -1368,16 +1751,12 @@ pub fn painel_do_faturista(p: &Pastas, sig: &Consulta, comp: Competencia) -> Res
                 .unwrap_or(0.0)
                 < -10.0
         {
-            alerta(
-                "queda_de_valor",
-                "atencao",
-                format!(
-                    "O valor aprovado no {nome} caiu {:.0}% (3 últimos meses contra os 3 anteriores).",
-                    -f["tendencia"][k]["variacao_percentual"]
-                        .as_f64()
-                        .unwrap_or(0.0)
-                ),
-            );
+            alertas.borrow_mut().push(alerta_de_queda(
+                nome,
+                -f["tendencia"][k]["variacao_percentual"]
+                    .as_f64()
+                    .unwrap_or(0.0),
+            ));
         }
     }
     // Apresentado maior que o aprovado.
@@ -1390,8 +1769,8 @@ pub fn painel_do_faturista(p: &Pastas, sig: &Consulta, comp: Competencia) -> Res
             "apresentado_maior_que_aprovado",
             "atencao",
             format!(
-                "No SIA, o apresentado passou do aprovado em R$ {:.2} nos meses carregados (ver a aba Produção da unidade).",
-                (a - b) as f64 / 100.0
+                "No SIA, o apresentado passou do aprovado em {} nos meses carregados (ver a aba Produção da unidade).",
+                reais_br(a - b)
             ),
         );
     }
@@ -1404,12 +1783,12 @@ pub fn painel_do_faturista(p: &Pastas, sig: &Consulta, comp: Competencia) -> Res
             "quantidade_atipica",
             "atencao",
             format!(
-                "{} procedimento(s) com quantidade apresentada muito acima da série da unidade e dos outros estabelecimentos. O maior: {} em {}, {} apresentados (R$ {:.2}). Confira se não é erro de digitação ou de lote (ver a aba Produção da unidade).",
+                "{} procedimento(s) com quantidade apresentada muito acima da série da unidade e dos outros estabelecimentos. O maior: {} em {}, {} apresentados ({}). Confira se não é erro de digitação ou de lote (ver a aba Produção da unidade).",
                 a.len(),
                 primeira["procedimento"].as_str().unwrap_or(""),
                 primeira["competencia"].as_str().unwrap_or(""),
                 primeira["quantidade_apresentada"].as_i64().unwrap_or(0),
-                primeira["valor_apresentado_centavos"].as_i64().unwrap_or(0) as f64 / 100.0
+                reais_br(primeira["valor_apresentado_centavos"].as_i64().unwrap_or(0))
             ),
         );
     }
@@ -1420,6 +1799,7 @@ pub fn painel_do_faturista(p: &Pastas, sig: &Consulta, comp: Competencia) -> Res
 
     // Procedimentos: oportunidades e produção sem aptidão.
     let mut oportunidades = Value::Null;
+    let mut procedimentos_json: Option<Value> = None;
     if let Ok(pr) = procedimentos_com_producao(p, sig, comp, alvo)
         && pr["disponivel"] == json!(true)
     {
@@ -1479,8 +1859,11 @@ pub fn painel_do_faturista(p: &Pastas, sig: &Consulta, comp: Competencia) -> Res
             "total": pr["classes"]["apta_nao_produz"]["com_producao_na_uf"],
             "itens": pr["classes"]["apta_nao_produz"]["itens"].as_array().map(|v| v.iter().filter(|x| x["uf"]["valor_centavos"].as_i64().unwrap_or(0) > 0).take(5).cloned().collect::<Vec<_>>()),
         });
+        procedimentos_json = Some(pr);
     }
 
+    let alertas = alertas.into_inner();
+    let pendencias = montar_pendencias(&alertas, &f, procedimentos_json.as_ref());
     let mut v = json!({
         "disponivel": true,
         "uf": uf,
@@ -1495,8 +1878,10 @@ pub fn painel_do_faturista(p: &Pastas, sig: &Consulta, comp: Competencia) -> Res
             "motivos": f["rejeicoes"]["motivos"].as_array().map(|m| m.iter().take(3).cloned().collect::<Vec<_>>()),
         },
         "tendencia": f["tendencia"],
+        "pares": f["pares"],
         "oportunidades": oportunidades,
         "alertas": alertas,
+        "pendencias": pendencias,
     });
     v["fontes"] = json!({
         "producao_sia_ate": f["janela"]["sia"].as_array().and_then(|a| a.last().cloned()),
@@ -1541,7 +1926,7 @@ mod testes {
             ]
         );
         let textos: Vec<String> = alertas_de_perfil(&f).into_iter().map(|a| a.2).collect();
-        assert!(textos[0].contains("R$ 50.00") && textos[0].contains("1 serviço"));
+        assert!(textos[0].contains("R$ 50,00") && textos[0].contains("1 serviço"));
         assert!(textos[4].contains("7101") && !textos[4].contains("7102"));
     }
 
@@ -1560,5 +1945,260 @@ mod testes {
             "8% fica abaixo do mínimo de 10%"
         );
         assert_eq!(tipos(&r(10, 5)), ["reapresentacao_alta"]);
+    }
+
+    fn alerta(tipo: &str, gravidade: &str) -> Value {
+        json!({ "tipo": tipo, "gravidade": gravidade, "texto": format!("texto de {tipo}") })
+    }
+
+    fn queda(sistema: &str) -> Value {
+        json!({ "tipo": "queda_de_valor", "gravidade": "atencao", "texto": "caiu", "sistema": sistema })
+    }
+
+    #[test]
+    fn queda_de_valor_tem_valor_envolvido_vezes_tres_e_perda_vezes_doze() {
+        let f = json!({
+            "tendencia": { "sia_valor": { "media_anterior": 1_000_000.0, "media_recente": 900_000.0, "sentido": "cai" } },
+            "janela": { "sia": ["202604", "202605", "202606", "202607", "202608", "202609"] },
+        });
+        let p = montar_pendencias(&[queda("sia")], &f, None);
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0]["id"], "queda_de_valor:sia");
+        assert_eq!(p[0]["valor_envolvido_centavos"], 300_000);
+        assert_eq!(p[0]["perda_estimada"]["centavos"], 1_200_000);
+        assert_eq!(p[0]["perda_estimada"]["horizonte_meses"], 12);
+        assert_eq!(p[0]["perda_estimada"]["premissa"], "se a queda se mantiver");
+        assert_eq!(p[0]["origem"]["fonte"], "SIA");
+        assert_eq!(p[0]["origem"]["competencias"].as_array().unwrap().len(), 6);
+        assert!(
+            p[0]["origem"]["nao_prova"]
+                .as_str()
+                .unwrap()
+                .contains("causa")
+        );
+    }
+
+    #[test]
+    fn queda_sem_diferenca_positiva_nao_ganha_valor_nem_perda() {
+        let f = json!({
+            "tendencia": { "sia_valor": { "media_anterior": 100.0, "media_recente": 100.0 } },
+        });
+        let p = montar_pendencias(&[queda("sia")], &f, None);
+        assert_eq!(p[0]["valor_envolvido_centavos"], Value::Null);
+        assert_eq!(p[0]["perda_estimada"], Value::Null);
+        let sem_campo = montar_pendencias(&[queda("sih")], &json!({}), None);
+        assert_eq!(sem_campo[0]["valor_envolvido_centavos"], Value::Null);
+    }
+
+    #[test]
+    fn so_a_queda_de_valor_tem_perda_estimada() {
+        let f = json!({
+            "apresentado": { "valor_apresentado_centavos": 15_000, "valor_aprovado_centavos": 10_000 },
+            "servicos": { "fora_do_cadastro_centavos": 7_000 },
+        });
+        let a = [
+            alerta("apresentado_maior_que_aprovado", "atencao"),
+            alerta("servico_fora_do_cadastro", "atencao"),
+        ];
+        for p in montar_pendencias(&a, &f, None) {
+            assert_eq!(p["perda_estimada"], Value::Null, "{p}");
+            assert!(p["valor_envolvido_centavos"].is_i64(), "{p}");
+        }
+    }
+
+    #[test]
+    fn valores_envolvidos_por_tipo() {
+        let f = json!({
+            "apresentado": {
+                "valor_apresentado_centavos": 15_000, "valor_aprovado_centavos": 10_000,
+                "atipicas": [
+                    { "procedimento": "0301010072", "competencia": "202608", "quantidade_apresentada": 900, "valor_apresentado_centavos": 4_000 },
+                    { "procedimento": "0301010080", "competencia": "202609", "quantidade_apresentada": 500, "valor_apresentado_centavos": 1_000 },
+                ],
+            },
+            "servicos": { "fora_do_cadastro_centavos": 7_000 },
+            "reapresentacao": { "anteriores_centavos": 3_000, "total_centavos": 10_000 },
+        });
+        let a = [
+            alerta("apresentado_maior_que_aprovado", "atencao"),
+            alerta("servico_fora_do_cadastro", "atencao"),
+            alerta("reapresentacao_alta", "atencao"),
+            alerta("quantidade_atipica", "atencao"),
+        ];
+        let p = montar_pendencias(&a, &f, None);
+        let por_tipo = |t: &str| {
+            p.iter().find(|x| x["tipo"] == t).unwrap()["valor_envolvido_centavos"].as_i64()
+        };
+        assert_eq!(por_tipo("apresentado_maior_que_aprovado"), Some(5_000));
+        assert_eq!(por_tipo("servico_fora_do_cadastro"), Some(7_000));
+        assert_eq!(por_tipo("reapresentacao_alta"), Some(3_000));
+        assert_eq!(por_tipo("quantidade_atipica"), Some(5_000));
+        let atipica = p
+            .iter()
+            .find(|x| x["tipo"] == "quantidade_atipica")
+            .unwrap();
+        assert_eq!(atipica["itens"][0]["codigo"], "0301010072");
+        assert_eq!(atipica["itens"][0]["valor_centavos"], 4_000);
+    }
+
+    #[test]
+    fn produz_sem_aptidao_leva_o_valor_da_classe_e_os_dez_maiores_itens() {
+        let itens: Vec<Value> = (0..15)
+            .map(|i| json!({ "codigo": format!("03010100{i:02}"), "nome": "x",
+                              "sia": { "quantidade": 1, "valor_centavos": 100 - i }, "sih": { "aih": 0, "valor_centavos": 0 } }))
+            .collect();
+        let pr = json!({ "classes": { "produz_sem_aptidao": { "procedimentos": 15, "valor_da_unidade_centavos": 9_000, "itens": itens } } });
+        let p = montar_pendencias(
+            &[alerta("produz_sem_aptidao", "atencao")],
+            &json!({}),
+            Some(&pr),
+        );
+        assert_eq!(p[0]["valor_envolvido_centavos"], 9_000);
+        assert_eq!(p[0]["itens"].as_array().unwrap().len(), 10);
+        assert_eq!(p[0]["itens"][0]["valor_centavos"], 100);
+    }
+
+    #[test]
+    fn tipos_sem_valor_calculavel_ficam_nulos() {
+        let a = [
+            alerta("rejeicao_acima_dos_pares", "atencao"),
+            alerta("permanencia_fora_do_previsto", "info"),
+            alerta("motivo_de_rejeicao_encerrado", "atencao"),
+            alerta("regra_sem_geracao_de_credito", "info"),
+            alerta("habilitacao_sem_producao", "atencao"),
+            alerta("mes_incompleto", "info"),
+            alerta("baixar_de_novo", "info"),
+        ];
+        for p in montar_pendencias(&a, &json!({}), None) {
+            assert_eq!(p["valor_envolvido_centavos"], Value::Null, "{p}");
+            assert_eq!(p["itens"], json!([]), "{p}");
+        }
+    }
+
+    #[test]
+    fn ordem_valoradas_por_valor_depois_sem_valor_por_gravidade() {
+        let f = json!({
+            "apresentado": { "valor_apresentado_centavos": 15_000, "valor_aprovado_centavos": 10_000 },
+            "servicos": { "fora_do_cadastro_centavos": 7_000 },
+        });
+        let a = [
+            alerta("mes_incompleto", "info"),
+            alerta("apresentado_maior_que_aprovado", "atencao"),
+            alerta("rejeicao_acima_dos_pares", "atencao"),
+            alerta("servico_fora_do_cadastro", "atencao"),
+        ];
+        let tipos: Vec<String> = montar_pendencias(&a, &f, None)
+            .iter()
+            .map(|x| x["tipo"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(
+            tipos,
+            [
+                "servico_fora_do_cadastro",
+                "apresentado_maior_que_aprovado",
+                "rejeicao_acima_dos_pares",
+                "mes_incompleto"
+            ]
+        );
+    }
+
+    #[test]
+    fn origem_dos_alertas_do_sih_cita_o_sih() {
+        let f = json!({ "janela": { "sia": ["202601"], "sih": ["202602"] } });
+        for t in [
+            "rejeicao_acima_dos_pares",
+            "motivo_de_rejeicao_encerrado",
+            "permanencia_fora_do_previsto",
+        ] {
+            let o = origem_da_pendencia(t, None, &f);
+            assert_eq!(o["fonte"], "SIH", "{t}");
+            assert_eq!(o["competencias"], json!(["202602"]), "{t}");
+            assert_ne!(o["nao_prova"], "", "{t}");
+        }
+    }
+
+    #[test]
+    fn alerta_de_queda_carrega_o_sistema() {
+        let a = alerta_de_queda("SIH", 23.0);
+        assert_eq!(a["tipo"], "queda_de_valor");
+        assert_eq!(a["sistema"], "sih");
+        assert!(a["texto"].as_str().unwrap().contains("23%"));
+        assert!(a["texto"].as_str().unwrap().contains("SIH"));
+    }
+
+    #[test]
+    fn afeta_e_produz_ou_apta_e_sem_cadastro_so_conta_a_producao() {
+        assert!(afeta(true, Some(false)));
+        assert!(afeta(false, Some(true)));
+        assert!(!afeta(false, Some(false)));
+        assert!(afeta(true, None));
+        assert!(!afeta(false, None));
+    }
+
+    fn mudancas_de_exemplo() -> Value {
+        json!({ "de": "202608", "para": "202609", "tabelas": [
+            { "tabela": "rl_procedimento_habilitacao", "incluidos": 2, "excluidos": 0, "alterados": 0, "itens": [
+                { "tipo": "incluido", "chave": { "co_procedimento": "0301010072", "co_habilitacao": "1" } },
+                { "tipo": "incluido", "chave": { "co_procedimento": "0401010015", "co_habilitacao": "2" } },
+            ]},
+            { "tabela": "tb_forma_organizacao", "incluidos": 1, "excluidos": 0, "alterados": 0, "itens": [
+                { "tipo": "incluido", "chave": { "co_forma": "010101" } },
+            ]},
+        ]})
+    }
+
+    #[test]
+    fn anotar_afeta_marca_sem_filtrar_e_filtra_quando_pedido() {
+        let produzidos: HashSet<String> = ["0301010072".to_string()].into();
+        let mut m = mudancas_de_exemplo();
+        anotar_afeta(&mut m, &produzidos, None, false);
+        let t = &m["tabelas"][0];
+        assert_eq!(t["itens"][0]["afeta"], true);
+        assert_eq!(t["itens"][1]["afeta"], false);
+        assert_eq!(t["afetam"], 1);
+        assert_eq!(
+            t["itens"].as_array().unwrap().len(),
+            2,
+            "sem filtro, todos ficam"
+        );
+        assert!(
+            m["tabelas"][1]["itens"][0].get("afeta").is_none(),
+            "tabela sem procedimento não é marcada"
+        );
+
+        let mut m = mudancas_de_exemplo();
+        let aptos: HashSet<String> = ["0401010015".to_string()].into();
+        anotar_afeta(&mut m, &produzidos, Some(&aptos), true);
+        assert_eq!(
+            m["tabelas"][0]["itens"].as_array().unwrap().len(),
+            2,
+            "produz ou apta"
+        );
+        let mut m = mudancas_de_exemplo();
+        anotar_afeta(&mut m, &produzidos, Some(&HashSet::new()), true);
+        assert_eq!(m["tabelas"][0]["itens"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            m["tabelas"][1]["itens"].as_array().unwrap().len(),
+            1,
+            "tabela sem procedimento não é filtrada"
+        );
+    }
+
+    #[test]
+    fn reais_br_usa_ponto_de_milhar_e_virgula() {
+        assert_eq!(reais_br(0), "R$ 0,00");
+        assert_eq!(reais_br(5), "R$ 0,05");
+        assert_eq!(reais_br(624_428), "R$ 6.244,28");
+        assert_eq!(reais_br(123_456_789), "R$ 1.234.567,89");
+        assert_eq!(reais_br(-100_000), "−R$ 1.000,00");
+    }
+
+    #[test]
+    fn pendencia_nao_manda_o_usuario_para_abas_que_nao_existem() {
+        let a = json!({ "tipo": "mes_incompleto", "gravidade": "info",
+                         "texto": "Confira o lote (ver a aba Produção da unidade)." });
+        let p = montar_pendencias(&[a], &json!({}), None);
+        assert_eq!(p[0]["texto"], "Confira o lote.");
+        assert_eq!(sem_remissao_a_abas("sem remissão"), "sem remissão");
     }
 }

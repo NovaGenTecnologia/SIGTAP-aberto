@@ -96,6 +96,7 @@ async fn mudou(
     para: Option<String>,
     tabela: Option<String>,
     desde: Option<usize>,
+    so_afeta: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     s.com_consulta(|q| {
         let para = s.competencia(q, para.as_deref())?;
@@ -115,17 +116,16 @@ async fn mudou(
                 Competencia::de_texto(&cs[pos - 1].competencia).map_err(|e| e.to_string())?
             }
         };
-        match tabela {
-            // "Ver mais" de uma tabela.
-            Some(t) => json(
-                q.o_que_mudou_tabela(de, para, &t, desde.unwrap_or(0), sa_query::mudancas::LIMITE_ITENS)
-                    .map_err(|e| e.to_string())?,
-            ),
-            None => json(
-                q.o_que_mudou(de, para, sa_query::mudancas::LIMITE_ITENS)
-                    .map_err(|e| e.to_string())?,
-            ),
-        }
+        // Com `tabela`, é o "ver mais" daquela tabela; sempre com a marca `afeta` da unidade ativa.
+        unidade::faturamento::mudancas_da_unidade(
+            &unidade::local(&s.pastas),
+            q,
+            de,
+            para,
+            tabela.as_deref(),
+            desde.unwrap_or(0),
+            so_afeta.unwrap_or(false),
+        )
     })
 }
 

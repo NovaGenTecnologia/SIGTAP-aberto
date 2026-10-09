@@ -199,8 +199,14 @@ def main():
                 if "não existe" in str(e): return None
                 raise
         if cmd == "historico": return cli("historico", args["codigo"])
-        if cmd == "mudou": return cli("mudou", *([args["tabela"], "--desde", str(args.get("desde") or 0)] if args.get("tabela") else []),
-                                      *(["--de", args["de"]] if args.get("de") else []), *(["--competencia", args["para"]] if args.get("para") else []))
+        if cmd == "faturamento_painel": return cli_d("faturamento-painel", *comp)
+        if cmd == "faturamento_impacto":
+            return cli_d("faturamento-impacto", *(["--de", args["de"]] if args.get("de") else []), *(["--competencia", args["para"]] if args.get("para") else []))
+        if cmd == "mudou":
+            tabela = [args["tabela"], "--desde", str(args.get("desde") or 0)] if args.get("tabela") else []
+            periodo = [*(["--de", args["de"]] if args.get("de") else []), *(["--competencia", args["para"]] if args.get("para") else [])]
+            if a.dados: return cli_d("mudou", *tabela, *periodo, "--unidade", *(["--so-afeta"] if args.get("soAfeta") else []))
+            return cli("mudou", *tabela, *periodo)
         if cmd == "ligados": return cli("ligados", args["tabela"], *args["codigo"], *comp)
         if cmd == "arvore_cid": return cli("arvore-cid", *([args["pai"]] if args.get("pai") else []), *comp)
         if cmd == "verificar_bancos":
