@@ -33,30 +33,59 @@ describe("grupo inicial e faixa de prioridade", () => {
     await waitFor(() => expect(window.location.hash).toBe("#/painel/aptidao/oportunidade"));
   });
 
-  test("a faixa mostra os três números, é navegação e marca o grupo ativo", async () => {
+  test("a faixa mostra Risco e Oportunidade, é navegação e marca o grupo ativo", async () => {
     abrir("#/painel/aptidao/risco");
     const faixa = await screen.findByRole("navigation", { name: "Prioridade" });
+    expect(within(faixa).getAllByRole("link")).toHaveLength(2);
     const risco = within(faixa).getByRole("link", { name: /Risco/ });
     expect(risco).toHaveAttribute("aria-current", "page");
     expect(risco).toHaveTextContent("4");
     expect(within(faixa).getByRole("link", { name: /Oportunidade/ })).toHaveTextContent("2.076");
     expect(within(faixa).getByRole("link", { name: /Oportunidade/ })).toHaveTextContent("1.280 com produção na UF");
-    expect(within(faixa).getByRole("link", { name: /Em ordem/ })).toHaveTextContent("1.952");
-    expect(within(faixa).getByRole("link", { name: /Em ordem/ })).toHaveAttribute("href", "#/painel/aptidao/ordem");
+    expect(within(faixa).queryByRole("link", { name: /Em ordem/ })).toBeNull();
   });
 
-  test("trocar de grupo pela faixa muda a rota e a lista, mantendo o filtro de habilitação", async () => {
+  test("Em ordem vem recolhido: a barra oferece Mostrar, com a contagem", async () => {
+    abrir("#/painel/aptidao/risco");
+    await tabela();
+    const barra = screen.getByRole("button", { name: /^Em ordem: 1\.952 procedimentos sem problema/ });
+    expect(barra).toHaveAttribute("aria-expanded", "false");
+    expect(barra).toHaveTextContent("Mostrar");
+  });
+
+  test("Mostrar abre Em ordem pela rota, mantendo o filtro; Esconder volta", async () => {
     const u = userEvent.setup();
     abrir("#/painel/aptidao/risco?hab=0203");
-    const faixa = await screen.findByRole("navigation", { name: "Prioridade" });
-    expect(within(faixa).getByRole("link", { name: /Em ordem/ })).toHaveAttribute("href", "#/painel/aptidao/ordem?hab=0203");
-    await u.click(within(faixa).getByRole("link", { name: /Em ordem/ }));
+    await tabela();
+    await u.click(screen.getByRole("button", { name: /^Em ordem: / }));
     expect(window.location.hash).toBe("#/painel/aptidao/ordem?hab=0203");
     await waitFor(() => expect(m.aptidaoUnidade).toHaveBeenCalledWith(expect.objectContaining({ grupo: "ordem", hab: "0203" })));
+    const esconder = await screen.findByRole("button", { name: /Esconder/ });
+    expect(esconder).toHaveAttribute("aria-expanded", "true");
+    await waitFor(() => expect(esconder).toHaveFocus()); // a barra muda de lugar ao abrir: o foco volta para ela
+    await u.click(esconder);
+    await waitFor(() => expect(window.location.hash).toBe("#/painel/aptidao/risco?hab=0203"));
+  });
+
+  test("o favorito antigo da rota ordem abre já expandido", async () => {
+    abrir("#/painel/aptidao/ordem");
+    expect(await screen.findByRole("button", { name: /Esconder/ })).toHaveAttribute("aria-expanded", "true");
+    expect(within(screen.getByRole("navigation", { name: "Prioridade" })).queryByRole("link", { current: "page" })).toBeNull();
   });
 });
 
 describe("colunas, situação e o que falta", () => {
+  test("Risco: o que falta nunca fica vazio quando não há habilitação, serviço nem leito a apontar", async () => {
+    const semFalta = itensDeRisco.find((i) => i.falta.length === 0)!; // fora da tabela
+    m.aptidaoUnidade.mockImplementation(async (o) =>
+      aptidaoExemplo({ grupo: o?.grupo ? pagina(o.grupo, [semFalta, { ...semFalta, codigo: "0202030971", situacao: "nao_apta", motivo: null }]) : null }));
+    abrir("#/painel/aptidao/risco");
+    const t = await tabela();
+    const linhas = linhasDe(t);
+    expect(within(linhas[0]!).getByText("Procedimento fora da tabela vigente")).toBeInTheDocument();
+    expect(within(linhas[1]!).getByText("Sem detalhe no cadastro")).toBeInTheDocument();
+  });
+
   test("Risco: situação em texto, o que falta em chips e o produzido pela unidade", async () => {
     abrir("#/painel/aptidao/risco");
     const t = await tabela();
@@ -203,12 +232,13 @@ describe("sem produção carregada", () => {
     expect(window.location.hash).toBe("#/dados");
   });
 
-  test("Risco e Em ordem ficam desabilitados com o motivo", async () => {
+  test("Risco fica desabilitado com o motivo e Em ordem não aparece", async () => {
     abrir("#/painel/aptidao/oportunidade");
     const faixa = await screen.findByRole("navigation", { name: "Prioridade" });
     expect(within(faixa).queryByRole("link", { name: /Risco/ })).toBeNull();
     expect(within(faixa).getByText(/Risco/).closest("[aria-disabled=true]")).not.toBeNull();
-    expect(within(faixa).getAllByText("Precisa da produção")).toHaveLength(2);
+    expect(within(faixa).getAllByText("Precisa da produção")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /^Em ordem: / })).toBeNull();
   });
 });
 
@@ -252,9 +282,15 @@ describe("revisão final", () => {
       o?.grupo === "ordem" ? new Promise(() => {}) : Promise.resolve(aptidaoExemplo({ grupo: o?.grupo ? pagina(o.grupo, ITENS[o.grupo]) : null })));
     abrir("#/painel/aptidao/risco");
     await tabela();
-    await u.click(within(screen.getByRole("navigation", { name: "Prioridade" })).getByRole("link", { name: /Em ordem/ }));
+    await u.click(screen.getByRole("button", { name: /^Em ordem: / }));
     await waitFor(() => expect(window.location.hash).toBe("#/painel/aptidao/ordem"));
     expect(screen.queryByRole("table", { name: /Procedimentos/ })).toBeNull();
     expect(screen.getByRole("status", { name: "Lendo os procedimentos" })).toBeInTheDocument();
   });
+});
+
+test("a espera da aptidão diz que a primeira abertura demora", async () => {
+  m.aptidaoUnidade.mockReturnValue(new Promise(() => {}));
+  abrir("#/painel/aptidao");
+  expect(await screen.findByRole("status", { name: /Calculando a aptidão da unidade.*primeira abertura demora/ })).toBeInTheDocument();
 });

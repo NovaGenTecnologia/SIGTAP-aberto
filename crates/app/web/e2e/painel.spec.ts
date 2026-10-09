@@ -57,14 +57,48 @@ test("Painel: Ver itens abre e fecha por teclado e o código leva à Ficha", asy
   await semViolacoes(page);
 });
 
-test("Painel em 1024 px: sem rolagem horizontal e colunas empilhadas", async ({ page }) => {
+test("Painel em 1024 px: sem rolagem horizontal, três cartões de área e a lista abaixo", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 });
   await abrirPainel(page);
   const [largura, visivel] = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
   expect(largura).toBeLessThanOrEqual(visivel!);
-  const principal = await page.locator(".painel__principal").boundingBox();
-  const lateral = await page.locator(".painel__lateral").boundingBox();
-  expect(lateral!.y).toBeGreaterThan(principal!.y + principal!.height - 1);
+  await expect(page.locator(".area")).toHaveCount(3);
+  const areas = await page.locator(".areas").boundingBox();
+  const lista = await page.locator(".painel__principal").boundingBox();
+  expect(lista!.y).toBeGreaterThan(areas!.y + areas!.height - 1);
   await page.screenshot({ path: "test-results/painel-1024.png", fullPage: true });
   await semViolacoes(page);
+});
+
+test("Painel: o fechamento tem três números e as mudanças da tabela são uma linha de aviso", async ({ page }) => {
+  await abrirPainel(page);
+  await expect(page.locator(".resumo__coluna")).toHaveCount(3);
+  await expect(page.getByRole("note", { name: "Mudanças da tabela" })).toBeVisible();
+});
+
+test("Painel: o filtro por área reduz a lista e a ação principal abre a área com a faixa Você veio de", async ({ page }) => {
+  await abrirPainel(page);
+  const todas = await page.getByRole("list", { name: "Pendências" }).getByRole("listitem").count();
+  const filtros = page.getByRole("group", { name: "Filtrar pendências por área" }).getByRole("button");
+  const outra = filtros.nth(1);
+  if (await filtros.count() > 1) {
+    await outra.click();
+    await expect(outra).toHaveAttribute("aria-pressed", "true");
+    expect(await page.getByRole("list", { name: "Pendências" }).getByRole("listitem").count()).toBeLessThanOrEqual(todas);
+  }
+  await filtros.first().click(); // a área escolhida acima pode ter só pendências sem destino
+  const abrir = page.getByRole("link", { name: /^Abrir em / }).first();
+  await abrir.click();
+  await expect(page.getByRole("note").filter({ hasText: "Você veio de" })).toBeVisible();
+  await page.getByRole("link", { name: "Voltar à pendência" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Painel" })).toBeVisible();
+  await expect(page.getByText(/Você veio de/)).toHaveCount(0);
+});
+
+test("Painel: os cartões de área e o seletor das áreas se navegam por teclado", async ({ page }) => {
+  await abrirPainel(page);
+  const cartao = page.locator(".area").first();
+  await cartao.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("navigation", { name: "Telas da unidade" })).toBeVisible();
 });

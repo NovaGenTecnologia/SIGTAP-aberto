@@ -1,12 +1,15 @@
-import { EstadoErro, EstadoVazio, Carregando } from "../componentes/dominio/Estados";
+import { useEffect } from "react";
+import { EstadoErro, EstadoVazio, CarregandoComEspera } from "../componentes/dominio/Estados";
 import { useUnidades } from "../dados/consultas";
 import { useImpacto, usePainel } from "../dados/painel";
 import { useSessao } from "../shell/sessao";
 import { ir, lerUnidade, useRota } from "../shell/rotas";
 import { rotuloCompetencia } from "../util/formatos";
+import { AreasDaUnidade } from "./painel/AreasDaUnidade";
+import { AvisoDeMudancas } from "./painel/AvisoDeMudancas";
 import { DeOndeVem } from "./painel/DeOndeVem";
 import { FaltaParaOPainel } from "./painel/FaltaParaOPainel";
-import { AptosQueNaoProduzem, CartaoDaUnidade } from "./painel/Lateral";
+import { definirOrigem } from "./painel/origemDaPendencia";
 import { Pendencias } from "./painel/Pendencias";
 import { Resumo } from "./painel/Resumo";
 import { Unidade } from "./Unidade";
@@ -28,6 +31,8 @@ function PainelInicial() {
   const painel = usePainel(competencia ?? undefined);
   const dados = painel.data?.disponivel ? painel.data : null;
   const impacto = useImpacto(undefined, competencia ?? undefined, dados !== null);
+
+  useEffect(() => definirOrigem(null), []);
 
   const semUnidade = unidades.data !== undefined && !minha;
   const nomeDaUnidade = minha ? `${minha.nome.trim() || `CNES ${minha.cnes}`} (${minha.uf})` : null;
@@ -56,7 +61,7 @@ function PainelInicial() {
       )}
       {!semUnidade && !dados && nomeDaUnidade && <p className="painel__sub">{nomeDaUnidade}</p>}
 
-      {!semUnidade && painel.isPending && <Carregando rotulo="Lendo o painel da unidade" />}
+      {!semUnidade && painel.isPending && <CarregandoComEspera rotulo="Calculando o painel da unidade. A primeira abertura demora; as próximas são imediatas." />}
       {!semUnidade && painel.isError && <EstadoErro mensagem={texto(painel.error)} aoTentar={() => void painel.refetch()} />}
       {!semUnidade && painel.data && !painel.data.disponivel && (
         <>
@@ -64,24 +69,22 @@ function PainelInicial() {
             <EstadoVazio titulo="Sem produção, não há valores nem pendências" descricao={painel.data.mensagem}
               acao={{ rotulo: "Baixar produção", aoAcionar: () => ir("dados") }} />
           </div>
-          <div className="painel__corpo painel__corpo--sozinho"><CartaoDaUnidade /></div>
         </>
       )}
       {!semUnidade && dados && (
         <>
-          <Resumo painel={dados} impacto={impacto.data} />
-          <div className="painel__corpo">
-            <section className="painel__principal" aria-labelledby="painel-pendencias">
-              <h2 id="painel-pendencias" className="painel__secao">
-                Pendências <span className="painel__secao-sub">ordenadas pelo valor envolvido</span>
-              </h2>
-              <Pendencias itens={dados.pendencias} />
-            </section>
-            <aside className="painel__lateral" aria-label="Unidade">
-              <AptosQueNaoProduzem painel={dados} />
-              <CartaoDaUnidade />
-            </aside>
-          </div>
+          <Resumo painel={dados} />
+          <AvisoDeMudancas impacto={impacto.data} />
+          <section className="painel__areas" aria-labelledby="painel-areas">
+            <h2 id="painel-areas" className="painel__secao">Áreas da unidade</h2>
+            <AreasDaUnidade painel={dados} competencia={competencia ?? undefined} />
+          </section>
+          <section className="painel__principal" aria-labelledby="painel-pendencias">
+            <h2 id="painel-pendencias" className="painel__secao">
+              O que fazer agora <span className="painel__secao-sub">ordenado pelo valor envolvido</span>
+            </h2>
+            <Pendencias itens={dados.pendencias} />
+          </section>
         </>
       )}
     </div>

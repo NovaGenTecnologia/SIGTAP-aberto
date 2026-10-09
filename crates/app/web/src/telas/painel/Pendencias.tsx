@@ -1,8 +1,11 @@
+import { useState } from "react";
 import { Button, Disclosure, DisclosurePanel } from "react-aria-components";
 import type { Pendencia } from "../../api/tipos";
 import { intervaloDeCompetencias, reais } from "../../util/formatos";
 import { ir } from "../../shell/rotas";
+import { AREAS, ROTULO_DA_AREA, areaDe, contarPorArea, type Area } from "./areas";
 import { DeOndeVem, type LinhaDeOrigem } from "./DeOndeVem";
+import { definirOrigem } from "./origemDaPendencia";
 
 function Selo({ gravidade }: { gravidade: Pendencia["gravidade"] }) {
   return <span className={`painel__selo painel__selo--${gravidade}`}>{gravidade === "atencao" ? "Atenção" : "Info"}</span>;
@@ -37,7 +40,7 @@ function ItensDaPendencia({ itens }: { itens: Pendencia["itens"] }) {
   );
 }
 
-/** Para onde a pendência continua nas subtelas da unidade, quando há. */
+/** Para onde a pendência continua nas áreas da unidade, quando há (o `rotulo` fino serve à Visão geral da Produção). */
 export const DESTINO_NA_UNIDADE: Record<string, { rotulo: string; caminho: string[] }> = {
   produz_sem_aptidao: { rotulo: "Ver na Aptidão", caminho: ["aptidao", "risco"] },
   produz_com_ressalva: { rotulo: "Ver na Aptidão", caminho: ["aptidao", "risco"] },
@@ -49,6 +52,21 @@ export const DESTINO_NA_UNIDADE: Record<string, { rotulo: string; caminho: strin
   mes_incompleto: { rotulo: "Ver na Produção", caminho: ["producao"] },
 };
 
+function AreaChip({ p }: { p: Pendencia }) {
+  return <span className="painel__selo painel__selo--info pend__area">{ROTULO_DA_AREA[areaDe(p)]}</span>;
+}
+
+function AbrirNaArea({ p }: { p: Pendencia }) {
+  const destino = DESTINO_NA_UNIDADE[p.tipo];
+  if (!destino) return null;
+  return (
+    <a className="botao botao--secundario" href={`#/painel/${destino.caminho.join("/")}`}
+      onClick={(e) => { e.preventDefault(); definirOrigem({ titulo: p.titulo }); ir("painel", ...destino.caminho); }}>
+      Abrir em {ROTULO_DA_AREA[areaDe(p)]}
+    </a>
+  );
+}
+
 function Guia({ p }: { p: Pendencia }) {
   const periodo = intervaloDeCompetencias(p.origem.competencias);
   const passos = ["Alerta", p.origem.fonte, periodo].filter(Boolean);
@@ -57,11 +75,10 @@ function Guia({ p }: { p: Pendencia }) {
 
 function Cartao({ p }: { p: Pendencia }) {
   const temItens = p.itens.length > 0;
-  const destino = DESTINO_NA_UNIDADE[p.tipo];
   const corpo = (aberto: boolean) => (
     <>
       <div className="pend__topo">
-        <div className="pend__titulo-linha"><Selo gravidade={p.gravidade} /><h3 className="pend__titulo">{p.titulo}</h3></div>
+        <div className="pend__titulo-linha"><AreaChip p={p} /><Selo gravidade={p.gravidade} /><h3 className="pend__titulo">{p.titulo}</h3></div>
         {p.valor_envolvido_centavos !== null && (
           <div className="pend__valor-bloco">
             <strong className="pend__valor num">{reais(p.valor_envolvido_centavos)}</strong>
@@ -82,9 +99,7 @@ function Cartao({ p }: { p: Pendencia }) {
         ) : <span />}
         <div className="pend__acoes">
           {temItens && <Button slot="trigger" className="botao botao--secundario">{aberto ? "Ocultar itens" : "Ver itens"}</Button>}
-          {destino && (
-            <a className="botao botao--secundario" href={`#/painel/${destino.caminho.join("/")}`} onClick={(e) => { e.preventDefault(); ir("painel", ...destino.caminho); }}>{destino.rotulo}</a>
-          )}
+          <AbrirNaArea p={p} />
           <DeOndeVem titulo={p.titulo} linhas={origemDe(p)} />
         </div>
       </div>
@@ -97,21 +112,32 @@ function Cartao({ p }: { p: Pendencia }) {
 function LinhaSemValor({ p }: { p: Pendencia }) {
   return (
     <li className="semvalor__linha">
-      <Selo gravidade={p.gravidade} />
+      <AreaChip p={p} /><Selo gravidade={p.gravidade} />
       <span className="semvalor__titulo">{p.titulo}</span>
       <span className="semvalor__texto">{p.texto}</span>
+      <span className="semvalor__acao"><AbrirNaArea p={p} /></span>
       <span className="semvalor__origem"><DeOndeVem titulo={p.titulo} linhas={origemDe(p)} /></span>
     </li>
   );
 }
 
-/** Pendências da unidade: as valoradas em cartões, na ordem do Rust; as demais numa faixa à parte. */
+/** Pendências da unidade numa lista só: as valoradas em cartões, na ordem do Rust, e as demais numa faixa à parte; o filtro escolhe a área. */
 export function Pendencias({ itens }: { itens: Pendencia[] }) {
-  const comValor = itens.filter((p) => p.valor_envolvido_centavos !== null);
-  const semValor = itens.filter((p) => p.valor_envolvido_centavos === null);
+  const [area, setArea] = useState<Area | null>(null);
   if (itens.length === 0) return <p className="painel__vazio">Nada pede atenção nesta competência</p>;
+  const contagem = contarPorArea(itens);
+  const visiveis = area ? itens.filter((p) => areaDe(p) === area) : itens;
+  const comValor = visiveis.filter((p) => p.valor_envolvido_centavos !== null);
+  const semValor = visiveis.filter((p) => p.valor_envolvido_centavos === null);
+  const filtro = (alvo: Area | null, rotulo: string, n: number) => (
+    <button key={rotulo} type="button" className="painel__filtro" aria-pressed={area === alvo} onClick={() => setArea(alvo)}>{rotulo} {n}</button>
+  );
   return (
     <div className="painel__pendencias">
+      <div className="painel__filtros" role="group" aria-label="Filtrar pendências por área">
+        {filtro(null, "Todas", itens.length)}
+        {AREAS.filter((a) => contagem[a] > 0).map((a) => filtro(a, ROTULO_DA_AREA[a], contagem[a]))}
+      </div>
       {comValor.length > 0 && (
         <ul className="painel__lista" aria-label="Pendências">
           {comValor.map((p) => <li key={p.id}><Cartao p={p} /></li>)}

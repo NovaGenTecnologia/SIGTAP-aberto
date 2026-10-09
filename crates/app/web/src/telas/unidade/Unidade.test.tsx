@@ -1,10 +1,11 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Painel } from "../Painel";
 import { ProvedorDaSessao } from "../../shell/sessao";
 import { ProvedorDeAvisos } from "../../componentes/base/Avisos";
 import * as comandos from "../../api/comandos";
+import { definirOrigem, lerOrigem } from "../painel/origemDaPendencia";
 import { aptidaoExemplo, unidadeExemplo } from "./exemplos";
 import { faturamentoExemplo, painelDaUnidade, procedimentosExemplo } from "./exemplosDeProducao";
 
@@ -44,7 +45,7 @@ test("o cabeçalho mostra o caminho, a unidade e o seletor irmão com a tela atu
   const irmaos = screen.getByRole("navigation", { name: "Telas da unidade" });
   expect(within(irmaos).getByRole("link", { name: "Cadastro" })).toHaveAttribute("aria-current", "page");
   expect(within(irmaos).getByRole("link", { name: "Aptidão" })).toHaveAttribute("href", "#/painel/aptidao");
-  expect(within(irmaos).getByRole("link", { name: "Produção" })).toHaveAttribute("href", "#/painel/producao");
+  expect(within(irmaos).getByRole("link", { name: /^Produção/ })).toHaveAttribute("href", "#/painel/producao");
   expect(within(irmaos).queryByText(/Em breve/)).toBeNull();
 });
 
@@ -61,7 +62,7 @@ test("Produção abre as abas e o seletor marca Produção", async () => {
   expect(await screen.findByRole("heading", { level: 1, name: "Produção" })).toBeInTheDocument();
   expect(screen.queryByText(/Em breve/)).toBeNull();
   const irmaos = screen.getByRole("navigation", { name: "Telas da unidade" });
-  expect(within(irmaos).getByRole("link", { name: "Produção" })).toHaveAttribute("aria-current", "page");
+  expect(within(irmaos).getByRole("link", { name: /^Produção/ })).toHaveAttribute("aria-current", "page");
   expect(await screen.findByRole("tab", { name: "Visão geral" })).toHaveAttribute("aria-selected", "true");
 });
 
@@ -90,4 +91,38 @@ test("CNES que saiu do cadastro mostra a mensagem do Rust e deixa tentar de novo
   abrir("#/painel/cadastro");
   expect(await screen.findByRole("alert")).toHaveTextContent("não está mais no cadastro de SP");
   expect(screen.getByRole("button", { name: "Tentar de novo" })).toBeInTheDocument();
+});
+
+describe("moldura comum das áreas", () => {
+  test("o seletor das áreas mostra a contagem de pendências de cada uma", async () => {
+    abrir("#/painel/cadastro");
+    const nav = await screen.findByRole("navigation", { name: "Telas da unidade" });
+    expect(await within(nav).findByRole("link", { name: "Produção, 3 pendências" })).toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: "Cadastro" })).toBeInTheDocument();
+  });
+
+  test("vindo de uma pendência, mostra de onde veio e volta à home; dispensar some", async () => {
+    const u = userEvent.setup();
+    definirOrigem({ titulo: "Produz sem aptidão no cadastro" });
+    abrir("#/painel/aptidao");
+    await screen.findByRole("navigation", { name: "Prioridade" }); // a tela já trocou do carregamento para a lista (o cabeçalho remonta)
+    expect(await screen.findByRole("note")).toHaveTextContent("Você veio de: Produz sem aptidão no cadastro");
+    await u.click(screen.getByRole("button", { name: "Dispensar aviso" }));
+    expect(screen.queryByText(/Você veio de/)).toBeNull();
+    expect(lerOrigem()).toBeNull();
+    definirOrigem({ titulo: "X" });
+    await u.click(await screen.findByRole("link", { name: "Voltar à pendência" }));
+    expect(window.location.hash).toBe("#/painel");
+    expect(lerOrigem()).toBeNull();
+  });
+
+  test("sem painel (falha), o seletor não mostra número nem erro", async () => {
+    m.faturamentoPainel.mockRejectedValue("falha");
+    abrir("#/painel/cadastro");
+    await screen.findByRole("tab", { name: /Habilitações/ });
+    await waitFor(() => expect(m.faturamentoPainel).toHaveBeenCalled());
+    const nav = screen.getByRole("navigation", { name: "Telas da unidade" });
+    expect(within(nav).getByRole("link", { name: "Produção" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 });

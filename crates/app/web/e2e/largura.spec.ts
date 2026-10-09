@@ -31,13 +31,16 @@ test("Origem do valor põe os blocos em pares quando há espaço e em coluna qua
   expect(await topo("Composição das AIH")).toBeLessThan(await topo("Perfil financeiro"));
 });
 
-test("Painel em 2560 põe os dois cartões laterais lado a lado", async ({ page }) => {
+test("Painel em 2560 põe as pendências em duas colunas e os três cartões de área na mesma linha", async ({ page }) => {
   await page.setViewportSize({ width: 2560, height: 1440 });
   await pronto(page, "painel");
-  const aptos = (await page.locator("section.lateral").nth(0).boundingBox())!;
-  const unidade = (await page.locator("section.lateral").nth(1).boundingBox())!;
-  expect(unidade.x).toBeGreaterThan(aptos.x + aptos.width - 1);
-  expect(Math.abs(unidade.y - aptos.y)).toBeLessThan(2);
+  const areas = await page.locator(".area").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().y)));
+  expect(new Set(areas).size).toBe(1);
+  const itens = page.getByRole("list", { name: "Pendências" }).getByRole("listitem");
+  if (await itens.count() > 1) {
+    const [a, b] = [(await itens.nth(0).boundingBox())!, (await itens.nth(1).boundingBox())!];
+    expect(b.x).toBeGreaterThan(a.x + a.width - 1);
+  }
 });
 
 test("Dados mostra mais linhas numa janela mais alta", async ({ page }) => {
