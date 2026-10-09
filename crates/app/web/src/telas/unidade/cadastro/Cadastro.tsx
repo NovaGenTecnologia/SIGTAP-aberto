@@ -24,7 +24,7 @@ export function Cadastro({ unidade, rota, competencia }: { unidade: UnidadeCompl
   const abas = [
     { id: "habilitacoes", rotulo: rotulo("Habilitações", unidade.habilitacoes.length),
       conteudo: <Habilitacoes unidade={unidade} aptidao={aptidao.data} carregandoProducao={aptidao.isPending} busca={rota.q} aoBuscar={buscar} /> },
-    { id: "servicos", rotulo: rotulo("Serviços", unidade.servicos.length), conteudo: <Servicos servicos={unidade.servicos} busca={rota.q} aoBuscar={buscar} /> },
+    { id: "servicos", rotulo: rotulo("Serviços", new Set(unidade.servicos.map((s) => s.servico.codigo)).size), conteudo: <Servicos servicos={unidade.servicos} busca={rota.q} aoBuscar={buscar} /> },
     { id: "leitos", rotulo: rotulo("Leitos", unidade.leitos.length), conteudo: <Leitos leitos={unidade.leitos} busca={rota.q} aoBuscar={buscar} /> },
     { id: "equipamentos", rotulo: rotulo("Equipamentos", unidade.equipamentos.length), conteudo: <Equipamentos equipamentos={unidade.equipamentos} busca={rota.q} aoBuscar={buscar} /> },
     ...(temPessoas ? [{ id: "profissionais", rotulo: rotulo("Profissionais", unidade.profissionais?.length ?? 0),

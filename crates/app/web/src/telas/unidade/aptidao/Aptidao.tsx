@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { GrupoDeAptidao, ItemDeAptidao, Planilha, ResumoDeAptidao, UnidadeCompleta } from "../../../api/tipos";
 import { Botao } from "../../../componentes/base/Botao";
 import { CampoBusca } from "../../../componentes/base/CampoBusca";
-import { Carregando, EstadoErro } from "../../../componentes/dominio/Estados";
+import { Carregando, CarregandoComEspera, EstadoErro } from "../../../componentes/dominio/Estados";
 import { SeloDeConfianca } from "../../../componentes/dominio/SeloDeConfianca";
 import { useAptidao, useAptidaoResumo } from "../../../dados/unidade";
 import { caminhoUnidade, ir, substituir, type TelaDaUnidade } from "../../../shell/rotas";
 import { useDebounce } from "../../../shell/useDebounce";
-import { inteiro } from "../../../util/formatos";
+import { inteiro, reais, reaisCompacto } from "../../../util/formatos";
 import { DeOndeVem } from "../../painel/DeOndeVem";
 import { Exportar } from "../../consultar/Exportar";
 import { CabecalhoDaUnidade } from "../CabecalhoDaUnidade";
@@ -20,6 +20,8 @@ const NOME: Record<GrupoDeAptidao, string> = { risco: "em risco", oportunidade: 
 const VAZIO: Record<GrupoDeAptidao, string> = {
   risco: "Nenhum procedimento em risco", oportunidade: "Nenhum procedimento apto para mostrar", ordem: "Nenhum procedimento em ordem",
 };
+
+const valorCurto = (centavos: number) => (centavos < 100_000_000 ? reais(centavos) : reaisCompacto(centavos));
 
 /** O primeiro grupo com procedimentos, na ordem Risco, Oportunidade, Em ordem; sem produção, só a Oportunidade. */
 function grupoInicial(r: ResumoDeAptidao, semProducao: boolean): GrupoDeAptidao {
@@ -47,6 +49,8 @@ export function Aptidao({ unidade, rota, competencia }: { unidade: UnidadeComple
     ? (rota.grupo === null || (semProducao && rota.grupo !== "oportunidade") ? grupoInicial(resumo.data.resumo, semProducao) : rota.grupo)
     : null;
   const [todos, setTodos] = useState(false);
+  const barra = useRef<HTMLButtonElement>(null);
+  const devolverFoco = useRef(false);
   const [digitado, setDigitado] = useState(rota.q);
   const q = useDebounce(digitado, 300);
 
@@ -65,6 +69,11 @@ export function Aptidao({ unidade, rota, competencia }: { unidade: UnidadeComple
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
 
+  // A barra "Em ordem" troca de lugar ao abrir e fechar: o foco acompanha quem a acionou.
+  useEffect(() => {
+    if (devolverFoco.current && alvo) { devolverFoco.current = false; barra.current?.focus(); }
+  }, [alvo]);
+
   const lista = useAptidao(alvo, { q: rota.q, hab: rota.hab, soProduzidosNaUf: alvo === "oportunidade" && !todos && !semProducao, competencia, unidade: idUnidade });
   const paginas = lista.data?.pages ?? [];
   const itens = useMemo(() => {
@@ -77,12 +86,22 @@ export function Aptidao({ unidade, rota, competencia }: { unidade: UnidadeComple
   const dados = resumo.data;
 
   const cabeca = (acoes?: React.ReactNode) => <CabecalhoDaUnidade tela="aptidao" unidade={unidade} acoes={acoes} />;
-  if (resumo.isPending) return <div className="un">{cabeca()}<Carregando rotulo="Lendo a aptidão da unidade" /></div>;
+  if (resumo.isPending) return <div className="un">{cabeca()}<CarregandoComEspera rotulo="Calculando a aptidão da unidade. A primeira abertura demora; as próximas são imediatas." /></div>;
   if (resumo.isError || !dados || !alvo) {
     return <div className="un">{cabeca()}<EstadoErro mensagem={texto(resumo.error)} aoTentar={() => void resumo.refetch()} /></div>;
   }
 
   const colunas = colunasDe(alvo, itens);
+  const ordem = dados.resumo.ordem;
+  const expandida = alvo === "ordem";
+  const irPara = (grupo: GrupoDeAptidao) => ir("painel", ...caminhoUnidade({ tela: "aptidao", grupo, q: rota.q, hab: rota.hab }));
+  const barraDaOrdem = !semProducao && ordem && (
+    <button type="button" className="un__ordem" aria-expanded={expandida} ref={barra}
+      onClick={() => { devolverFoco.current = true; irPara(expandida ? ((dados.resumo.risco?.procedimentos ?? 0) > 0 ? "risco" : "oportunidade") : "ordem"); }}>
+      <span>Em ordem: {inteiro(ordem.procedimentos)} procedimentos sem problema ({valorCurto(ordem.valor_da_unidade_centavos)} produzidos pela unidade)</span>
+      <span className="un__ordem-acao">{expandida ? "Esconder ▴" : "Mostrar ▾"}</span>
+    </button>
+  );
   return (
     <div className="un">
       {cabeca()}
@@ -93,6 +112,7 @@ export function Aptidao({ unidade, rota, competencia }: { unidade: UnidadeComple
         </p>
       )}
       <FaixaDePrioridade resumo={dados.resumo} semProducao={semProducao} ativo={alvo} q={rota.q} hab={rota.hab} />
+      {expandida && barraDaOrdem}
 
       <div className="un__bloco">
         <div className="un__barra">
@@ -139,6 +159,8 @@ export function Aptidao({ unidade, rota, competencia }: { unidade: UnidadeComple
           <button type="button" className="un__mais" onClick={() => setTodos(false)}>Mostrar só os que a UF produziu</button>
         )}
       </div>
+
+      {!expandida && barraDaOrdem}
 
       <p className="un__limites">
         <SeloDeConfianca estado="nao-confirmada" texto="Regra não confirmada" />

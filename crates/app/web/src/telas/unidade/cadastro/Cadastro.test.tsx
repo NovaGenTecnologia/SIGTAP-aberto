@@ -18,6 +18,13 @@ describe("abas", () => {
     expect(nomes).toEqual(["Habilitações 4", "Serviços 3", "Leitos 2", "Equipamentos 2", "Terceiros 0"]);
   });
 
+  test("a aba Serviços conta serviços, não classificações", async () => {
+    const extra = { ...unidadeExemplo.servicos[0]!, classificacao: { codigo: "002", nome: "Outra classificação" } };
+    m.unidadeVer.mockResolvedValue({ ...unidadeExemplo, servicos: [...unidadeExemplo.servicos, extra] });
+    abrir("#/painel/cadastro");
+    expect(await screen.findByRole("tab", { name: "Serviços 3" })).toBeInTheDocument();
+  });
+
   test("com o arquivo de pessoas, a aba Profissionais aparece com a contagem", async () => {
     m.unidadeVer.mockResolvedValue(unidadeComProfissionais);
     abrir("#/painel/cadastro");
@@ -104,14 +111,38 @@ describe("Habilitações", () => {
 });
 
 describe("Serviços, Leitos e Equipamentos", () => {
-  test("Serviços: terceiro mostra o CNES e o filtro restringe", async () => {
+  test("Serviços agrupa por serviço, recolhido, e abre com o botão", async () => {
     const u = userEvent.setup();
     abrir("#/painel/cadastro/servicos");
     const tabela = await screen.findByRole("table", { name: "Serviços" });
     expect(linhasDe(tabela)).toHaveLength(3);
-    expect(within(tabela).getByText("0000999")).toBeInTheDocument();
+    expect(within(tabela).queryByText("Ecocardiografia")).toBeNull();
+    const botao = within(tabela).getByRole("button", { name: /153/ });
+    expect(botao).toHaveAttribute("aria-expanded", "false");
+    await u.click(botao);
+    expect(botao).toHaveAttribute("aria-expanded", "true");
+    expect(linhasDe(tabela)).toHaveLength(4);
+    expect(within(tabela).getByText("Ecocardiografia")).toBeInTheDocument();
+    await u.click(botao);
+    expect(linhasDe(tabela)).toHaveLength(3);
+  });
+
+  test("Serviços: o grupo diz quantas classificações atendem o SUS e o terceiro mostra o CNES", async () => {
+    abrir("#/painel/cadastro/servicos");
+    const tabela = await screen.findByRole("table", { name: "Serviços" });
+    const linha153 = within(tabela).getByRole("button", { name: /153/ }).closest("tr")!;
+    expect(within(linha153).getByText("1 de 1")).toBeInTheDocument();
+    expect(within(linha153).getByText("0 de 1")).toBeInTheDocument();
+    expect(within(linha153).getByText("0000999")).toBeInTheDocument();
+  });
+
+  test("Serviços: o filtro abre os grupos que casam", async () => {
+    const u = userEvent.setup();
+    abrir("#/painel/cadastro/servicos");
+    const tabela = await screen.findByRole("table", { name: "Serviços" });
     await u.type(screen.getByRole("searchbox", { name: /Filtrar/ }), "densitometria");
-    await waitFor(() => expect(linhasDe(tabela)).toHaveLength(1));
+    await waitFor(() => expect(linhasDe(tabela)).toHaveLength(2));
+    expect(within(tabela).getByText("Densitometria óssea")).toBeInTheDocument();
   });
 
   test("Leitos: nome ausente mostra só o código, sem null nem undefined", async () => {
@@ -230,5 +261,29 @@ describe("revisão final", () => {
     m.unidadeVer.mockResolvedValue({ ...unidadeExemplo, municipio: "354980", municipio_nome: "" });
     abrir("#/painel/cadastro");
     expect(await screen.findByText(/354980 \(SP\)/)).toBeInTheDocument();
+  });
+});
+
+describe("Habilitações: citam e não produzem", () => {
+  test("o chip filtra as vigentes que citam e não produzem, e a linha diz 0 · não produz", async () => {
+    const u = userEvent.setup();
+    abrir("#/painel/cadastro");
+    const chip = await screen.findByRole("button", { name: "Citam e não produzem 1" });
+    const tabela = screen.getByRole("table", { name: "Habilitações" });
+    await waitFor(() => expect(within(tabela).getAllByText("0 · não produz")).toHaveLength(1));
+    expect(linhasDe(tabela)).toHaveLength(4);
+    await u.click(chip);
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+    expect(linhasDe(tabela)).toHaveLength(1);
+    expect(within(tabela).getByText("3801")).toBeInTheDocument();
+    await u.click(chip);
+    expect(linhasDe(tabela)).toHaveLength(4);
+  });
+
+  test("sem produção não há chip nem legenda", async () => {
+    m.aptidaoUnidade.mockResolvedValue(aptidaoExemplo({ sem_producao: true, habilitacoes: null }));
+    abrir("#/painel/cadastro");
+    await screen.findByRole("table", { name: "Habilitações" });
+    expect(screen.queryByRole("button", { name: /^Citam e não produzem/ })).toBeNull();
   });
 });

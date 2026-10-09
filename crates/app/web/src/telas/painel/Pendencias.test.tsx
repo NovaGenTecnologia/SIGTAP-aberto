@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { Pendencias } from "./Pendencias";
 import type { Pendencia } from "../../api/tipos";
 import { queda, semAptidao, semValor } from "./exemplos";
+import { definirOrigem, lerOrigem } from "./origemDaPendencia";
 
 const n = (s: string) => s.replace(/ /g, " ");
 
@@ -68,17 +69,17 @@ test("sem nenhuma pendência diz que nada pede atenção", () => {
   expect(screen.getByText("Nada pede atenção nesta competência")).toBeInTheDocument();
 });
 
-describe("segunda ação: levar à subtela da unidade", () => {
+describe("ação principal: abrir a área da unidade", () => {
   const com = (tipo: string): Pendencia => ({ ...semAptidao, id: tipo, tipo, titulo: `Pendência ${tipo}` });
   const destinos: [string, string, string][] = [
-    ["produz_sem_aptidao", "Ver na Aptidão", "#/painel/aptidao/risco"],
-    ["produz_com_ressalva", "Ver na Aptidão", "#/painel/aptidao/risco"],
-    ["servico_fora_do_cadastro", "Ver no Cadastro", "#/painel/cadastro/servicos"],
-    ["habilitacao_sem_producao", "Ver no Cadastro", "#/painel/cadastro/habilitacoes"],
-    ["rejeicao_acima_dos_pares", "Ver nas Rejeições", "#/painel/producao/rejeicoes"],
-    ["quantidade_atipica", "Ver em Fora do padrão", "#/painel/producao/fora-do-padrao?bloco=quantidade"],
-    ["permanencia_fora_do_previsto", "Ver em Fora do padrão", "#/painel/producao/fora-do-padrao?bloco=permanencia"],
-    ["mes_incompleto", "Ver na Produção", "#/painel/producao"],
+    ["produz_sem_aptidao", "Abrir em Aptidão", "#/painel/aptidao/risco"],
+    ["produz_com_ressalva", "Abrir em Aptidão", "#/painel/aptidao/risco"],
+    ["servico_fora_do_cadastro", "Abrir em Cadastro", "#/painel/cadastro/servicos"],
+    ["habilitacao_sem_producao", "Abrir em Cadastro", "#/painel/cadastro/habilitacoes"],
+    ["rejeicao_acima_dos_pares", "Abrir em Produção", "#/painel/producao/rejeicoes"],
+    ["quantidade_atipica", "Abrir em Produção", "#/painel/producao/fora-do-padrao?bloco=quantidade"],
+    ["permanencia_fora_do_previsto", "Abrir em Produção", "#/painel/producao/fora-do-padrao?bloco=permanencia"],
+    ["mes_incompleto", "Abrir em Produção", "#/painel/producao"],
   ];
   test.each(destinos)("%s leva a %s", (tipo, rotulo, href) => {
     render(<Pendencias itens={[com(tipo)]} />);
@@ -86,6 +87,33 @@ describe("segunda ação: levar à subtela da unidade", () => {
   });
   test("tipos sem destino nas subtelas não ganham o link", () => {
     render(<Pendencias itens={[queda]} />);
-    expect(screen.queryByRole("link", { name: /Ver na Aptidão|Ver no Cadastro/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^Abrir em / })).toBeNull();
   });
+});
+
+test("filtrar por área mostra só as dela e os botões trazem a contagem", async () => {
+  const u = userEvent.setup();
+  render(<Pendencias itens={[queda, semAptidao, semValor]} />);
+  expect(screen.getByRole("button", { name: /^Todas 3$/ })).toHaveAttribute("aria-pressed", "true");
+  await u.click(screen.getByRole("button", { name: /^Aptidão 1$/ }));
+  expect(within(screen.getByRole("list", { name: "Pendências" })).getAllByRole("listitem")).toHaveLength(1);
+  expect(screen.getByRole("button", { name: /^Aptidão 1$/ })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.queryByRole("button", { name: /^Cadastro/ })).toBeNull();
+});
+
+test("cada pendência tem uma só ação principal, nomeada pela área, e registra de onde veio", async () => {
+  const u = userEvent.setup();
+  definirOrigem(null);
+  render(<Pendencias itens={[semAptidao]} />);
+  const abrir = screen.getByRole("link", { name: "Abrir em Aptidão" });
+  expect(abrir).toHaveAttribute("href", "#/painel/aptidao/risco");
+  await u.click(abrir);
+  expect(lerOrigem()?.titulo).toBe(semAptidao.titulo);
+  expect(screen.queryByRole("link", { name: /^Ver (na|no|nas|em) / })).toBeNull();
+});
+
+test("a faixa sem valor também tem a ação principal da área", () => {
+  const semValorDeCadastro: Pendencia = { ...semValor, id: "hab", tipo: "habilitacao_sem_producao", titulo: "Habilitação sem produção" };
+  render(<Pendencias itens={[semValorDeCadastro]} />);
+  expect(screen.getByRole("link", { name: "Abrir em Cadastro" })).toHaveAttribute("href", "#/painel/cadastro/habilitacoes");
 });

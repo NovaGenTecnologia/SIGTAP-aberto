@@ -29,15 +29,20 @@ test("Aptidão: abre num grupo, mostra a faixa e não tem violação de acessibi
   await semViolacoes(page);
 });
 
-test("Aptidão: troca de grupo por teclado e o foco continua na faixa", async ({ page }) => {
+test("Aptidão: Em ordem vem recolhido; abre e fecha por teclado e o foco acompanha a barra", async ({ page }) => {
   await abrirAptidao(page, "/#/painel/aptidao/risco");
-  const ordem = page.getByRole("navigation", { name: "Prioridade" }).getByRole("link", { name: /Em ordem/ });
-  await ordem.focus();
+  await expect(page.getByRole("navigation", { name: "Prioridade" }).getByRole("link")).toHaveCount(2);
+  const barra = page.getByRole("button", { name: /^Em ordem: / });
+  await expect(barra).toHaveAttribute("aria-expanded", "false");
+  await barra.focus();
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/#\/painel\/aptidao\/ordem/);
   await expect(page.getByRole("table", { name: "Procedimentos em ordem" })).toBeVisible();
-  await expect(ordem).toHaveAttribute("aria-current", "page");
-  await expect(ordem).toBeFocused();
+  const esconder = page.getByRole("button", { name: /Esconder/ });
+  await expect(esconder).toHaveAttribute("aria-expanded", "true");
+  await expect(esconder).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page).not.toHaveURL(/ordem/);
 });
 
 test("Aptidão: Oportunidade abre só com o que a UF produziu, e a busca vai ao servidor", async ({ page }) => {

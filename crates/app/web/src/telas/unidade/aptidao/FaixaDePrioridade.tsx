@@ -7,16 +7,15 @@ const valorCurto = (centavos: number) => (centavos < 100_000_000 ? reais(centavo
 interface Passo { id: GrupoDeAptidao; rotulo: string; tom: string; numero: number | null; texto: string }
 
 function passosDe(r: ResumoDeAptidao, semProducao: boolean): Passo[] {
-  const { risco, oportunidade, ordem } = r;
+  const { risco, oportunidade } = r;
   return [
     { id: "risco", rotulo: "Risco", tom: "risco", numero: risco?.procedimentos ?? null, texto: risco ? `${valorCurto(risco.valor_da_unidade_centavos)} produzidos pela unidade` : "" },
     { id: "oportunidade", rotulo: "Oportunidade", tom: "oportunidade", numero: oportunidade.procedimentos,
       texto: semProducao ? "pelo cadastro" : `${inteiro(oportunidade.com_producao_na_uf)} com produção na UF · ${valorCurto(oportunidade.valor_da_uf_centavos)} produzidos na UF` },
-    { id: "ordem", rotulo: "Em ordem", tom: "ordem", numero: ordem?.procedimentos ?? null, texto: ordem ? `${valorCurto(ordem.valor_da_unidade_centavos)} produzidos pela unidade` : "" },
   ];
 }
 
-/** Os três grupos de prioridade: contagem e valor, e também o seletor do grupo (navegação, com `aria-current`). */
+/** Risco e Oportunidade: contagem e valor, e também o seletor do grupo (navegação, com `aria-current`). "Em ordem" fica recolhido numa barra à parte. */
 export function FaixaDePrioridade({ resumo, semProducao, ativo, q, hab }: {
   resumo: ResumoDeAptidao; semProducao: boolean; ativo: GrupoDeAptidao; q: string; hab: string | null;
 }) {

@@ -12,6 +12,10 @@ const SITUACAO: Record<SituacaoDoItem, { texto: string; tom: string }> = {
   sem_exigencia: { texto: "Sem exigência", tom: "neutro" },
 };
 
+/** O que falta quando o cadastro não aponta habilitação, serviço nem leito: a coluna nunca fica vazia. */
+export const semFalta = (i: ItemDeAptidao) =>
+  i.situacao === "fora_da_tabela" ? "Procedimento fora da tabela vigente" : (i.motivo ?? "Sem detalhe no cadastro");
+
 export interface ColunaDeAptidao { id: string; rotulo: string; numerica?: boolean; celula: (i: ItemDeAptidao) => React.ReactNode; texto: (i: ItemDeAptidao) => string | number }
 
 const produzidoPelaUnidade = (i: ItemDeAptidao) => i.sia.valor_centavos + i.sih.valor_centavos;
@@ -37,7 +41,7 @@ export function colunasDe(grupo: GrupoDeAptidao, itens: ItemDeAptidao[]): Coluna
   const produzido: ColunaDeAptidao = { id: "prod", rotulo: "Produzido pela unidade", numerica: true, texto: (i) => produzidoPelaUnidade(i) / 100, celula: (i) => reais(produzidoPelaUnidade(i)) };
   const lista: ColunaDeAptidao[] =
     grupo === "risco"
-      ? [procedimento, situacao, { id: "falta", rotulo: "O que falta", texto: (i) => i.falta.map((f) => `${f.tipo} ${f.codigo}`).join("; "), celula: (i) => <ChipsDeFalta falta={i.falta} /> }, produzido]
+      ? [procedimento, situacao, { id: "falta", rotulo: "O que falta", texto: (i) => (i.falta.length ? i.falta.map((f) => `${f.tipo} ${f.codigo}`).join("; ") : semFalta(i)), celula: (i) => (i.falta.length ? <ChipsDeFalta falta={i.falta} /> : <span>{semFalta(i)}</span>) }, produzido]
       : grupo === "oportunidade"
         ? [procedimento, situacao,
           { id: "uf", rotulo: "Unidades da UF", numerica: true, texto: produtoresNaUf, celula: (i) => inteiro(produtoresNaUf(i)) },

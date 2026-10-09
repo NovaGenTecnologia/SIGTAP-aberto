@@ -7,8 +7,8 @@ export const useUnidade = (competencia?: string, alvo?: { uf: string; cnes: stri
   useQuery({ queryKey: ["unidade", competencia ?? null, alvo?.uf ?? null, alvo?.cnes ?? null], queryFn: () => unidadeVer(competencia, alvo), enabled: ligado });
 
 /** Só o resumo por prioridade e as habilitações com produção (sem lista). */
-export const useAptidaoResumo = (competencia?: string, unidade = "") =>
-  useQuery({ queryKey: ["aptidao-resumo", competencia ?? null, unidade], queryFn: () => aptidaoUnidade({ competencia }) });
+export const useAptidaoResumo = (competencia?: string, unidade = "", ligado = true) =>
+  useQuery({ queryKey: ["aptidao-resumo", competencia ?? null, unidade], queryFn: () => aptidaoUnidade({ competencia }), enabled: ligado });
 
 /** A lista de um grupo, de 50 em 50: `fetchNextPage` pede o próximo `desde`. */
 export function useAptidao(

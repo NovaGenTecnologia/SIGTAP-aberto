@@ -26,11 +26,17 @@ export interface TabelaDoCadastroProps<L extends { id: string }> {
   nomeDoArquivo: string;
   aoAbrir?: (linha: L) => void;
   vazio?: string;
+  /** Substitui as linhas padrão do `<tbody>` (ex.: linhas agrupadas); recebe as linhas que passaram no filtro e se há filtro de texto. */
+  corpo?: (mostradas: L[], filtrando: boolean) => ReactNode;
+  /** Controles extras na barra, depois da contagem (ex.: chips de filtro). */
+  extras?: ReactNode;
+  /** Texto abaixo da tabela. */
+  legenda?: ReactNode;
 }
 
 /** Tabela comum das abas do Cadastro: filtro por texto, contagem, exportar e rolagem por dentro. */
 export function TabelaDoCadastro<L extends { id: string }>({
-  rotulo, colunas, linhas, texto, busca, aoBuscar, contagem, planilha, nomeDoArquivo, aoAbrir, vazio = "Nenhum registro.",
+  rotulo, colunas, linhas, texto, busca, aoBuscar, contagem, planilha, nomeDoArquivo, aoAbrir, vazio = "Nenhum registro.", corpo, extras, legenda,
 }: TabelaDoCadastroProps<L>) {
   const mostradas = busca.trim() ? linhas.filter((l) => contem(texto(l), busca)) : linhas;
   return (
@@ -38,6 +44,7 @@ export function TabelaDoCadastro<L extends { id: string }>({
       <div className="un__barra">
         <CampoBusca rotulo={`Filtrar ${rotulo.toLowerCase()}`} value={busca} onChange={aoBuscar} />
         <span className="un__contagem">{contagem ? contagem(mostradas) : `${mostradas.length} ${rotulo.toLowerCase()}`}</span>
+        {extras}
         <span className="un__barra-fim">
           <Exportar montar={() => planilha(mostradas)} nome={nomeDoArquivo} mensagemOk={(p) => `${p.abas[0]?.linhas.length ?? 0} linhas exportadas.`} />
         </span>
@@ -49,7 +56,7 @@ export function TabelaDoCadastro<L extends { id: string }>({
               <tr>{colunas.map((c) => <th key={c.id} scope="col" className={c.numerica ? "un__direita" : undefined}>{c.rotulo}</th>)}</tr>
             </thead>
             <tbody>
-              {mostradas.map((l) => (
+              {corpo ? corpo(mostradas, busca.trim() !== "") : mostradas.map((l) => (
                 <tr key={l.id} className={aoAbrir ? "un__linha-clicavel" : undefined} onClick={aoAbrir ? () => aoAbrir(l) : undefined}>
                   {colunas.map((c) => <td key={c.id} className={c.numerica ? "un__direita num" : undefined}>{c.celula(l)}</td>)}
                 </tr>
@@ -57,6 +64,7 @@ export function TabelaDoCadastro<L extends { id: string }>({
             </tbody>
           </table>
         </div>
+        {legenda && <p className="un__legenda">{legenda}</p>}
         {mostradas.length === 0 && <p className="un__vazio">{busca.trim() ? `Nenhum resultado para «${busca.trim()}»` : vazio}</p>}
       </div>
     </div>
