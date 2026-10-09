@@ -108,3 +108,7 @@
   .falta__texto { grid-column: 2 / 4; }
 }
 .painel > h1 + .painel__sub { margin-top: calc(var(--esp-3) * -1); }
+.lateral__ligacao { display: flex; align-items: center; justify-content: space-between; gap: var(--esp-3); width: 100%; color: inherit; text-decoration: none; }
+.lateral__ligacao .lateral__breve-titulo { color: var(--cor-acao); text-decoration: underline; text-underline-offset: 2px; }
+.lateral__ligacao:focus-visible { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: 2px; }
+.lateral__seta { color: var(--cor-texto-2); font-weight: 700; }

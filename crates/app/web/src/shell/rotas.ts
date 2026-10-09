@@ -99,3 +99,65 @@ export function caminhoMudancas(t: TelaMudancas): string[] {
   const base = [t.de ?? "-", t.para ?? "-"];
   return t.soAfeta ? [...base, "afeta"] : t.de ? base : t.para ? base : [];
 }
+
+// ---- Subtelas da unidade (Painel): Cadastro e Aptidão; o estado da tela mora na rota ----
+export type AbaDeCadastro = "habilitacoes" | "servicos" | "leitos" | "equipamentos" | "profissionais" | "terceiros";
+export type GrupoDeAptidaoNaRota = "risco" | "oportunidade" | "ordem";
+export type TelaDaUnidade =
+  | { tela: "painel" }
+  | { tela: "producao" }
+  | { tela: "cadastro"; aba: AbaDeCadastro; q: string }
+  | { tela: "aptidao"; grupo: GrupoDeAptidaoNaRota | null; q: string; hab: string | null };
+
+const ABAS_DE_CADASTRO: AbaDeCadastro[] = ["habilitacoes", "servicos", "leitos", "equipamentos", "profissionais", "terceiros"];
+const GRUPOS: GrupoDeAptidaoNaRota[] = ["risco", "oportunidade", "ordem"];
+
+/** Separa `nome?a=1&b=2` em nome e parâmetros já decodificados. */
+function separarParametros(segmento: string | undefined): [string, URLSearchParams] {
+  const [nome = "", resto = ""] = (segmento ?? "").split("?", 2);
+  const params = new URLSearchParams();
+  for (const par of resto.split("&").filter(Boolean)) {
+    const i = par.indexOf("=");
+    const chave = decodificar(i < 0 ? par : par.slice(0, i));
+    params.set(chave, i < 0 ? "" : decodificar(par.slice(i + 1)));
+  }
+  return [nome, params];
+}
+
+/** `resto` é o que vem depois de `#/painel/`. */
+export function lerUnidade(resto: string[]): TelaDaUnidade {
+  const [nome, params] = separarParametros(resto[0]);
+  if (nome === "producao") return { tela: "producao" };
+  if (nome === "cadastro") {
+    const [aba, p] = separarParametros(resto[1]);
+    const busca = p.get("q") ?? params.get("q") ?? "";
+    return { tela: "cadastro", aba: ABAS_DE_CADASTRO.find((a) => a === aba) ?? "habilitacoes", q: busca };
+  }
+  if (nome === "aptidao") {
+    const [grupo, p] = separarParametros(resto[1]);
+    const busca = p.get("q") ?? params.get("q") ?? "";
+    const hab = p.get("hab") ?? params.get("hab") ?? null;
+    return { tela: "aptidao", grupo: GRUPOS.find((g) => g === grupo) ?? null, q: busca, hab: hab || null };
+  }
+  return { tela: "painel" };
+}
+
+function comParametros(base: string, params: [string, string | null][]): string {
+  const ps = params.filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v as string)}`);
+  return ps.length ? `${base}?${ps.join("&")}` : base;
+}
+
+/** Segmentos depois de `#/painel/`, para `ir("painel", ...caminhoUnidade(t))`. */
+export function caminhoUnidade(t: TelaDaUnidade): string[] {
+  if (t.tela === "painel") return [];
+  if (t.tela === "producao") return ["producao"];
+  if (t.tela === "cadastro") {
+    const ps: [string, string | null][] = [["q", t.q.trim() || null]];
+    return t.aba === "habilitacoes" ? [comParametros("cadastro", ps)] : ["cadastro", comParametros(t.aba, ps)];
+  }
+  const ps: [string, string | null][] = [["q", t.q.trim() || null], ["hab", t.hab]];
+  return t.grupo ? ["aptidao", comParametros(t.grupo, ps)] : [comParametros("aptidao", ps)];
+}
+
+/** `href` (com `#/painel/...`) de uma subtela da unidade, para links que também navegam por `ir`. */
+export const hrefUnidade = (t: TelaDaUnidade): string => ["#/painel", ...caminhoUnidade(t)].join("/");

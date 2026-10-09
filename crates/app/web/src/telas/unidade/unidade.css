@@ -1,0 +1,86 @@
+/* Cadastro e Aptidão da unidade (subtelas do Painel). Tokens da fundação; sem movimento próprio. */
+.un { display: flex; flex-direction: column; gap: var(--esp-4); max-width: 1134px; }
+.un__cartao { background: var(--cor-superficie); border: 1px solid var(--cor-linha); border-radius: var(--raio-bloco); min-width: 0; }
+
+/* Cabeçalho comum */
+.un__cabeca { display: flex; flex-direction: column; gap: var(--esp-2); }
+.un__topo { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--esp-3); }
+.un__caminho { font-size: var(--texto-12); font-weight: 600; }
+.un__caminho a { color: var(--cor-acao); text-underline-offset: 2px; }
+.un__caminho a:focus-visible { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: 2px; }
+.un__acoes { display: flex; flex-direction: column; align-items: flex-end; gap: var(--esp-1); }
+.un__unidade { font-size: var(--texto-12); color: var(--cor-texto-2); }
+.un__irmaos { display: inline-flex; align-self: flex-start; border: 1px solid var(--cor-linha-controle); border-radius: var(--raio-controle); background: var(--cor-superficie); overflow: hidden; }
+.un__irmao { display: inline-flex; align-items: center; min-height: 32px; padding: 0 var(--esp-4); font-weight: 600; color: var(--cor-texto-2); text-decoration: none; }
+.un__irmao + .un__irmao { border-left: 1px solid var(--cor-linha); }
+a.un__irmao:hover { background: var(--cor-pagina); }
+a.un__irmao[aria-current="page"], .un__irmao[aria-current="page"] { background: var(--cor-item-ativo); color: var(--cor-acao-escura); }
+a.un__irmao:focus-visible { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: -3px; }
+.un__irmao--breve { color: var(--cor-texto-3); font-weight: 400; }
+
+/* Barra acima de uma tabela: busca, contagem, ações */
+.un__barra { display: flex; align-items: flex-end; flex-wrap: wrap; gap: var(--esp-3); }
+.un__barra .campo { min-width: 18rem; }
+.un__contagem { padding-bottom: 6px; font-size: var(--texto-12); color: var(--cor-texto-2); }
+.un__mais { align-self: flex-start; padding: 0; background: none; border: 0; color: var(--cor-acao); font: inherit; font-size: var(--texto-12); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; min-height: 24px; }
+.un__mais:focus-visible { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: 2px; }
+.un__mais:disabled { color: var(--cor-texto-2); cursor: default; }
+.un__rolagem { overflow-x: auto; }
+.un__rolagem:focus-visible { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: -3px; }
+.un__vazio { padding: var(--esp-4); color: var(--cor-texto-2); }
+
+/* Tabelas do Cadastro e da Aptidão */
+.un__bloco { display: flex; flex-direction: column; gap: var(--esp-3); }
+.un__barra-fim { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: var(--esp-1); }
+.un__secao { font-size: var(--texto-16); font-weight: 700; }
+.un__sub { font-size: var(--texto-12); color: var(--cor-texto-2); }
+.un__tabela { width: 100%; border-collapse: collapse; font-size: var(--texto-14); }
+.un__tabela th, .un__tabela td { padding: var(--esp-2) var(--esp-3); border-bottom: 1px solid var(--cor-linha); text-align: left; vertical-align: top; font-weight: 400; }
+.un__tabela thead th { font-size: var(--texto-12); font-weight: 600; color: var(--cor-texto-2); white-space: nowrap; }
+.un__tabela tbody tr:last-child > * { border-bottom: 0; }
+.un__tabela .un__direita { text-align: right; white-space: nowrap; }
+.un__linha-clicavel { cursor: pointer; }
+.un__linha-clicavel:hover { background: var(--cor-pagina); }
+.un__codigo { display: block; color: var(--cor-acao); font-weight: 600; }
+.un__nome { display: block; color: var(--cor-texto); }
+.un__forte { font-weight: 700; }
+.un__apagado { color: var(--cor-texto-2); }
+.un__ver { color: var(--cor-acao); font-weight: 600; text-underline-offset: 2px; white-space: nowrap; }
+.un__ver:focus-visible { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: 2px; }
+.un__selo { display: inline-flex; margin-left: var(--esp-2); font-size: var(--texto-12); font-weight: 700; padding: 1px var(--esp-2); border-radius: 12px; color: var(--cor-nconf-texto); background: var(--cor-nconf-fundo); white-space: nowrap; }
+.un__selo--neutro { margin-left: var(--esp-2); }
+
+/* Terceiros */
+.un__lista { list-style: none; margin: 0; padding: 0; }
+.un__item { display: flex; align-items: center; justify-content: space-between; gap: var(--esp-3); padding: var(--esp-2) var(--esp-4); border-top: 1px solid var(--cor-linha); }
+.un__item:first-child { border-top: 0; }
+.un__aviso { display: flex; align-items: center; gap: var(--esp-3); padding: var(--esp-2) var(--esp-3); background: var(--cor-info-fundo); color: var(--cor-info-texto); border-radius: var(--raio-controle); }
+.un__erro { color: var(--cor-rejeicao-texto); font-weight: 600; }
+
+/* Aptidão: faixa de prioridade */
+.un__faixa { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--esp-3); }
+.un__faixa-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: var(--esp-3) var(--esp-4); background: var(--cor-superficie); border: 1px solid var(--cor-linha); border-radius: var(--raio-bloco); color: var(--cor-texto); text-decoration: none; }
+a.un__faixa-item:hover { background: var(--cor-pagina); }
+a.un__faixa-item[aria-current="page"] { border: 2px solid var(--cor-acao); padding: calc(var(--esp-3) - 1px) calc(var(--esp-4) - 1px); }
+a.un__faixa-item:focus-visible { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: 2px; }
+.un__faixa-item--desligado { background: var(--cor-pagina); color: var(--cor-texto-2); }
+.un__faixa-rotulo { display: inline-flex; align-items: center; gap: var(--esp-2); font-size: var(--texto-12); font-weight: 700; }
+.un__faixa-numero { font-size: var(--texto-22); font-weight: 700; line-height: 1.2; color: var(--cor-casco); }
+.un__faixa-item--desligado .un__faixa-numero { color: var(--cor-texto-3); }
+.un__faixa-texto { font-size: var(--texto-12); color: var(--cor-texto-2); }
+.un__ponto { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--cor-nconf); flex: none; }
+.un__ponto--risco, .un__ponto--rejeicao { background: var(--cor-rejeicao); }
+.un__ponto--oportunidade, .un__ponto--info { background: var(--cor-info); }
+.un__ponto--ordem, .un__ponto--ok { background: var(--cor-ok); }
+.un__ponto--atencao { background: var(--cor-atencao); }
+.un__situacao { display: inline-flex; align-items: center; gap: var(--esp-2); font-weight: 600; white-space: nowrap; }
+
+/* Chips de "o que falta", filtro e limites */
+.un__chips { display: inline-flex; flex-wrap: wrap; gap: var(--esp-1) var(--esp-2); }
+.un__chip { display: inline-flex; align-items: center; min-height: 24px; padding: 0 var(--esp-2); border: 1px solid var(--cor-linha-controle); border-radius: var(--raio-controle); font-size: var(--texto-12); font-weight: 600; color: var(--cor-acao); text-decoration: none; white-space: nowrap; }
+.un__chip:hover { background: var(--cor-pagina); }
+.un__chip:focus-visible { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: 2px; }
+.un__filtro { display: inline-flex; align-items: center; gap: var(--esp-1); min-height: 28px; padding: 0 var(--esp-3); margin-bottom: 2px; border: 1px solid var(--cor-linha-controle); border-radius: 14px; background: var(--cor-info-fundo); color: var(--cor-info-texto); font: inherit; font-size: var(--texto-12); font-weight: 600; cursor: pointer; }
+.un__filtro:focus-visible { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: 2px; }
+.un__limites { display: flex; align-items: center; flex-wrap: wrap; gap: var(--esp-3); font-size: var(--texto-12); color: var(--cor-texto-2); }
+.un__nowrap { white-space: nowrap; }
