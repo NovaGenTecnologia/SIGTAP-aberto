@@ -220,3 +220,117 @@ export interface AptidaoUnidade {
   /** Janela da produção usada (ausente sem produção). */
   janela?: unknown;
 }
+
+// ---- Produção da unidade (faturamento_unidade e producao_procedimentos) ----
+/** Bloco opcional que não pôde ser lido: `sem_campo` (a coluna não veio nos meses carregados), `sem_dado` ou `sem_cadastro`. */
+export interface Ausente { ausente: true; motivo: "sem_campo" | "sem_dado" | "sem_cadastro"; campo?: string; meses?: string[] }
+export const ehAusente = (x: unknown): x is Ausente => typeof x === "object" && x !== null && (x as { ausente?: unknown }).ausente === true;
+export interface MesDeCobertura { competencia: string; completo: boolean; estabelecimentos: number; sem_base: boolean }
+export interface MesDaUnidade {
+  competencia: string; rejeicoes: number; sia_apresentado_centavos: number | null; sia_quantidade: number; sia_valor_centavos: number;
+  sih_aih: number; sih_dias: number | null; sih_valor_centavos: number;
+}
+export interface TendenciaDoValor { media_anterior: number; media_recente: number; sentido: "sobe" | "cai" | "estavel"; variacao_percentual: number | null }
+export interface MotivoDeRejeicao {
+  motivo: string; descricao: string | null; total: number; bloqueio: boolean; encerrado: boolean;
+  vigencia: [string, string] | null; por_mes: [string, number][];
+}
+export interface MesDeRejeicao { competencia: string; rejeicoes: number; aih: number; por_100_aih: number | null; completo: boolean }
+export interface ClasseDaCurva { procedimentos: number; valor_centavos: number }
+export type ResumoDaCurva = Record<"A" | "B" | "C", ClasseDaCurva>;
+export interface ItemDaCurva { procedimento: string; nome: string | null; classe: "A" | "B" | "C"; quantidade: number; valor_centavos: number; percentual: number; acumulado: number }
+export interface CurvaDoSistema { unidade_quantidade: string; total_procedimentos: number; resumo: ResumoDaCurva; itens: ItemDaCurva[]; omitidos: number }
+export interface DiferencaDeApresentado {
+  procedimento: string; nome: string | null; quantidade_apresentada: number; quantidade_aprovada: number;
+  valor_apresentado_centavos: number; valor_aprovado_centavos: number;
+}
+export interface MotivoDaDiferenca {
+  codigo: string; descricao: string | null; quantidade_apresentada: number; quantidade_aprovada: number;
+  valor_apresentado_centavos: number; valor_aprovado_centavos: number;
+}
+export interface QuantidadeAtipica {
+  procedimento: string; nome: string | null; competencia: string; quantidade_apresentada: number;
+  valor_apresentado_centavos: number; mediana_propria: number; mediana_uf: number | null; meses_base: number;
+}
+export interface Apresentado {
+  competencias: string[]; valor_apresentado_centavos: number; valor_aprovado_centavos: number;
+  maiores: DiferencaDeApresentado[]; motivos: MotivoDaDiferenca[] | Ausente; atipicas: QuantidadeAtipica[];
+  limiares_atipica: { razao: number; meses_base: number; excesso_minimo: number }; aviso: string;
+}
+export interface ValorPorFinanciamento { codigo: string; nome: string | null; quantidade: number; valor_centavos: number }
+export interface Instrumentos {
+  aviso: string;
+  da_unidade: { codigo: string; descricao: string | null; quantidade: number; valor_centavos: number }[];
+  divergencias_da_uf: {
+    procedimentos: number; valor_centavos: number;
+    itens: { instrumento: string; nome: string | null; procedimento: string; quantidade: number; registros_do_sigtap: string[]; valor_centavos: number }[];
+  };
+}
+export interface ComposicaoDaAih {
+  aviso: string; total_centavos: number; total_uf_centavos: number; faec_centavos: number; faec_uf_centavos: number;
+  opm_centavos: number; opm_uf_centavos: number; uti_centavos: number;
+  tipos: { fin: string; nome: string | null; valor_centavos: number; valor_uf_centavos: number }[];
+}
+export interface Reapresentacao {
+  aviso: string; total_centavos: number; anteriores_centavos: number; uf_total_centavos: number; uf_anteriores_centavos: number;
+  meses: { competencia: string; do_mes_centavos: number; anteriores_centavos: number; uf_do_mes_centavos: number; uf_anteriores_centavos: number }[];
+  origem_dos_atrasos: { competencia: string; valor_centavos: number }[];
+}
+export interface PerfilFinanceiro {
+  aviso: string;
+  marcas: { tipo: string; codigo: string; descricao: string | null }[];
+  regras: { codigo: string; descricao: string | null; origem: string; quantidade: number; valor_centavos: number }[];
+  complementos: { campo: string; origem: string; valor_centavos: number }[];
+}
+export interface ItemDeServico { codigo: string; nome: string | null; quantidade: number; situacao: string; valor_centavos: number }
+export interface Servicos { aviso: string; fora_do_cadastro_centavos: number; sem_marca_sus_centavos: number; sem_servico_centavos: number; itens: ItemDeServico[] }
+export interface Permanencia {
+  aviso: string; analisados: number; fora_do_previsto: number; limiares: { min_aih: number; razao: number; razao_uf: number };
+  itens: { procedimento: string; nome: string | null; aih: number; dias: number; media_real: number; media_uf: number; previsto: number; razao: number }[];
+}
+export interface LeitosEOcupacao {
+  aviso: string; leitos_sus: number; leitos_existentes: number;
+  por_mes: { competencia: string; aih: number; dias_de_permanencia: number | null; aih_por_leito_sus: number | null; ocupacao_percentual: number | null }[];
+}
+export interface ComparacaoComPares {
+  pares_com_producao: number; pares_com_taxa: number; minimo_aih_para_taxa: number;
+  taxa_da_unidade: number | null; taxa_mediana_dos_pares: number | null;
+  valor_sia_da_unidade_centavos: number; valor_sia_percentil: number | null;
+  valor_sih_da_unidade_centavos: number; valor_sih_percentil: number | null;
+}
+export interface GrupoDePares extends ComparacaoComPares { criterio: string; rotulo: string }
+export interface Pares extends ComparacaoComPares { aviso: string; tipo: string; nome_tipo: string | null; grupos: GrupoDePares[] }
+export interface FaturamentoUnidade {
+  disponivel: true; uf: string; cnes: string; aviso: string;
+  cobertura: { sia: MesDeCobertura[]; sih: MesDeCobertura[] };
+  janela: { sia: string[]; sih: string[] }; janela_longa: { sia: string[]; sih: string[] };
+  meses_completos: { sia: string[]; sih: string[] };
+  meses: MesDaUnidade[];
+  sem_campos_novos: string[]; tem_rejeicoes: boolean;
+  ano_anterior: { sia: unknown; sih: unknown };
+  tendencia: { sia_valor: TendenciaDoValor | null; sih_valor: TendenciaDoValor | null; criterio: string };
+  rejeicoes: {
+    janela_rejeicoes: number; janela_aih: number; por_100_aih: number | null; por_mes: MesDeRejeicao[];
+    motivos: MotivoDeRejeicao[]; motivos_total: number; aviso: string;
+  };
+  abc: { sia: CurvaDoSistema; sih: CurvaDoSistema };
+  apresentado: Apresentado | null;
+  financiamento: { sia: ValorPorFinanciamento[]; sih: ValorPorFinanciamento[] };
+  permanencia: Permanencia | Ausente | null;
+  leitos: LeitosEOcupacao | null;
+  pares: Pares | null;
+  instrumentos: Instrumentos | Ausente | null;
+  composicao_aih: ComposicaoDaAih | Ausente | null;
+  reapresentacao: Reapresentacao | Ausente | null;
+  perfil: PerfilFinanceiro | Ausente | null;
+  servicos: Servicos | Ausente | null;
+}
+export interface FaturamentoIndisponivel { disponivel: false; uf: string; mensagem: string }
+export interface ItemDeProducao {
+  procedimento: string; nome: string | null; classe: "A" | "B" | "C"; quantidade: number; valor_centavos: number; percentual: number; acumulado: number;
+}
+export interface ProcedimentosDaUnidade {
+  disponivel: true; uf: string; cnes: string; origem: "sia" | "sih"; unidade_quantidade: string; janela: string[];
+  total_geral: number; total: number; resumo: ResumoDaCurva; valor_total_centavos: number;
+  itens: ItemDeProducao[]; desde: number; itens_omitidos: number;
+}

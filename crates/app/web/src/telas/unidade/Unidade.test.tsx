@@ -6,6 +6,7 @@ import { ProvedorDaSessao } from "../../shell/sessao";
 import { ProvedorDeAvisos } from "../../componentes/base/Avisos";
 import * as comandos from "../../api/comandos";
 import { aptidaoExemplo, unidadeExemplo } from "./exemplos";
+import { faturamentoExemplo, painelDaUnidade, procedimentosExemplo } from "./exemplosDeProducao";
 
 vi.mock("../../api/comandos");
 const m = vi.mocked(comandos);
@@ -26,6 +27,9 @@ beforeEach(() => {
   m.situacao.mockResolvedValue({ primeira_execucao: false, bloqueio: null, competencias: [{ competencia: "202609" }], territorio: null, pasta_dados: "", ocupado: false, recuperacao: null } as never);
   m.unidadeVer.mockResolvedValue(unidadeExemplo);
   m.aptidaoUnidade.mockImplementation(async (o) => aptidaoExemplo({ grupo: o?.grupo ? { id: o.grupo, itens: [], desde: 0, itens_omitidos: 0, total: 0, ninguem_produziu: null } : null }));
+  m.faturamentoUnidade.mockResolvedValue(faturamentoExemplo());
+  m.producaoProcedimentos.mockResolvedValue(procedimentosExemplo());
+  m.faturamentoPainel.mockResolvedValue(painelDaUnidade());
 });
 
 test("o cabeçalho mostra o caminho, a unidade e o seletor irmão com a tela atual marcada", async () => {
@@ -40,8 +44,8 @@ test("o cabeçalho mostra o caminho, a unidade e o seletor irmão com a tela atu
   const irmaos = screen.getByRole("navigation", { name: "Telas da unidade" });
   expect(within(irmaos).getByRole("link", { name: "Cadastro" })).toHaveAttribute("aria-current", "page");
   expect(within(irmaos).getByRole("link", { name: "Aptidão" })).toHaveAttribute("href", "#/painel/aptidao");
-  expect(within(irmaos).getByText(/Em breve/)).toBeInTheDocument();
-  expect(within(irmaos).queryByRole("link", { name: /Produção/ })).toBeNull();
+  expect(within(irmaos).getByRole("link", { name: "Produção" })).toHaveAttribute("href", "#/painel/producao");
+  expect(within(irmaos).queryByText(/Em breve/)).toBeNull();
 });
 
 test("na Aptidão o seletor marca Aptidão", async () => {
@@ -52,10 +56,13 @@ test("na Aptidão o seletor marca Aptidão", async () => {
   expect(within(irmaos).getByRole("link", { name: "Cadastro" })).not.toHaveAttribute("aria-current");
 });
 
-test("Produção é só um aviso de que vem depois", async () => {
+test("Produção abre as abas e o seletor marca Produção", async () => {
   abrir("#/painel/producao");
   expect(await screen.findByRole("heading", { level: 1, name: "Produção" })).toBeInTheDocument();
-  expect(screen.getAllByText(/Em breve/).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/Em breve/)).toBeNull();
+  const irmaos = screen.getByRole("navigation", { name: "Telas da unidade" });
+  expect(within(irmaos).getByRole("link", { name: "Produção" })).toHaveAttribute("aria-current", "page");
+  expect(await screen.findByRole("tab", { name: "Visão geral" })).toHaveAttribute("aria-selected", "true");
 });
 
 test("sem unidade escolhida mostra o que falta e leva a Dados", async () => {

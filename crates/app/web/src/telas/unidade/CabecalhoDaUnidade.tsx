@@ -47,9 +47,7 @@ export function CabecalhoDaUnidade({ tela, unidade, acoes }: { tela: TelaIrma; u
       <nav aria-label="Telas da unidade" className="un__irmaos">
         <Ligacao para="cadastro" ativa={tela === "cadastro"}>Cadastro</Ligacao>
         <Ligacao para="aptidao" ativa={tela === "aptidao"}>Aptidão</Ligacao>
-        {tela === "producao"
-          ? <span className="un__irmao un__irmao--breve" aria-current="page">Produção · Em breve</span>
-          : <span className="un__irmao un__irmao--breve">Produção · Em breve</span>}
+        <Ligacao para="producao" ativa={tela === "producao"}>Produção</Ligacao>
       </nav>
     </header>
   );

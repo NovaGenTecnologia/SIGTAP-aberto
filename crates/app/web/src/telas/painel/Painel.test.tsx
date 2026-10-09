@@ -57,14 +57,14 @@ test("mostra o resumo, as pendências por valor e a coluna lateral", async () =>
   expect(screen.getByRole("link", { name: "0301010072" })).toBeInTheDocument();
 });
 
-test("Cadastro e Aptidão são links para as subtelas; só Produção segue Em breve, sem link", async () => {
+test("Produção, Cadastro e Aptidão são links para as subtelas e nada diz Em breve", async () => {
   m.faturamentoPainel.mockResolvedValue(painel);
   abrir();
   await screen.findByRole("list", { name: "Pendências" });
   expect(screen.getByRole("link", { name: /^Cadastro/ })).toHaveAttribute("href", "#/painel/cadastro");
   expect(screen.getByRole("link", { name: /^Aptidão/ })).toHaveAttribute("href", "#/painel/aptidao");
-  expect(screen.getAllByText("Em breve")).toHaveLength(1);
-  expect(screen.queryByRole("link", { name: /Produção$/ })).toBeNull();
+  expect(screen.getByRole("link", { name: /^Produção/ })).toHaveAttribute("href", "#/painel/producao");
+  expect(screen.queryByText("Em breve")).toBeNull();
 });
 
 test("os números ausentes viram travessão, sem quebrar", async () => {

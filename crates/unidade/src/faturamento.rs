@@ -12,8 +12,8 @@ use sa_core::Competencia;
 use sa_query::Consulta;
 use sa_query::cnes::{CriterioPar, Estado, EstadoDetalhado};
 use sa_query::faturamento::{
-    JANELA_LONGA_MESES, JANELA_MESES, classificar_procedimento, curva_abc, dias_no_mes, janela,
-    mediana, mesmo_mes_do_ano_anterior, percentil_abaixo, por_100_aih, tendencia,
+    ItemAbc, JANELA_LONGA_MESES, JANELA_MESES, classificar_procedimento, curva_abc, dias_no_mes,
+    janela, mediana, mesmo_mes_do_ano_anterior, percentil_abaixo, por_100_aih, tendencia,
 };
 use sa_query::producao::{ConsultaProducao, Origem};
 use serde_json::{Value, json};
@@ -23,6 +23,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 const LIMITE_LISTA: usize = 40;
 /// Procedimentos de cada classe que vão para a tela.
 const LIMITE_CLASSE: usize = 300;
+/// Motivos de rejeição que vão para a tela (a unidade vê todos; o teto só protege de um arquivo fora do comum).
+const LIMITE_MOTIVOS: usize = 100;
 /// Unidades do mesmo tipo com pelo menos tantas AIH na janela entram na comparação da taxa.
 const MINIMO_AIH_PARA_TAXA: i64 = 50;
 
@@ -74,6 +76,94 @@ fn janelas(q: &ConsultaProducao) -> Result<(Janelas, Value), String> {
         "meses_completos": { "sia": completos(&cob_sia), "sih": completos(&cob_sih) },
     });
     Ok((j, v))
+}
+
+/// Bloco opcional da produção que pode faltar na tela.
+#[derive(Debug, Clone, Copy)]
+enum Bloco {
+    Instrumentos,
+    Composicao,
+    Reapresentacao,
+    Perfil,
+    Servicos,
+    Permanencia,
+    Motivos,
+}
+
+/// Bloco vazio vira dado, não silêncio: `{ ausente, motivo, campo, meses }`. `sem_campo` = nenhum
+/// estabelecimento tem o campo nos meses (base carregada antes dele); `sem_dado` = o campo existe, mas não
+/// para esta unidade. `Null` só quando o bloco não se aplica (a unidade não produziu no sistema do bloco).
+fn ausencia(
+    q: &ConsultaProducao,
+    bloco: Bloco,
+    cnes: &str,
+    comps: &[String],
+) -> Result<Value, sa_query::ErroConsulta> {
+    let (origem, campo) = match bloco {
+        Bloco::Instrumentos => (Origem::Ambulatorial, "PA_DOCORIG"),
+        Bloco::Reapresentacao => (Origem::Ambulatorial, "PA_CMP"),
+        Bloco::Servicos => (Origem::Ambulatorial, "PA_SRV_C"),
+        Bloco::Perfil => (Origem::Ambulatorial, "PA_REGCT"),
+        Bloco::Motivos => (Origem::Ambulatorial, "PA_FLQT"),
+        Bloco::Composicao => (Origem::Hospitalar, "SP_ATOPROF"),
+        Bloco::Permanencia => (Origem::Hospitalar, "DIAS_PERM"),
+    };
+    if !q.unidade_produziu(origem, cnes, comps)? {
+        return Ok(Value::Null);
+    }
+    let com_campo = match bloco {
+        Bloco::Instrumentos => q.meses_com_dimensao(&["PA_DOCORIG"], comps)?,
+        Bloco::Reapresentacao => q.meses_com_dimensao(&["PA_CMP"], comps)?,
+        Bloco::Servicos => q.meses_com_dimensao(&["PA_SRV_C"], comps)?,
+        Bloco::Perfil => q.meses_com_dimensao(&["PA_REGCT", "REGCT"], comps)?,
+        Bloco::Motivos => q.meses_com_motivos(comps)?,
+        Bloco::Composicao => q.meses_com_atos(comps)?,
+        Bloco::Permanencia => q.meses_com_dias(comps)?,
+    };
+    let (motivo, meses) = if com_campo.is_empty() {
+        ("sem_campo", comps.to_vec())
+    } else {
+        ("sem_dado", Vec::new())
+    };
+    Ok(json!({ "ausente": true, "motivo": motivo, "campo": campo, "meses": meses }))
+}
+
+/// Serviços executados existem, mas o CNES da unidade não traz o arquivo de serviços (SR).
+fn sem_cadastro_de_servicos() -> Value {
+    json!({ "ausente": true, "motivo": "sem_cadastro", "campo": "SR", "meses": [] })
+}
+
+/// Motivos de não pagamento: lista vazia quando o campo existe e tudo foi pago; `ausente` quando o campo falta.
+fn motivos_ou_ausencia(
+    q: &ConsultaProducao,
+    motivos: &[sa_query::faturamento::MotivoNaoPago],
+    cnes: &str,
+    comps: &[String],
+) -> Result<Value, sa_query::ErroConsulta> {
+    if !motivos.is_empty() {
+        return Ok(json!(motivos));
+    }
+    let a = ausencia(q, Bloco::Motivos, cnes, comps)?;
+    Ok(if a["motivo"] == "sem_campo" {
+        a
+    } else {
+        json!([])
+    })
+}
+
+/// O valor do bloco, ou a ausência dele quando veio vazio.
+fn ou_ausencia(
+    v: Value,
+    q: &ConsultaProducao,
+    bloco: Bloco,
+    cnes: &str,
+    comps: &[String],
+) -> Result<Value, sa_query::ErroConsulta> {
+    if v.is_null() {
+        ausencia(q, bloco, cnes, comps)
+    } else {
+        Ok(v)
+    }
 }
 
 /// Valor da unidade por instrumento de registro e, na UF, o que foi produzido em instrumento que o SIGTAP
@@ -207,7 +297,7 @@ fn composicao_json(
 }
 
 /// Serviço/classificação que a unidade declarou executar no SIA (`PA_SRV_C`) contra o que tem cadastrado no CNES.
-/// `Null` sem produção do campo ou sem o arquivo de serviços (SR) do CNES: sem cadastro não há o que confrontar.
+/// `Null` sem produção do campo; sem o arquivo de serviços (SR) do CNES, `sem_cadastro`: não há o que confrontar.
 fn servicos_json(
     q: &ConsultaProducao,
     c: &sa_query::cnes::ConsultaCnes,
@@ -219,8 +309,11 @@ fn servicos_json(
     use sa_query::faturamento::{SituacaoServico, confrontar_servicos};
     let e = q.servicos_executados(cnes, comps)?;
     let cadastro = c.servicos_cadastrados(cnes)?;
-    if e.executados.is_empty() || cadastro.is_empty() {
+    if e.executados.is_empty() {
         return Ok(Value::Null);
+    }
+    if cadastro.is_empty() {
+        return Ok(sem_cadastro_de_servicos());
     }
     let nomes = sa_query::cnes::ConsultaCnes::nomes_de_servicos(sig, comp);
     let conf = confrontar_servicos(&e.executados, &cadastro);
@@ -386,6 +479,127 @@ fn abc_json(
     })
 }
 
+/// Todos os procedimentos da unidade por valor (ou por quantidade), com a classe da curva ABC. A busca e o
+/// filtro de classe só reduzem a lista: `resumo` e `valor_total_centavos` são sempre da unidade inteira.
+fn montar_procedimentos(
+    abc: &[ItemAbc],
+    nomes: &dyn Fn(&str) -> Option<String>,
+    q: Option<&str>,
+    classe: Option<char>,
+    por_quantidade: bool,
+    desde: usize,
+) -> Value {
+    let mut resumo = json!({});
+    for c in ['A', 'B', 'C'] {
+        let (n, valor) = abc
+            .iter()
+            .filter(|x| x.classe == c)
+            .fold((0usize, 0i64), |(n, v), x| (n + 1, v + x.valor_centavos));
+        resumo[c.to_string()] = json!({ "procedimentos": n, "valor_centavos": valor });
+    }
+    let agulha = q.map(sem_acento).filter(|s| !s.trim().is_empty());
+    let mut lista: Vec<(&ItemAbc, Option<String>)> = abc
+        .iter()
+        .filter(|x| classe.is_none_or(|c| x.classe == c))
+        .map(|x| (x, nomes(&x.procedimento)))
+        .filter(|(x, nome)| {
+            agulha.as_deref().is_none_or(|a| {
+                sem_acento(&x.procedimento).contains(a.trim())
+                    || nome
+                        .as_deref()
+                        .is_some_and(|n| sem_acento(n).contains(a.trim()))
+            })
+        })
+        .collect();
+    if por_quantidade {
+        lista.sort_by(|a, b| {
+            b.0.quantidade
+                .cmp(&a.0.quantidade)
+                .then_with(|| a.0.procedimento.cmp(&b.0.procedimento))
+        });
+    }
+    let total = lista.len();
+    let itens: Vec<Value> = lista
+        .into_iter()
+        .skip(desde)
+        .take(PAGINA_APTIDAO)
+        .map(|(x, nome)| {
+            json!({
+                "procedimento": x.procedimento,
+                "nome": nome,
+                "classe": x.classe.to_string(),
+                "quantidade": x.quantidade,
+                "valor_centavos": x.valor_centavos,
+                "percentual": x.percentual,
+                "acumulado": x.acumulado,
+            })
+        })
+        .collect();
+    json!({
+        "total_geral": abc.len(),
+        "total": total,
+        "resumo": resumo,
+        "valor_total_centavos": abc.iter().map(|x| x.valor_centavos).sum::<i64>(),
+        "itens": itens,
+        "desde": desde,
+        "itens_omitidos": total.saturating_sub(desde + PAGINA_APTIDAO),
+    })
+}
+
+/// Procedimentos da unidade na janela de `origem` ("sia" ou "sih"), por valor, de 50 em 50.
+#[allow(clippy::too_many_arguments)]
+pub fn procedimentos_da_unidade(
+    p: &Pastas,
+    sig: &Consulta,
+    comp: Competencia,
+    alvo: Option<(&str, &str)>,
+    origem: &str,
+    q: Option<&str>,
+    classe: Option<&str>,
+    ordem: Option<&str>,
+    desde: usize,
+) -> Result<Value, String> {
+    let (uf, cnes) = alvo_da_unidade(p, alvo)?;
+    let o = match origem {
+        "sia" => Origem::Ambulatorial,
+        "sih" => Origem::Hospitalar,
+        _ => return Err("origem desconhecida: use sia ou sih".to_string()),
+    };
+    let classe = match classe.map(str::trim).filter(|c| !c.is_empty()) {
+        None => None,
+        Some("A") => Some('A'),
+        Some("B") => Some('B'),
+        Some("C") => Some('C'),
+        Some(_) => return Err("classe desconhecida: use A, B ou C".to_string()),
+    };
+    let Ok(qp) = consulta_producao(p, &uf) else {
+        return Ok(indisponivel(&uf));
+    };
+    let (j, _) = janelas(&qp)?;
+    let meses = if o == Origem::Ambulatorial {
+        &j.sia
+    } else {
+        &j.sih
+    };
+    let itens = qp
+        .da_unidade_na_janela(o, &cnes, meses)
+        .map_err(|e| e.to_string())?;
+    let abc = curva_abc(&itens);
+    let nomes = |c: &str| sig.nome_procedimento(comp, c).ok().flatten();
+    let mut v = montar_procedimentos(&abc, &nomes, q, classe, ordem == Some("quantidade"), desde);
+    v["disponivel"] = json!(true);
+    v["uf"] = json!(uf);
+    v["cnes"] = json!(cnes);
+    v["origem"] = json!(origem);
+    v["unidade_quantidade"] = json!(if o == Origem::Ambulatorial {
+        "quantidade aprovada"
+    } else {
+        "AIH"
+    });
+    v["janela"] = json!(meses);
+    Ok(v)
+}
+
 /// Soma, nos meses da janela, de um campo da série da unidade.
 fn soma_na_janela(
     serie: &[sa_query::faturamento::MesUnidade],
@@ -508,6 +722,80 @@ fn comparacao_com(
     }))
 }
 
+/// Todos os motivos de rejeição da unidade, do que mais rejeitou ao que menos, e quantos são.
+fn motivos_de_rejeicao(
+    q: &ConsultaProducao,
+    cnes: &str,
+    janela: Option<&[String]>,
+) -> Result<(Vec<sa_query::faturamento::EvolucaoRejeicao>, usize), sa_query::ErroConsulta> {
+    let motivos = q.evolucao_das_rejeicoes(cnes, LIMITE_MOTIVOS, janela)?;
+    let total = motivos.len();
+    Ok((motivos, total))
+}
+
+/// Fechamentos já calculados, por unidade e competência. Cada entrada vale enquanto os bancos de que depende
+/// (produção da UF, CNES da UF e SIGTAP) não mudarem de data de gravação.
+#[derive(Default)]
+pub struct CacheDoFaturamento {
+    entradas: std::sync::Mutex<HashMap<ChaveDoFaturamento, Value>>,
+}
+
+#[derive(Hash, PartialEq, Eq)]
+struct ChaveDoFaturamento {
+    uf: String,
+    cnes: String,
+    competencia: Competencia,
+    gravacoes: [Option<std::time::SystemTime>; 3],
+}
+
+impl CacheDoFaturamento {
+    /// Quantas unidades ficam guardadas; passou disso, recomeça vazio.
+    pub const LIMITE: usize = 8;
+
+    /// O fechamento guardado ou, se não há (ou os bancos mudaram), o que `calcular` devolve. Erro não é guardado.
+    pub fn obter(
+        &self,
+        p: &Pastas,
+        comp: Competencia,
+        alvo: Option<(&str, &str)>,
+        calcular: impl FnOnce() -> Result<Value, String>,
+    ) -> Result<Value, String> {
+        let (uf, cnes) = alvo_da_unidade(p, alvo)?;
+        let gravacao = |c: std::path::PathBuf| std::fs::metadata(c).and_then(|m| m.modified()).ok();
+        let chave = ChaveDoFaturamento {
+            gravacoes: [
+                gravacao(crate::producao::banco_producao(p, &uf)),
+                gravacao(crate::banco_cnes(p, &uf)),
+                gravacao(p.dados.join("sigtap.db")),
+            ],
+            uf,
+            cnes,
+            competencia: comp,
+        };
+        if let Some(v) = self
+            .entradas
+            .lock()
+            .ok()
+            .and_then(|e| e.get(&chave).cloned())
+        {
+            return Ok(v);
+        }
+        let v = calcular()?;
+        if let Ok(mut e) = self.entradas.lock() {
+            if e.len() >= Self::LIMITE {
+                e.clear();
+            }
+            e.insert(chave, v.clone());
+        }
+        Ok(v)
+    }
+
+    #[cfg(test)]
+    fn tamanho(&self) -> usize {
+        self.entradas.lock().map_or(0, |e| e.len())
+    }
+}
+
 /// A unidade mês a mês e o que se tira disso: taxa de rejeição, tendência, curva ABC, apresentado ×
 /// aprovado, financiamento, leitos e comparação com pares.
 pub fn faturamento_da_unidade(
@@ -532,6 +820,15 @@ pub fn faturamento_da_unidade(
     saida["tem_rejeicoes"] = json!(serie.iter().any(|m| m.rejeicoes > 0));
 
     // Rejeições por 100 AIH, mês a mês e na janela.
+    let (motivos, motivos_total) = motivos_de_rejeicao(&q, &cnes, Some(&j.sih)).map_err(e)?;
+    let completos_sih: Vec<String> = saida["meses_completos"]["sih"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|c| c.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
     let rej = soma_na_janela(&serie, &j.sih, |m| m.rejeicoes);
     let aih = soma_na_janela(&serie, &j.sih, |m| m.sih_aih);
     saida["rejeicoes"] = json!({
@@ -543,9 +840,10 @@ pub fn faturamento_da_unidade(
             "rejeicoes": m.rejeicoes,
             "aih": m.sih_aih,
             "por_100_aih": por_100_aih(m.rejeicoes, m.sih_aih),
-            "completo": j.sih.contains(&m.competencia),
+            "completo": completos_sih.contains(&m.competencia),
         })).collect::<Vec<_>>(),
-        "motivos": q.evolucao_das_rejeicoes(&cnes, 5).map_err(e)?,
+        "motivos": motivos,
+        "motivos_total": motivos_total,
         "aviso": "Rejeições por 100 AIH aprovadas. O arquivo de rejeições traz uma linha por erro (uma AIH pode ter vários) e a AIH rejeitada pode ser reapresentada e aprovada depois: não é o percentual de AIH perdidas.",
     });
     saida["meses"] = json!(serie);
@@ -624,7 +922,7 @@ pub fn faturamento_da_unidade(
             "valor_apresentado_centavos": apr.valor_apresentado_centavos,
             "valor_aprovado_centavos": apr.valor_aprovado_centavos,
             "maiores": nomes(&apr.maiores),
-            "motivos": apr.motivos,
+            "motivos": motivos_ou_ausencia(&q, &apr.motivos, &cnes, &j.sia).map_err(e)?,
             "atipicas": atipicas,
             "limiares_atipica": {
                 "razao": sa_query::faturamento::ATIPICA_RAZAO,
@@ -634,10 +932,38 @@ pub fn faturamento_da_unidade(
             "aviso": "Diferença entre o que foi apresentado e o que o SIA aprovou. O motivo oficial vem do campo PA_FLQT: teto financeiro ou físico e falta de orçamento são limite do gestor, não erro; o que sobra é o que vale conferir no retorno da crítica do seu sistema.",
         })
     };
-    saida["instrumentos"] = instrumentos_json(&q, sig, comp, &cnes, &j.sia).map_err(e)?;
-    saida["composicao_aih"] = composicao_json(&q, &cnes, &j.sih).map_err(e)?;
-    saida["reapresentacao"] = reapresentacao_json(&q, &cnes, &j.sia).map_err(e)?;
-    saida["permanencia"] = permanencia_json(&q, sig, comp, &cnes, &j.sih).map_err(e)?;
+    saida["instrumentos"] = ou_ausencia(
+        instrumentos_json(&q, sig, comp, &cnes, &j.sia).map_err(e)?,
+        &q,
+        Bloco::Instrumentos,
+        &cnes,
+        &j.sia,
+    )
+    .map_err(e)?;
+    saida["composicao_aih"] = ou_ausencia(
+        composicao_json(&q, &cnes, &j.sih).map_err(e)?,
+        &q,
+        Bloco::Composicao,
+        &cnes,
+        &j.sih,
+    )
+    .map_err(e)?;
+    saida["reapresentacao"] = ou_ausencia(
+        reapresentacao_json(&q, &cnes, &j.sia).map_err(e)?,
+        &q,
+        Bloco::Reapresentacao,
+        &cnes,
+        &j.sia,
+    )
+    .map_err(e)?;
+    saida["permanencia"] = ou_ausencia(
+        permanencia_json(&q, sig, comp, &cnes, &j.sih).map_err(e)?,
+        &q,
+        Bloco::Permanencia,
+        &cnes,
+        &j.sih,
+    )
+    .map_err(e)?;
     let nomes = nomes_financiamento(sig, comp);
     saida["financiamento"] = json!({
         "sia": financiamento_json(q.por_financiamento(Origem::Ambulatorial, None, Some(&cnes), &j.sia).map_err(e)?, &nomes),
@@ -657,11 +983,27 @@ pub fn faturamento_da_unidade(
             .unwrap_or_default(),
         Err(_) => Vec::new(),
     };
-    saida["perfil"] = perfil_json(&q, &marcas, &cnes, &j).map_err(e)?;
-    saida["servicos"] = match &cnes_aberto {
+    saida["perfil"] = ou_ausencia(
+        perfil_json(&q, &marcas, &cnes, &j).map_err(e)?,
+        &q,
+        Bloco::Perfil,
+        &cnes,
+        &j.sia,
+    )
+    .map_err(e)?;
+    let servicos = match &cnes_aberto {
         Ok(c) => servicos_json(&q, c, sig, comp, &cnes, &j.sia).map_err(e)?,
-        Err(_) => Value::Null,
+        Err(_)
+            if q.servicos_executados(&cnes, &j.sia)
+                .map_err(e)?
+                .executados
+                .is_empty() =>
+        {
+            Value::Null
+        }
+        Err(_) => sem_cadastro_de_servicos(),
     };
+    saida["servicos"] = ou_ausencia(servicos, &q, Bloco::Servicos, &cnes, &j.sia).map_err(e)?;
     if let Ok(c) = cnes_aberto {
         if let Ok(Some(u)) = c.unidade(sig, comp, &cnes) {
             let sus: i64 = u.leitos.iter().map(|l| l.sus).sum();
@@ -1368,6 +1710,49 @@ pub fn faturamento_do_procedimento(
     Ok(saida)
 }
 
+/// `1 procedimento`, `2 procedimentos`: o número com a palavra concordando.
+fn plural(n: u64, um: &str, varios: &str) -> String {
+    format!("{n} {}", if n == 1 { um } else { varios })
+}
+
+fn texto_permanencia(n: u64) -> String {
+    format!(
+        "{} com permanência média bem diferente da prevista no SIGTAP (ver a aba Produção da unidade).",
+        plural(n, "procedimento", "procedimentos")
+    )
+}
+
+fn texto_quantidade_atipica(
+    n: usize,
+    procedimento: &str,
+    competencia: &str,
+    quantidade: i64,
+    valor: i64,
+) -> String {
+    format!(
+        "{} com quantidade apresentada muito acima da série da unidade e dos outros estabelecimentos. O maior: {} em {}, {} apresentados ({}). Confira se não é erro de digitação ou de lote (ver a aba Produção da unidade).",
+        plural(n as u64, "procedimento", "procedimentos"),
+        procedimento,
+        rotulo(competencia),
+        quantidade,
+        reais_br(valor)
+    )
+}
+
+fn texto_produz_sem_aptidao(n: u64, so38: usize) -> String {
+    format!(
+        "{} sem o cadastro do CNES mostrar aptidão ({so38} só por habilitação 38.xx). Confira o CNES: cadastro desatualizado ou serviço terceirizado.",
+        plural(n, "procedimento produzido", "procedimentos produzidos")
+    )
+}
+
+fn texto_produz_com_ressalva(n: u64) -> String {
+    format!(
+        "{} em que falta só o serviço no cadastro (provável serviço terceirizado).",
+        plural(n, "procedimento produzido", "procedimentos produzidos")
+    )
+}
+
 /// Meses (AAAAMM) como texto `MM/AAAA`.
 fn rotulo(c: &str) -> String {
     if c.len() == 6 {
@@ -1664,9 +2049,7 @@ fn alertas_de_perfil(f: &Value) -> Vec<(&'static str, &'static str, String)> {
         v.push((
             "permanencia_fora_do_previsto",
             "info",
-            format!(
-                "{fora_prev} procedimento(s) com permanência média bem diferente da prevista no SIGTAP (ver a aba Produção da unidade)."
-            ),
+            texto_permanencia(fora_prev),
         ));
     }
 
@@ -2188,13 +2571,12 @@ pub fn painel_do_faturista(p: &Pastas, sig: &Consulta, comp: Competencia) -> Res
         alerta(
             "quantidade_atipica",
             "atencao",
-            format!(
-                "{} procedimento(s) com quantidade apresentada muito acima da série da unidade e dos outros estabelecimentos. O maior: {} em {}, {} apresentados ({}). Confira se não é erro de digitação ou de lote (ver a aba Produção da unidade).",
+            texto_quantidade_atipica(
                 a.len(),
                 primeira["procedimento"].as_str().unwrap_or(""),
                 primeira["competencia"].as_str().unwrap_or(""),
                 primeira["quantidade_apresentada"].as_i64().unwrap_or(0),
-                reais_br(primeira["valor_apresentado_centavos"].as_i64().unwrap_or(0))
+                primeira["valor_apresentado_centavos"].as_i64().unwrap_or(0),
             ),
         );
     }
@@ -2224,9 +2606,7 @@ pub fn painel_do_faturista(p: &Pastas, sig: &Consulta, comp: Competencia) -> Res
             alerta(
                 "produz_sem_aptidao",
                 "atencao",
-                format!(
-                    "{sem_apt} procedimento(s) produzidos sem o cadastro do CNES mostrar aptidão ({so38} só por habilitação 38.xx). Confira o CNES: cadastro desatualizado ou serviço terceirizado."
-                ),
+                texto_produz_sem_aptidao(sem_apt, so38),
             );
         }
         let ress = pr["classes"]["produz_com_ressalva"]["procedimentos"]
@@ -2236,9 +2616,7 @@ pub fn painel_do_faturista(p: &Pastas, sig: &Consulta, comp: Competencia) -> Res
             alerta(
                 "produz_com_ressalva",
                 "info",
-                format!(
-                    "{ress} procedimento(s) produzidos em que falta só o serviço no cadastro (provável serviço terceirizado)."
-                ),
+                texto_produz_com_ressalva(ress),
             );
         }
         if let Some(h) = pr["habilitacoes"].as_array() {
@@ -2824,12 +3202,154 @@ mod testes {
     }
 
     #[test]
+    fn textos_dos_alertas_concordam_com_o_numero_e_usam_mes_barra_ano() {
+        assert_eq!(plural(1, "procedimento", "procedimentos"), "1 procedimento");
+        assert_eq!(
+            plural(0, "procedimento", "procedimentos"),
+            "0 procedimentos"
+        );
+        assert!(texto_permanencia(1).starts_with("1 procedimento com permanência"));
+        assert!(texto_permanencia(106).starts_with("106 procedimentos com permanência"));
+        let t = texto_quantidade_atipica(1, "0202050092", "202606", 769, 624_428);
+        assert!(
+            t.starts_with("1 procedimento com quantidade") && t.contains("em 06/2026,"),
+            "{t}"
+        );
+        assert!(!t.contains("(s)") && !t.contains("202606"));
+        assert!(texto_produz_sem_aptidao(1, 0).starts_with("1 procedimento produzido sem"));
+        assert!(texto_produz_sem_aptidao(3, 2).starts_with("3 procedimentos produzidos sem"));
+        assert!(texto_produz_com_ressalva(1).starts_with("1 procedimento produzido em que falta"));
+        assert!(texto_produz_com_ressalva(4).starts_with("4 procedimentos produzidos em que"));
+    }
+
+    #[test]
     fn reais_br_usa_ponto_de_milhar_e_virgula() {
         assert_eq!(reais_br(0), "R$ 0,00");
         assert_eq!(reais_br(5), "R$ 0,05");
         assert_eq!(reais_br(624_428), "R$ 6.244,28");
         assert_eq!(reais_br(123_456_789), "R$ 1.234.567,89");
         assert_eq!(reais_br(-100_000), "−R$ 1.000,00");
+    }
+
+    fn abc_de(v: &[(&str, i64, i64)]) -> Vec<ItemAbc> {
+        curva_abc(
+            &v.iter()
+                .map(|(p, q, c)| (p.to_string(), *q, *c))
+                .collect::<Vec<_>>(),
+        )
+    }
+    fn nome_de(p: &str) -> Option<String> {
+        Some(format!("Procedimento {p}"))
+    }
+
+    #[test]
+    fn procedimentos_vem_por_valor_com_classe_e_total() {
+        let abc = abc_de(&[("A", 10, 9_000), ("B", 500, 700), ("C", 1, 300)]);
+        let j = montar_procedimentos(&abc, &nome_de, None, None, false, 0);
+        assert_eq!(j["total"], 3);
+        assert_eq!(j["total_geral"], 3);
+        assert_eq!(j["itens"][0]["procedimento"], "A");
+        assert_eq!(j["itens"][0]["classe"], "A");
+        assert_eq!(j["valor_total_centavos"], 10_000);
+        assert_eq!(j["resumo"]["A"]["procedimentos"], 1);
+        assert_eq!(j["itens_omitidos"], 0);
+    }
+
+    #[test]
+    fn ordem_por_quantidade_mantem_a_classe_do_valor() {
+        let abc = abc_de(&[("A", 10, 9_000), ("B", 500, 700), ("C", 1, 300)]);
+        let j = montar_procedimentos(&abc, &nome_de, None, None, true, 0);
+        assert_eq!(j["itens"][0]["procedimento"], "B");
+        let do_valor = abc.iter().find(|x| x.procedimento == "B").unwrap().classe;
+        assert_eq!(j["itens"][0]["classe"], do_valor.to_string());
+    }
+
+    #[test]
+    fn busca_sem_acento_e_filtro_de_classe_reduzem_total_mas_nao_o_resumo() {
+        let abc = abc_de(&[
+            ("0301010072", 1, 9_000),
+            ("0202030300", 1, 700),
+            ("0101010010", 1, 300),
+        ]);
+        let nomes = |p: &str| {
+            Some(match p {
+                "0301010072" => "CONSULTA MÉDICA".to_string(),
+                _ => format!("EXAME {p}"),
+            })
+        };
+        let j = montar_procedimentos(&abc, &nomes, Some("consulta medica"), None, false, 0);
+        assert_eq!(j["total"], 1);
+        assert_eq!(j["total_geral"], 3);
+        let soma: u64 = ["A", "B", "C"]
+            .iter()
+            .map(|c| j["resumo"][*c]["procedimentos"].as_u64().unwrap())
+            .sum();
+        assert_eq!(soma, 3);
+        let so_c = montar_procedimentos(&abc, &nomes, None, Some('C'), false, 0);
+        assert!(!so_c["itens"].as_array().unwrap().is_empty());
+        assert!(
+            so_c["itens"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|i| i["classe"] == "C")
+        );
+    }
+
+    #[test]
+    fn pagina_de_50_e_omitidos_sao_exatos() {
+        let itens: Vec<(String, i64, i64)> = (0..120)
+            .map(|i| (format!("{i:010}"), 1, 1_000 - i))
+            .collect();
+        let abc = curva_abc(&itens);
+        let p1 = montar_procedimentos(&abc, &nome_de, None, None, false, 0);
+        assert_eq!(p1["itens"].as_array().unwrap().len(), 50);
+        assert_eq!(p1["itens_omitidos"], 70);
+        let p3 = montar_procedimentos(&abc, &nome_de, None, None, false, 100);
+        assert_eq!(p3["itens"].as_array().unwrap().len(), 20);
+        assert_eq!(p3["itens_omitidos"], 0);
+        assert_eq!(p3["desde"], 100);
+    }
+
+    #[test]
+    fn sem_producao_na_origem_devolve_lista_vazia_sem_dividir_por_zero() {
+        let j = montar_procedimentos(&[], &nome_de, None, None, false, 0);
+        assert_eq!(j["total"], 0);
+        assert_eq!(j["valor_total_centavos"], 0);
+        assert!(j["itens"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn rejeicoes_trazem_todos_os_motivos_por_total_e_descricao_nula_quando_nao_ha() {
+        use sa_packs::producao::BancoProducao;
+        let b = BancoProducao::em_memoria().unwrap();
+        let mut sql = String::from(
+            "INSERT INTO moterro VALUES ('000001', 'MOTIVO CONHECIDO', 'TAB_SIH.zip');",
+        );
+        for i in 1..=7 {
+            sql += &format!(
+                "INSERT INTO rej_hosp(arq, cnes, comp, motivo, qtd) VALUES ('ER.dbc', '9', '202607', '{i:06}', {});",
+                i * 10
+            );
+        }
+        b.conexao().execute_batch(&sql).unwrap();
+        let q = ConsultaProducao::de_banco(b);
+        let (v, total) = motivos_de_rejeicao(&q, "9", None).unwrap();
+        assert_eq!((v.len(), total), (7, 7), "antes só vinham os 5 primeiros");
+        assert_eq!(v[0].motivo, "000007");
+        assert!(v.windows(2).all(|w| w[0].total >= w[1].total));
+        assert_eq!(
+            v.iter()
+                .find(|m| m.motivo == "000001")
+                .unwrap()
+                .descricao
+                .as_deref(),
+            Some("MOTIVO CONHECIDO")
+        );
+        assert_eq!(
+            v.iter().find(|m| m.motivo == "000002").unwrap().descricao,
+            None
+        );
     }
 
     #[test]
@@ -2839,5 +3359,190 @@ mod testes {
         let p = montar_pendencias(&[a], &json!({}), None);
         assert_eq!(p[0]["texto"], "Confira o lote.");
         assert_eq!(sem_remissao_a_abas("sem remissão"), "sem remissão");
+    }
+
+    // T9: bloco opcional vazio vira `ausente` com o motivo, ou `null` quando não se aplica à unidade.
+    fn banco_sintetico(sql: &str) -> ConsultaProducao {
+        let b = sa_packs::producao::BancoProducao::em_memoria().unwrap();
+        b.conexao().execute_batch(sql).unwrap();
+        ConsultaProducao::de_banco(b)
+    }
+    fn meses(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+    const SIA_DA_UNIDADE: &str = "INSERT INTO prod_amb(arq,cnes,comp,proc,qtd,valor_cent,qtd_pro,valor_pro_cent) VALUES ('PA.dbc','1','202607','0301010072',1,100,1,100);";
+    const SIH_DA_UNIDADE: &str = "INSERT INTO prod_hosp(arq,cnes,comp,proc,aih,valor_cent,dias) VALUES ('RD.dbc','1','202607','0407040064',1,100,3);";
+
+    #[test]
+    fn sem_o_campo_na_janela_cada_bloco_diz_qual_campo_falta_e_em_que_meses() {
+        let q = banco_sintetico(&format!("{SIA_DA_UNIDADE}{SIH_DA_UNIDADE}"));
+        let sia = meses(&["202606", "202607"]);
+        for (bloco, campo) in [
+            (Bloco::Instrumentos, "PA_DOCORIG"),
+            (Bloco::Reapresentacao, "PA_CMP"),
+            (Bloco::Servicos, "PA_SRV_C"),
+            (Bloco::Perfil, "PA_REGCT"),
+            (Bloco::Motivos, "PA_FLQT"),
+        ] {
+            let a = ausencia(&q, bloco, "1", &sia).unwrap();
+            assert_eq!(
+                a,
+                json!({ "ausente": true, "motivo": "sem_campo", "campo": campo, "meses": ["202606", "202607"] }),
+                "{bloco:?}"
+            );
+        }
+        let sih = meses(&["202607"]);
+        let a = ausencia(&q, Bloco::Composicao, "1", &sih).unwrap();
+        assert_eq!(a["motivo"], "sem_campo");
+        assert_eq!(a["campo"], "SP_ATOPROF");
+    }
+
+    #[test]
+    fn motivo_de_nao_pagamento_sem_o_apresentado_no_arquivo_e_sem_campo() {
+        let q = banco_sintetico(&format!(
+            "{SIA_DA_UNIDADE}
+             INSERT INTO prod_dim(arq,tipo,cnes,comp,dim,cod,qtd,valor_cent) VALUES ('PA.dbc','PA','1','202607','PA_FLQT','K',1,100);"
+        ));
+        let a = ausencia(&q, Bloco::Motivos, "1", &meses(&["202607"])).unwrap();
+        assert_eq!(
+            a["motivo"], "sem_campo",
+            "PA_FLQT sem qtd_pro não traz o apresentado"
+        );
+    }
+
+    #[test]
+    fn permanencia_sem_dias_no_arquivo_e_sem_campo() {
+        let q = banco_sintetico(
+            "INSERT INTO prod_hosp(arq,cnes,comp,proc,aih,valor_cent) VALUES ('RD.dbc','1','202607','0407040064',1,100);",
+        );
+        let a = ausencia(&q, Bloco::Permanencia, "1", &meses(&["202607"])).unwrap();
+        assert_eq!(
+            a,
+            json!({ "ausente": true, "motivo": "sem_campo", "campo": "DIAS_PERM", "meses": ["202607"] })
+        );
+    }
+
+    #[test]
+    fn campo_que_existe_na_uf_mas_nao_na_unidade_e_sem_dado() {
+        let q = banco_sintetico(&format!(
+            "{SIA_DA_UNIDADE}{SIH_DA_UNIDADE}
+             INSERT INTO prod_dim(arq,tipo,cnes,comp,dim,cod,qtd,valor_cent) VALUES ('PA.dbc','PA','2','202607','PA_DOCORIG','01',1,100);
+             INSERT INTO prod_dim(arq,tipo,cnes,comp,dim,cod,qtd,valor_cent) VALUES ('PA.dbc','PA','2','202607','PA_SRV_C','130001',1,100);"
+        ));
+        let sia = meses(&["202607"]);
+        let a = ausencia(&q, Bloco::Instrumentos, "1", &sia).unwrap();
+        assert_eq!(
+            a,
+            json!({ "ausente": true, "motivo": "sem_dado", "campo": "PA_DOCORIG", "meses": [] })
+        );
+        assert_eq!(
+            ausencia(&q, Bloco::Servicos, "1", &sia).unwrap()["motivo"],
+            "sem_dado"
+        );
+    }
+
+    #[test]
+    fn unidade_sem_producao_do_sistema_nao_tem_o_bloco_e_fica_nulo() {
+        let q = banco_sintetico(SIA_DA_UNIDADE);
+        let sih = meses(&["202607"]);
+        assert_eq!(
+            ausencia(&q, Bloco::Composicao, "1", &sih).unwrap(),
+            Value::Null
+        );
+        assert_eq!(
+            ausencia(&q, Bloco::Permanencia, "1", &sih).unwrap(),
+            Value::Null
+        );
+        let q = banco_sintetico(SIH_DA_UNIDADE);
+        assert_eq!(
+            ausencia(&q, Bloco::Instrumentos, "1", &meses(&["202607"])).unwrap(),
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn servicos_com_producao_mas_sem_o_cadastro_do_cnes_diz_sem_cadastro() {
+        let a = sem_cadastro_de_servicos();
+        assert_eq!(
+            a,
+            json!({ "ausente": true, "motivo": "sem_cadastro", "campo": "SR", "meses": [] })
+        );
+    }
+
+    // B5: o fechamento da unidade leva ~2,5 s em SP; a segunda abertura do mesmo dado sai da memória.
+    fn pasta_de_teste(nome: &str) -> Pastas {
+        let dados =
+            std::env::temp_dir().join(format!("sa_cache_fat_{nome}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dados);
+        std::fs::create_dir_all(dados.join("producao")).unwrap();
+        std::fs::write(dados.join("producao").join("SP.db"), b"x").unwrap();
+        Pastas { dados }
+    }
+    fn contar(
+        cache: &CacheDoFaturamento,
+        p: &Pastas,
+        cnes: &str,
+        vezes: &std::cell::Cell<u32>,
+    ) -> Value {
+        let comp = Competencia::de_texto("202607").unwrap();
+        cache
+            .obter(p, comp, Some(("SP", cnes)), || {
+                vezes.set(vezes.get() + 1);
+                Ok(json!({ "chamada": vezes.get() }))
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn cache_do_faturamento_reaproveita_ate_a_producao_mudar() {
+        let p = pasta_de_teste("producao");
+        let cache = CacheDoFaturamento::default();
+        let vezes = std::cell::Cell::new(0);
+        assert_eq!(contar(&cache, &p, "2077396", &vezes)["chamada"], 1);
+        assert_eq!(
+            contar(&cache, &p, "2077396", &vezes)["chamada"],
+            1,
+            "mesma chave, sem recalcular"
+        );
+        assert_eq!(
+            contar(&cache, &p, "2077400", &vezes)["chamada"],
+            2,
+            "outra unidade tem a sua entrada"
+        );
+        let arq = std::fs::OpenOptions::new()
+            .write(true)
+            .open(p.dados.join("producao").join("SP.db"))
+            .unwrap();
+        arq.set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(5))
+            .unwrap();
+        assert_eq!(
+            contar(&cache, &p, "2077396", &vezes)["chamada"],
+            3,
+            "banco de produção mudou: recalcula"
+        );
+        let _ = std::fs::remove_dir_all(&p.dados);
+    }
+
+    #[test]
+    fn cache_do_faturamento_nao_guarda_erro_e_tem_tamanho_limitado() {
+        let p = pasta_de_teste("limite");
+        let cache = CacheDoFaturamento::default();
+        let comp = Competencia::de_texto("202607").unwrap();
+        assert!(
+            cache
+                .obter(&p, comp, Some(("SP", "1")), || Err("falhou".into()))
+                .is_err()
+        );
+        let vezes = std::cell::Cell::new(0);
+        assert_eq!(
+            contar(&cache, &p, "1", &vezes)["chamada"],
+            1,
+            "o erro não ficou guardado"
+        );
+        for n in 0..(CacheDoFaturamento::LIMITE + 3) {
+            contar(&cache, &p, &format!("20{n:05}"), &vezes);
+        }
+        assert!(cache.tamanho() <= CacheDoFaturamento::LIMITE);
+        let _ = std::fs::remove_dir_all(&p.dados);
     }
 }

@@ -76,6 +76,10 @@ Comandos:
   producao-apagar-guardados <UF>  apaga os arquivos guardados da UF (o banco de totais fica)
   producao <código> [--uf UF]     quem produziu o procedimento (SIA e SIH) na UF, em JSON
   producao-unidade [UF CNES]      o que a unidade produziu e o que foi rejeitado, em JSON
+  producao-procedimentos [UF CNES] --sistema sia|sih [--q TEXTO] [--classe A|B|C]
+                [--ordem valor|quantidade] [--desde N]
+                                  todos os procedimentos da unidade por valor, com a classe da curva ABC,
+                                  de 50 em 50, em JSON
   faturamento-unidade [UF CNES]   rejeições por 100 AIH, tendência, curva ABC, apresentado x aprovado,
                                   financiamento, leitos e comparação com pares, em JSON
   faturamento-procedimentos [UF CNES]
@@ -124,6 +128,9 @@ struct Opcoes {
     busca: Option<String>,
     hab: Option<String>,
     so_produzidos: bool,
+    sistema: Option<String>,
+    classe: Option<String>,
+    ordem: Option<String>,
 }
 
 fn pasta_do_programa() -> PathBuf {
@@ -157,6 +164,9 @@ fn ler_opcoes(args: &[String]) -> Result<Opcoes, String> {
         busca: None,
         hab: None,
         so_produzidos: false,
+        sistema: None,
+        classe: None,
+        ordem: None,
     };
     let mut i = 0;
     let valor = |i: usize, nome: &str| -> Result<String, String> {
@@ -225,6 +235,18 @@ fn ler_opcoes(args: &[String]) -> Result<Opcoes, String> {
             }
             "--q" => {
                 o.busca = Some(valor(i, "--q")?);
+                i += 1;
+            }
+            "--sistema" => {
+                o.sistema = Some(valor(i, "--sistema")?);
+                i += 1;
+            }
+            "--classe" => {
+                o.classe = Some(valor(i, "--classe")?);
+                i += 1;
+            }
+            "--ordem" => {
+                o.ordem = Some(valor(i, "--ordem")?);
                 i += 1;
             }
             "--hab" => {
@@ -827,6 +849,24 @@ fn cmd_unidade(cmd: &str, o: &Opcoes) -> Result<(), String> {
                 .map(|(u, n)| (u.as_str(), n.as_str()));
             mostrar(un::producao::producao_da_unidade(&p, &q, c, alvo)?)
         }
+        "producao-procedimentos" => {
+            let (q, c) = sigtap()?;
+            let alvo = livres
+                .first()
+                .zip(livres.get(1))
+                .map(|(u, n)| (u.as_str(), n.as_str()));
+            mostrar(un::faturamento::procedimentos_da_unidade(
+                &p,
+                &q,
+                c,
+                alvo,
+                o.sistema.as_deref().unwrap_or(""),
+                o.busca.as_deref(),
+                o.classe.as_deref(),
+                o.ordem.as_deref(),
+                o.desde.unwrap_or(0),
+            )?)
+        }
         "faturamento-unidade" | "faturamento-procedimentos" => {
             let (q, c) = sigtap()?;
             let alvo = livres
@@ -1062,6 +1102,7 @@ fn main() -> ExitCode {
         | "producao-apagar-guardados"
         | "producao"
         | "producao-unidade"
+        | "producao-procedimentos"
         | "faturamento-unidade"
         | "faturamento-procedimentos"
         | "aptidao-unidade"

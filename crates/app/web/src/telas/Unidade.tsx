@@ -8,6 +8,7 @@ import { useUnidade } from "../dados/unidade";
 import { FaltaParaOPainel } from "./painel/FaltaParaOPainel";
 import { Aptidao } from "./unidade/aptidao/Aptidao";
 import { Cadastro } from "./unidade/cadastro/Cadastro";
+import { Producao } from "./unidade/producao/Producao";
 import { CabecalhoDaUnidade } from "./unidade/CabecalhoDaUnidade";
 import "./unidade/unidade.css";
 
@@ -51,14 +52,7 @@ export function Unidade({ tela }: { tela: Subtela }) {
   if (cadastro.isError) return sozinho(<EstadoErro mensagem={texto(cadastro.error)} aoTentar={() => void cadastro.refetch()} />);
 
   const un = cadastro.data;
-  if (tela.tela === "producao") {
-    return (
-      <div className="un">
-        <CabecalhoDaUnidade tela="producao" unidade={un} />
-        <div className="un__cartao"><EstadoVazio titulo="Em breve" descricao="A produção da unidade chega numa próxima versão." /></div>
-      </div>
-    );
-  }
+  if (tela.tela === "producao") return <Producao unidade={un} rota={tela} competencia={competencia ?? undefined} />;
   return tela.tela === "cadastro"
     ? <Cadastro unidade={un} rota={tela} competencia={competencia ?? undefined} />
     : <Aptidao unidade={un} rota={tela} competencia={competencia ?? undefined} />;

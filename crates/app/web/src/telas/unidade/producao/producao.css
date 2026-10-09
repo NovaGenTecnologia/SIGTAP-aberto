@@ -1,0 +1,105 @@
+/* Produção da unidade: o que as abas acrescentam ao `unidade.css`. Tokens da fundação; nada se move sozinho. */
+.pr { display: flex; flex-direction: column; gap: var(--esp-4); }
+.pr__acoes { display: flex; flex-direction: column; align-items: flex-end; gap: var(--esp-1); }
+.un__aviso.pr__faixa { justify-content: flex-start; background: var(--cor-pagina); color: var(--cor-texto-2); border: 1px solid var(--cor-linha); }
+.un__aviso.pr__faixa .un__ponto { background: var(--cor-nconf); }
+.pr__faixa .painel__origem { margin-left: auto; }
+
+/* Quatro números do fechamento */
+.pr__cartoes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--esp-3); }
+.pr__cartao { display: flex; flex-direction: column; gap: var(--esp-1); padding: var(--esp-3) var(--esp-4); }
+.pr__rotulo { font-size: var(--texto-12); font-weight: 700; color: var(--cor-texto); }
+.pr__valor { margin: 0; font-size: var(--texto-28); font-weight: 700; line-height: 1.15; color: var(--cor-acao-escura); font-variant-numeric: tabular-nums; }
+.pr__medidas { display: flex; flex-wrap: wrap; gap: 0 var(--esp-3); font-size: var(--texto-18); }
+.pr__sentido { margin: 0; font-size: var(--texto-12); font-weight: 700; }
+.pr__sentido--ok { color: var(--cor-ok-texto); }
+.pr__sentido--atencao { color: var(--cor-atencao-texto); }
+.pr__sentido--neutro { color: var(--cor-texto-2); }
+.pr__ref { margin: 0; font-size: var(--texto-12); color: var(--cor-texto-2); }
+
+/* Séries do mês */
+.pr__series { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--esp-3); }
+.pr__serie { display: flex; flex-direction: column; gap: var(--esp-1); padding: var(--esp-3) var(--esp-4); }
+
+/* O que olhar agora */
+.pr__olhar { display: flex; flex-direction: column; gap: var(--esp-2); }
+.pr__lista { list-style: none; margin: 0; padding: 0; }
+.pr__olhar-item { display: grid; grid-template-columns: 6rem minmax(0, 20rem) minmax(0, 1fr) auto; align-items: center; gap: var(--esp-3); padding: var(--esp-2) var(--esp-1); border-top: 1px solid var(--cor-linha); }
+.pr__olhar-item:first-child { border-top: 0; }
+.pr__olhar-titulo { margin: 0; font-size: var(--texto-14); font-weight: 700; }
+.pr__olhar-texto { color: var(--cor-texto-2); font-size: var(--texto-14); min-width: 0; }
+.un__situacao--atencao { color: var(--cor-atencao-texto); }
+.un__situacao--info { color: var(--cor-info-texto); }
+
+@media (max-width: 1100px) {
+  .pr__cartoes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pr__olhar-item { grid-template-columns: 6rem minmax(0, 1fr) auto; }
+  .pr__olhar-texto { grid-column: 2 / 4; grid-row: 2; }
+}
+@media (max-width: 760px) {
+  .pr__series { grid-template-columns: minmax(0, 1fr); }
+}
+.pr__serie .serie__grafico { max-height: none; }
+
+/* Rejeições */
+.pr__taxa { display: grid; grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr); align-items: center; gap: var(--esp-5); padding: var(--esp-3) var(--esp-4); }
+.pr__taxa-texto { display: flex; flex-direction: column; gap: var(--esp-1); }
+.pr__parte { display: inline-flex; align-items: center; gap: var(--esp-2); }
+.pr__parte-barra { display: inline-block; height: 10px; background: var(--cor-acao); border-radius: 2px; }
+.pr__mini { display: block; }
+.pr__apresentado { display: flex; flex-direction: column; gap: var(--esp-1); padding: var(--esp-3) var(--esp-4); }
+.pr__apresentado-topo { display: flex; align-items: center; justify-content: space-between; gap: var(--esp-3); }
+.pr__apresentado-valores { margin: 0; font-weight: 600; }
+.pr__apresentado .pr__lista { display: flex; flex-direction: column; gap: var(--esp-1); font-size: var(--texto-14); }
+@media (max-width: 1100px) { .pr__taxa { grid-template-columns: minmax(0, 1fr); } }
+
+/* Procedimentos */
+.pr__abc { display: flex; flex-direction: column; gap: var(--esp-2); }
+.pr__proporcao { display: block; border-radius: 2px; }
+.pr__classes { display: inline-flex; gap: var(--esp-1); padding-bottom: 2px; }
+.pr__classe { min-width: 32px; min-height: 32px; border: 1px solid var(--cor-linha-controle); border-radius: var(--raio-controle); background: var(--cor-superficie); color: var(--cor-texto-2); font: inherit; font-weight: 700; cursor: pointer; }
+.pr__classe[aria-pressed="true"] { background: var(--cor-item-ativo); color: var(--cor-acao-escura); border-color: var(--cor-acao); }
+.pr__classe:focus-visible { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: 2px; }
+.pr__unidade { font-weight: 400; color: var(--cor-texto-2); }
+.pr__campo { display: flex; flex-direction: column; gap: var(--esp-1); }
+/* A lista anterior fica à vista, esmaecida, até a nova chegar (busca, classe, ordem) */
+.pr__lista-viva--esmaecida { opacity: 0.6; }
+@media (hover: hover) and (pointer: fine) { .pr__classe[aria-pressed="false"]:hover { background: var(--cor-pagina); } }
+@media (prefers-reduced-motion: no-preference) {
+  .pr__lista-viva { transition: opacity 120ms cubic-bezier(0.23, 1, 0.32, 1); }
+  /* Só esmaece se a resposta demorar: uma resposta rápida não pisca. Ao voltar, sem atraso. */
+  .pr__lista-viva--esmaecida { transition-delay: 150ms; }
+  .pr__classe { transition: background-color 120ms, border-color 120ms, transform 120ms cubic-bezier(0.23, 1, 0.32, 1); }
+  .pr__classe:active { transform: scale(0.97); }
+}
+
+/* Fora do padrão */
+.pr__secao:focus-visible { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: 2px; }
+.pr__conteudo { display: flex; flex-direction: column; gap: var(--esp-3); min-width: 0; }
+.pr__alternar { display: inline-flex; align-items: center; gap: var(--esp-2); padding: 0; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; min-height: 24px; }
+.pr__alternar::before { content: "▸"; display: inline-block; width: 1em; color: var(--cor-texto-2); }
+.pr__alternar[aria-expanded="true"]::before { content: "▾"; }
+.pr__alternar:focus-visible { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: 2px; }
+.pr__ausente { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--esp-3); margin: 0; padding: var(--esp-3) var(--esp-4); background: var(--cor-pagina); border: 1px solid var(--cor-linha); border-radius: var(--raio-bloco); color: var(--cor-texto-2); }
+.pr__ausente.un__vazio { display: block; }
+.pr__ausente-texto { display: flex; flex-direction: column; gap: var(--esp-1); }
+.pr__ausente-texto p { margin: 0; }
+
+/* Origem do valor */
+.pr__lados { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--esp-4); align-items: start; }
+.pr__lado { display: flex; flex-direction: column; gap: var(--esp-2); min-width: 0; }
+.pr__barras { display: flex; flex-direction: column; gap: var(--esp-2); }
+.pr__amostra { display: inline-block; width: 10px; height: 10px; margin-right: var(--esp-2); border-radius: 2px; }
+.pr__destaque { margin: 0; font-size: var(--texto-14); font-weight: 600; }
+.pr__marcas { display: flex; flex-direction: column; gap: var(--esp-2); margin: 0; }
+.pr__marca { display: grid; grid-template-columns: 10rem minmax(0, 1fr); gap: var(--esp-3); align-items: baseline; }
+.pr__marca dt { font-size: var(--texto-12); font-weight: 600; color: var(--cor-texto-2); }
+.pr__marca dd { display: flex; flex-wrap: wrap; gap: var(--esp-2); margin: 0; }
+.pr__ficha { padding: 2px var(--esp-2); background: var(--cor-pagina); border: 1px solid var(--cor-linha); border-radius: var(--raio-controle); font-size: var(--texto-12); }
+.pr__linha { display: block; }
+.un__codigo-fraco { color: var(--cor-texto-2); font-size: var(--texto-12); }
+@media (max-width: 1100px) {
+  .pr__lados { grid-template-columns: minmax(0, 1fr); }
+  .pr__marca { grid-template-columns: minmax(0, 1fr); gap: var(--esp-1); }
+}
+.pr__barra { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); align-items: center; gap: var(--esp-2); }

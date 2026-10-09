@@ -56,7 +56,6 @@
 /* Balão e lista */
 @media (prefers-reduced-motion: no-preference) {
   /* O balão nasce do botão que o abriu (origem no gatilho); sai mais rápido do que entra. */
-  .balao { transform-origin: var(--trigger-anchor-point, top); }
   .balao { transform-origin: var(--trigger-anchor-point, center); }
   .balao[data-entering] { animation: balao-entra 140ms cubic-bezier(0.23, 1, 0.32, 1); }
   .balao[data-exiting] { animation: balao-sai 90ms cubic-bezier(0.23, 1, 0.32, 1) forwards; }
@@ -95,8 +94,8 @@
 /* Progresso */
 .progresso { width: 100%; }
 .progresso__trilho { height: 8px; border-radius: 4px; background: var(--cor-linha); overflow: hidden; }
-.progresso__barra { position: relative; height: 100%; border-radius: 4px; background: var(--cor-acao); overflow: hidden; transition: width 480ms cubic-bezier(0.22, 1, 0.36, 1); }
-.progresso__barra[data-indeterminado] { width: 35%; transition: none; }
+.progresso__barra { position: relative; height: 100%; border-radius: 4px; background: var(--cor-acao); overflow: hidden; width: 100%; transform-origin: left center; transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1); }
+.progresso__barra[data-indeterminado] { width: 35%; transform-origin: center; transition: none; }
 .lista__item[data-separado] { margin-top: var(--esp-1); border-top: 1px solid var(--cor-linha); border-radius: 0 0 var(--raio-controle) var(--raio-controle); padding-top: calc(var(--esp-2) + var(--esp-1)); }
 @media (prefers-reduced-motion: no-preference) {
   /* Brilho que percorre a parte já preenchida: mostra que o trabalho continua mesmo quando o número demora a mudar. */
