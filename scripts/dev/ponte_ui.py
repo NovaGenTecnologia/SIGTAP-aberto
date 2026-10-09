@@ -279,6 +279,15 @@ def main():
             if args.get("soProduzidosNaUf"): extra += ["--so-produzidos-na-uf"]
             alvo = [args["uf"], args["cnes"]] if args.get("uf") and args.get("cnes") else []
             return cli_d("aptidao-unidade", *alvo, *extra, *comp)
+        if cmd == "faturamento_unidade":
+            return cli_d("faturamento-unidade", *([args["uf"], args["cnes"]] if args.get("uf") and args.get("cnes") else []), *comp)
+        if cmd == "producao_procedimentos":
+            extra = ["--sistema", str(args.get("origem") or "")]
+            for chave, opcao in (("q", "--q"), ("classe", "--classe"), ("ordem", "--ordem")):
+                if args.get(chave): extra += [opcao, str(args[chave])]
+            if args.get("desde"): extra += ["--desde", str(int(args["desde"]))]
+            alvo = [args["uf"], args["cnes"]] if args.get("uf") and args.get("cnes") else []
+            return cli_d("producao-procedimentos", *alvo, *extra, *comp)
         if cmd == "unidade_ver": return cli_d("unidade", *([args["uf"], args["cnes"]] if args.get("uf") and args.get("cnes") else []), *comp)
         if cmd == "unidade_remover": return cli_d("unidade-remover", args["uf"], args["cnes"], texto=True) and None
         if cmd == "marcadores": return cli_d("marcadores", *args["codigos"], *comp)

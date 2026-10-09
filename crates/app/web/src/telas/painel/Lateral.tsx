@@ -28,30 +28,23 @@ export function AptosQueNaoProduzem({ painel }: { painel: Dados }) {
 }
 
 const SUBTELAS = [
-  { id: "producao", titulo: "Produção", texto: "SIA, SIH, rejeições e série mensal", caminho: null },
+  { id: "producao", titulo: "Produção", texto: "SIA, SIH, rejeições e série mensal", caminho: "producao" },
   { id: "cadastro", titulo: "Cadastro", texto: "Habilitações, serviços, leitos e profissionais", caminho: "cadastro" },
   { id: "aptidao", titulo: "Aptidão", texto: "Risco, oportunidade e o que está em ordem", caminho: "aptidao" },
 ];
 
-/** Atalhos para as subtelas da unidade; Produção segue "Em breve", sem link, para ninguém procurar o que ainda não existe. */
+/** Atalhos para as subtelas da unidade. */
 export function CartaoDaUnidade() {
   return (
     <section className="lateral" aria-labelledby="painel-unidade">
       <h2 id="painel-unidade" className="lateral__titulo">Unidade</h2>
       <ul className="lateral__lista">
         {SUBTELAS.map((e) => (
-          <li key={e.id} className={`lateral__item${e.caminho ? "" : " lateral__item--breve"}`}>
-            {e.caminho ? (
-              <a className="lateral__ligacao" href={`#/painel/${e.caminho}`} onClick={(ev) => { ev.preventDefault(); ir("painel", e.caminho); }}>
-                <span><span className="lateral__breve-titulo">{e.titulo}</span><span className="painel__nome painel__nome--bloco">{e.texto}</span></span>
-                <span aria-hidden="true" className="lateral__seta">›</span>
-              </a>
-            ) : (
-              <>
-                <div><span className="lateral__breve-titulo">{e.titulo}</span><span className="painel__nome painel__nome--bloco">{e.texto}</span></div>
-                <span className="painel__selo painel__selo--neutro">Em breve</span>
-              </>
-            )}
+          <li key={e.id} className="lateral__item">
+            <a className="lateral__ligacao" href={`#/painel/${e.caminho}`} onClick={(ev) => { ev.preventDefault(); ir("painel", e.caminho); }}>
+              <span><span className="lateral__breve-titulo">{e.titulo}</span><span className="painel__nome painel__nome--bloco">{e.texto}</span></span>
+              <span aria-hidden="true" className="lateral__seta">›</span>
+            </a>
           </li>
         ))}
       </ul>

@@ -38,11 +38,15 @@ function ItensDaPendencia({ itens }: { itens: Pendencia["itens"] }) {
 }
 
 /** Para onde a pendência continua nas subtelas da unidade, quando há. */
-const DESTINO_NA_UNIDADE: Record<string, { rotulo: string; caminho: string[] }> = {
+export const DESTINO_NA_UNIDADE: Record<string, { rotulo: string; caminho: string[] }> = {
   produz_sem_aptidao: { rotulo: "Ver na Aptidão", caminho: ["aptidao", "risco"] },
   produz_com_ressalva: { rotulo: "Ver na Aptidão", caminho: ["aptidao", "risco"] },
   servico_fora_do_cadastro: { rotulo: "Ver no Cadastro", caminho: ["cadastro", "servicos"] },
   habilitacao_sem_producao: { rotulo: "Ver no Cadastro", caminho: ["cadastro", "habilitacoes"] },
+  rejeicao_acima_dos_pares: { rotulo: "Ver nas Rejeições", caminho: ["producao", "rejeicoes"] },
+  quantidade_atipica: { rotulo: "Ver em Fora do padrão", caminho: ["producao", "fora-do-padrao?bloco=quantidade"] },
+  permanencia_fora_do_previsto: { rotulo: "Ver em Fora do padrão", caminho: ["producao", "fora-do-padrao?bloco=permanencia"] },
+  mes_incompleto: { rotulo: "Ver na Produção", caminho: ["producao"] },
 };
 
 function Guia({ p }: { p: Pendencia }) {

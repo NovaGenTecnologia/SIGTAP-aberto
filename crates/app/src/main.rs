@@ -897,6 +897,37 @@ async fn producao_unidade(
     })
 }
 
+/// Procedimentos da unidade por valor (curva ABC), de 50 em 50, de um sistema (SIA ou SIH).
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn producao_procedimentos(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    uf: Option<String>,
+    cnes: Option<String>,
+    origem: String,
+    q: Option<String>,
+    classe: Option<String>,
+    ordem: Option<String>,
+    desde: Option<usize>,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|sig| {
+        let c = s.competencia(sig, competencia.as_deref())?;
+        let alvo = uf.as_deref().zip(cnes.as_deref());
+        unidade::faturamento::procedimentos_da_unidade(
+            &unidade::local(&s.pastas),
+            sig,
+            c,
+            alvo,
+            &origem,
+            q.as_deref(),
+            classe.as_deref(),
+            ordem.as_deref(),
+            desde.unwrap_or(0),
+        )
+    })
+}
+
 /// Rejeições, tendência, curva ABC, apresentado x aprovado, financiamento, leitos e pares da unidade.
 #[tauri::command]
 async fn faturamento_unidade(
@@ -908,7 +939,10 @@ async fn faturamento_unidade(
     s.com_consulta(|q| {
         let c = s.competencia(q, competencia.as_deref())?;
         let alvo = uf.as_deref().zip(cnes.as_deref());
-        unidade::faturamento::faturamento_da_unidade(&unidade::local(&s.pastas), q, c, alvo)
+        let p = unidade::local(&s.pastas);
+        s.cache_faturamento.obter(&p, c, alvo, || {
+            unidade::faturamento::faturamento_da_unidade(&p, q, c, alvo)
+        })
     })
 }
 
@@ -1256,6 +1290,7 @@ fn main() {
             producao_procedimento,
             producao_unidade,
             faturamento_unidade,
+            producao_procedimentos,
             faturamento_procedimentos,
             aptidao_unidade,
             faturamento_procedimento,

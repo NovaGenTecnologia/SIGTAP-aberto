@@ -2,8 +2,8 @@
 .shell { display: grid; grid-template-columns: 184px minmax(0, 1fr); grid-template-rows: 48px minmax(0, 1fr) 28px; grid-template-areas: "topo topo" "trilho conteudo" "rodape rodape"; height: 100%; }
 .shell--simples { display: flex; align-items: center; justify-content: center; }
 .abertura { position: fixed; inset: 0; z-index: 500; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--esp-6); background: var(--cor-pagina); }
-.abertura--saindo { pointer-events: none; animation: abertura-sai 0.16s ease-out both; }
-.shell--entra { animation: shell-entra 0.16s ease-out both; }
+.abertura--saindo { pointer-events: none; animation: abertura-sai 0.16s cubic-bezier(0.23, 1, 0.32, 1) both; }
+.shell--entra { animation: shell-entra 0.16s cubic-bezier(0.23, 1, 0.32, 1) both; }
 @keyframes abertura-sai { to { opacity: 0; } }
 @keyframes shell-entra { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .abertura--saindo, .shell--entra { animation: none; } }

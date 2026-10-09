@@ -150,6 +150,8 @@ pub struct Servico {
     calculo_situacao: Mutex<()>,
     /// Sobe a cada mudança conhecida nos dados; invalida a `situacao` guardada.
     geracao: std::sync::atomic::AtomicU64,
+    /// Fechamentos de unidade já calculados (a chave inclui a data de gravação dos bancos de que dependem).
+    pub cache_faturamento: sa_unidade::faturamento::CacheDoFaturamento,
 }
 
 /// Quanto tempo uma `situacao` guardada vale (mudança feita por fora do programa aparece em até isso).
@@ -176,6 +178,7 @@ impl Servico {
             cache_situacao: Mutex::new(None),
             calculo_situacao: Mutex::new(()),
             geracao: std::sync::atomic::AtomicU64::new(0),
+            cache_faturamento: Default::default(),
         }
     }
 

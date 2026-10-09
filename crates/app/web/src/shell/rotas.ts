@@ -103,14 +103,21 @@ export function caminhoMudancas(t: TelaMudancas): string[] {
 // ---- Subtelas da unidade (Painel): Cadastro e Aptidão; o estado da tela mora na rota ----
 export type AbaDeCadastro = "habilitacoes" | "servicos" | "leitos" | "equipamentos" | "profissionais" | "terceiros";
 export type GrupoDeAptidaoNaRota = "risco" | "oportunidade" | "ordem";
+export type AbaDeProducao = "visao-geral" | "rejeicoes" | "procedimentos" | "fora-do-padrao" | "origem-do-valor";
 export type TelaDaUnidade =
   | { tela: "painel" }
-  | { tela: "producao" }
+  | { tela: "producao"; aba: AbaDeProducao; q: string; classe: "A" | "B" | "C" | null; origem: "sia" | "sih"; motivo: string; bloco: string }
   | { tela: "cadastro"; aba: AbaDeCadastro; q: string }
   | { tela: "aptidao"; grupo: GrupoDeAptidaoNaRota | null; q: string; hab: string | null };
 
 const ABAS_DE_CADASTRO: AbaDeCadastro[] = ["habilitacoes", "servicos", "leitos", "equipamentos", "profissionais", "terceiros"];
 const GRUPOS: GrupoDeAptidaoNaRota[] = ["risco", "oportunidade", "ordem"];
+export const ABAS_DE_PRODUCAO: AbaDeProducao[] = ["visao-geral", "rejeicoes", "procedimentos", "fora-do-padrao", "origem-do-valor"];
+const CLASSES: ("A" | "B" | "C")[] = ["A", "B", "C"];
+
+/** A Produção na Visão geral, sem filtro: o que a rota vazia de Produção significa. */
+export const PRODUCAO_NA_VISAO_GERAL: Extract<TelaDaUnidade, { tela: "producao" }> =
+  { tela: "producao", aba: "visao-geral", q: "", classe: null, origem: "sia", motivo: "", bloco: "" };
 
 /** Separa `nome?a=1&b=2` em nome e parâmetros já decodificados. */
 function separarParametros(segmento: string | undefined): [string, URLSearchParams] {
@@ -127,7 +134,16 @@ function separarParametros(segmento: string | undefined): [string, URLSearchPara
 /** `resto` é o que vem depois de `#/painel/`. */
 export function lerUnidade(resto: string[]): TelaDaUnidade {
   const [nome, params] = separarParametros(resto[0]);
-  if (nome === "producao") return { tela: "producao" };
+  if (nome === "producao") {
+    const [aba, pa] = separarParametros(resto[1]);
+    const [origem, po] = separarParametros(resto[2]);
+    const parametro = (k: string) => po.get(k) ?? pa.get(k) ?? params.get(k) ?? "";
+    const classe = CLASSES.find((c) => c === parametro("classe")) ?? null;
+    return {
+      ...PRODUCAO_NA_VISAO_GERAL, aba: ABAS_DE_PRODUCAO.find((a) => a === aba) ?? "visao-geral",
+      q: parametro("q"), classe, origem: origem === "sih" ? "sih" : "sia", motivo: parametro("motivo"), bloco: parametro("bloco"),
+    };
+  }
   if (nome === "cadastro") {
     const [aba, p] = separarParametros(resto[1]);
     const busca = p.get("q") ?? params.get("q") ?? "";
@@ -150,7 +166,14 @@ function comParametros(base: string, params: [string, string | null][]): string 
 /** Segmentos depois de `#/painel/`, para `ir("painel", ...caminhoUnidade(t))`. */
 export function caminhoUnidade(t: TelaDaUnidade): string[] {
   if (t.tela === "painel") return [];
-  if (t.tela === "producao") return ["producao"];
+  if (t.tela === "producao") {
+    if (t.aba === "visao-geral") return ["producao"];
+    if (t.aba === "rejeicoes") return ["producao", comParametros("rejeicoes", [["motivo", t.motivo.trim() || null]])];
+    if (t.aba === "fora-do-padrao") return ["producao", comParametros("fora-do-padrao", [["bloco", t.bloco || null]])];
+    if (t.aba === "origem-do-valor") return ["producao", "origem-do-valor"];
+    const ps: [string, string | null][] = [["q", t.q.trim() || null], ["classe", t.classe]];
+    return t.origem === "sih" ? ["producao", "procedimentos", comParametros("sih", ps)] : ["producao", comParametros("procedimentos", ps)];
+  }
   if (t.tela === "cadastro") {
     const ps: [string, string | null][] = [["q", t.q.trim() || null]];
     return t.aba === "habilitacoes" ? [comParametros("cadastro", ps)] : ["cadastro", comParametros(t.aba, ps)];

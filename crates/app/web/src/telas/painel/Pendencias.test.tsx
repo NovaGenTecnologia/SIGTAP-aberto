@@ -75,6 +75,10 @@ describe("segunda ação: levar à subtela da unidade", () => {
     ["produz_com_ressalva", "Ver na Aptidão", "#/painel/aptidao/risco"],
     ["servico_fora_do_cadastro", "Ver no Cadastro", "#/painel/cadastro/servicos"],
     ["habilitacao_sem_producao", "Ver no Cadastro", "#/painel/cadastro/habilitacoes"],
+    ["rejeicao_acima_dos_pares", "Ver nas Rejeições", "#/painel/producao/rejeicoes"],
+    ["quantidade_atipica", "Ver em Fora do padrão", "#/painel/producao/fora-do-padrao?bloco=quantidade"],
+    ["permanencia_fora_do_previsto", "Ver em Fora do padrão", "#/painel/producao/fora-do-padrao?bloco=permanencia"],
+    ["mes_incompleto", "Ver na Produção", "#/painel/producao"],
   ];
   test.each(destinos)("%s leva a %s", (tipo, rotulo, href) => {
     render(<Pendencias itens={[com(tipo)]} />);

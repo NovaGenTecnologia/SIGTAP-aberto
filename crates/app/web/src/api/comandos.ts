@@ -2,7 +2,7 @@ import { chamar } from "./tauri";
 import type {
   AtualizacaoDoPrograma, Busca, ItemMarcado, Marcado, Planilha, Ficha, Historico, ItemProcedimento, NoDeArvore, NoDeCid, Estabelecimento, Fonte, InfoPrograma, Ofertas, Quando, PedidoDownload, PedidoProducao, PlanoProducao,
   Situacao, SituacaoCnesCompleta, SituacaoProducao, Painel, Impacto, Mudancas,
-  UnidadeCompleta, AptidaoUnidade, GrupoDeAptidao, UnidadeComNome,
+  UnidadeCompleta, AptidaoUnidade, GrupoDeAptidao, UnidadeComNome, FaturamentoUnidade, FaturamentoIndisponivel, ProcedimentosDaUnidade,
 } from "./tipos";
 
 export const situacao = () => chamar<Situacao>("situacao");
@@ -79,6 +79,19 @@ export const aptidaoUnidade = (o: OpcoesDeAptidao = {}) =>
   chamar<AptidaoUnidade>("aptidao_unidade", {
     competencia: o.competencia ?? null, grupo: o.grupo ?? null, q: o.q ?? null, hab: o.hab ?? null,
     desde: o.desde ?? null, soProduzidosNaUf: o.soProduzidosNaUf ?? false,
+  });
+/** Rejeições, tendência, curva ABC, apresentado × aprovado, financiamento, leitos e pares da unidade (a ativa, ou a indicada). */
+export const faturamentoUnidade = (competencia?: string, alvo?: { uf: string; cnes: string }) =>
+  chamar<FaturamentoUnidade | FaturamentoIndisponivel>("faturamento_unidade", { competencia: competencia ?? null, uf: alvo?.uf ?? null, cnes: alvo?.cnes ?? null });
+export interface OpcoesDeProcedimentos {
+  origem: "sia" | "sih"; q?: string; classe?: "A" | "B" | "C"; ordem?: "valor" | "quantidade"; desde?: number;
+  competencia?: string; alvo?: { uf: string; cnes: string };
+}
+/** Os procedimentos da unidade por valor (50 por página), com a classe da curva ABC. */
+export const producaoProcedimentos = (o: OpcoesDeProcedimentos) =>
+  chamar<ProcedimentosDaUnidade | FaturamentoIndisponivel>("producao_procedimentos", {
+    competencia: o.competencia ?? null, uf: o.alvo?.uf ?? null, cnes: o.alvo?.cnes ?? null, origem: o.origem,
+    q: o.q ?? null, classe: o.classe ?? null, ordem: o.ordem ?? null, desde: o.desde ?? null,
   });
 export const terceiroAdicionar = (uf: string, cnes: string, terceiroUf: string, terceiroCnes: string) =>
   chamar<unknown>("terceiro_adicionar", { uf, cnes, terceiroUf, terceiroCnes });

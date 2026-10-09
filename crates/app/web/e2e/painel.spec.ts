@@ -26,7 +26,7 @@ test("Painel: pendências valoradas em ordem decrescente, sem violação de aces
     .map((t) => Number(t.replace(/[^\d,]/g, "").replace(",", ".")));
   expect(valores.length).toBeGreaterThan(0);
   expect(valores).toEqual([...valores].sort((a, b) => b - a));
-  await expect(page.getByText("Em breve")).toHaveCount(1);
+  await expect(page.getByText("Em breve")).toHaveCount(0);
   await page.screenshot({ path: "test-results/painel-1366.png" });
   await semViolacoes(page);
 });

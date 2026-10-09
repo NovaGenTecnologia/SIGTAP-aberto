@@ -6,6 +6,7 @@ import { ProvedorDeAvisos } from "../../componentes/base/Avisos";
 import * as comandos from "../../api/comandos";
 import type { UnidadeRef } from "../../api/tipos";
 import { aptidaoExemplo, unidadeExemplo } from "./exemplos";
+import { faturamentoExemplo, painelDaUnidade, procedimentosExemplo } from "./exemplosDeProducao";
 
 /** Apoio só dos testes das subtelas da unidade: monta o Painel numa rota e prepara os comandos simulados. */
 export const m = vi.mocked(comandos);
@@ -26,4 +27,7 @@ export function preparar(terceiros: UnidadeRef[] = []) {
   m.situacao.mockResolvedValue({ primeira_execucao: false, bloqueio: null, competencias: [{ competencia: "202609" }], territorio: null, pasta_dados: "", ocupado: false, recuperacao: null } as never);
   m.unidadeVer.mockResolvedValue(unidadeExemplo);
   m.aptidaoUnidade.mockImplementation(async (o) => aptidaoExemplo({ grupo: o?.grupo ? { id: o.grupo, itens: [], desde: 0, itens_omitidos: 0, total: 0, ninguem_produziu: null } : null }));
+  m.faturamentoUnidade.mockResolvedValue(faturamentoExemplo());
+  m.producaoProcedimentos.mockResolvedValue(procedimentosExemplo());
+  m.faturamentoPainel.mockResolvedValue(painelDaUnidade());
 }

@@ -93,7 +93,12 @@ test("FaixaDeCompetencia seleciona por teclado", async () => {
 test("SerieMensal descreve os pontos e marca o mês incompleto", () => {
   render(<SerieMensal rotulo="Valor aprovado por mês" formatar={(v) => `R$ ${v}`} pontos={[{ competencia: "202606", valor: 100, completo: true }, { competencia: "202607", valor: 40, completo: false }]} />);
   expect(screen.getByRole("img", { name: /Valor aprovado por mês/ })).toBeInTheDocument();
-  expect(screen.getByText(/07\/2026.*incompleto/i)).toBeInTheDocument();
+  expect(screen.getByText(/07\/2026.*mês incompleto/i)).toBeInTheDocument();
+});
+
+test("SerieMensal dá a cada barra o mês e o valor para quem passa o mouse", () => {
+  const { container } = render(<SerieMensal rotulo="Valor aprovado por mês" formatar={(v) => `R$ ${v}`} pontos={[{ competencia: "202606", valor: 100, completo: true }, { competencia: "202607", valor: 40, completo: false }]} />);
+  expect([...container.querySelectorAll("rect > title")].map((t) => t.textContent)).toEqual(["06/2026: R$ 100", "07/2026: R$ 40 (incompleto)"]);
 });
 
 test("CarregandoComEspera mostra o símbolo animado e continua anunciando o rótulo", () => {

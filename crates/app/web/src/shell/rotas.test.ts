@@ -65,14 +65,35 @@ test("substituir troca a rota sem empilhar histórico e avisa os ouvintes", () =
   expect(ouvinte).toHaveBeenCalled();
 });
 
+const PRODUCAO = { tela: "producao", aba: "visao-geral", q: "", classe: null, origem: "sia", motivo: "", bloco: "" } as const;
+
 describe("subtelas da unidade (Painel)", () => {
+  test("Produção: abas, parâmetros e caminho canônico", () => {
+    expect(lerUnidade(["producao", "rejeicoes?motivo=020069"])).toEqual({ ...PRODUCAO, aba: "rejeicoes", motivo: "020069" });
+    expect(lerUnidade(["producao", "procedimentos", "sih?q=consulta&classe=A"])).toEqual({ ...PRODUCAO, aba: "procedimentos", origem: "sih", q: "consulta", classe: "A" });
+    expect(lerUnidade(["producao", "procedimentos?q=x"])).toEqual({ ...PRODUCAO, aba: "procedimentos", q: "x" });
+    expect(lerUnidade(["producao", "fora-do-padrao?bloco=servicos"])).toEqual({ ...PRODUCAO, aba: "fora-do-padrao", bloco: "servicos" });
+    expect(lerUnidade(["producao", "visao-geral"])).toEqual(PRODUCAO);
+  });
+  test("Produção: aba, origem ou classe inválidas caem no padrão", () => {
+    expect(lerUnidade(["producao", "nada"])).toEqual(PRODUCAO);
+    expect(lerUnidade(["producao", "procedimentos", "xyz?classe=Z"])).toEqual({ ...PRODUCAO, aba: "procedimentos" });
+  });
+  test("Produção: o caminho omite a Visão geral, a origem SIA e os parâmetros vazios", () => {
+    expect(caminhoUnidade(PRODUCAO)).toEqual(["producao"]);
+    expect(caminhoUnidade({ ...PRODUCAO, aba: "rejeicoes" })).toEqual(["producao", "rejeicoes"]);
+    expect(caminhoUnidade({ ...PRODUCAO, aba: "rejeicoes", motivo: "020069" })).toEqual(["producao", "rejeicoes?motivo=020069"]);
+    expect(caminhoUnidade({ ...PRODUCAO, aba: "procedimentos", origem: "sih", q: "consulta", classe: "A" })).toEqual(["producao", "procedimentos", "sih?q=consulta&classe=A"]);
+    expect(caminhoUnidade({ ...PRODUCAO, aba: "procedimentos", q: "x" })).toEqual(["producao", "procedimentos?q=x"]);
+    expect(caminhoUnidade({ ...PRODUCAO, aba: "origem-do-valor", q: "ignorado" })).toEqual(["producao", "origem-do-valor"]);
+  });
   test("lerUnidade: cadastro abre em habilitações e aptidão só tem grupo se a rota trouxer", () => {
     expect(lerUnidade([])).toEqual({ tela: "painel" });
     expect(lerUnidade(["cadastro"])).toEqual({ tela: "cadastro", aba: "habilitacoes", q: "" });
     expect(lerUnidade(["cadastro", "servicos?q=104"])).toEqual({ tela: "cadastro", aba: "servicos", q: "104" });
     expect(lerUnidade(["aptidao"])).toEqual({ tela: "aptidao", grupo: null, q: "", hab: null });
     expect(lerUnidade(["aptidao", "oportunidade?q=biopsia&hab=0203"])).toEqual({ tela: "aptidao", grupo: "oportunidade", q: "biopsia", hab: "0203" });
-    expect(lerUnidade(["producao"])).toEqual({ tela: "producao" });
+    expect(lerUnidade(["producao"])).toEqual(PRODUCAO);
     expect(lerUnidade(["xyz"])).toEqual({ tela: "painel" });
   });
   test("aba inválida cai em habilitações e grupo inválido vira nulo", () => {
@@ -90,7 +111,12 @@ describe("subtelas da unidade (Painel)", () => {
       { tela: "cadastro", aba: "terceiros", q: "hospital & cia" },
       { tela: "cadastro", aba: "habilitacoes", q: "" },
       { tela: "painel" },
-      { tela: "producao" },
+      PRODUCAO,
+      { ...PRODUCAO, aba: "rejeicoes", motivo: "020069" },
+      { ...PRODUCAO, aba: "procedimentos", origem: "sih", q: "consulta médica", classe: "A" },
+      { ...PRODUCAO, aba: "procedimentos" },
+      { ...PRODUCAO, aba: "fora-do-padrao", bloco: "permanencia" },
+      { ...PRODUCAO, aba: "origem-do-valor" },
     ] as const;
     for (const t of ts) expect(lerUnidade(caminhoUnidade(t))).toEqual(t);
   });
