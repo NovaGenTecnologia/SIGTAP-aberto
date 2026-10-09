@@ -2,18 +2,26 @@ import { EstadoErro, EstadoVazio, Carregando } from "../componentes/dominio/Esta
 import { useUnidades } from "../dados/consultas";
 import { useImpacto, usePainel } from "../dados/painel";
 import { useSessao } from "../shell/sessao";
-import { ir } from "../shell/rotas";
+import { ir, lerUnidade, useRota } from "../shell/rotas";
 import { rotuloCompetencia } from "../util/formatos";
 import { DeOndeVem } from "./painel/DeOndeVem";
 import { FaltaParaOPainel } from "./painel/FaltaParaOPainel";
 import { AptosQueNaoProduzem, CartaoDaUnidade } from "./painel/Lateral";
 import { Pendencias } from "./painel/Pendencias";
 import { Resumo } from "./painel/Resumo";
+import { Unidade } from "./Unidade";
 import "./painel/painel.css";
 
 const texto = (e: unknown) => (typeof e === "string" ? e : e instanceof Error ? e.message : "Não foi possível ler o painel.");
 
+/** O Painel e, sob ele, as subtelas da unidade (`#/painel/cadastro`, `#/painel/aptidao`, `#/painel/producao`). */
 export function Painel() {
+  const { resto } = useRota();
+  const tela = lerUnidade(resto);
+  return tela.tela === "painel" ? <PainelInicial /> : <Unidade tela={tela} />;
+}
+
+function PainelInicial() {
   const { competencia } = useSessao();
   const unidades = useUnidades();
   const minha = unidades.data?.minha ?? null;

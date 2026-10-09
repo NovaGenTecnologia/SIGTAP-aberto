@@ -1,4 +1,4 @@
-import { DESTINOS, caminhoConsultar, lerConsultar, lerRota, substituir } from "./rotas";
+import { DESTINOS, caminhoConsultar, caminhoUnidade, lerConsultar, lerRota, lerUnidade, substituir } from "./rotas";
 
 test("os cinco destinos, na ordem da spec", () => {
   expect(DESTINOS.map((d) => d.rotulo)).toEqual(["Painel", "Consultar", "Mudanças", "Conferir arquivo", "Dados"]);
@@ -63,4 +63,41 @@ test("substituir troca a rota sem empilhar histórico e avisa os ouvintes", () =
   expect(window.location.hash).toBe("#/consultar/q/abc");
   expect(window.history.length).toBe(antes);
   expect(ouvinte).toHaveBeenCalled();
+});
+
+describe("subtelas da unidade (Painel)", () => {
+  test("lerUnidade: cadastro abre em habilitações e aptidão só tem grupo se a rota trouxer", () => {
+    expect(lerUnidade([])).toEqual({ tela: "painel" });
+    expect(lerUnidade(["cadastro"])).toEqual({ tela: "cadastro", aba: "habilitacoes", q: "" });
+    expect(lerUnidade(["cadastro", "servicos?q=104"])).toEqual({ tela: "cadastro", aba: "servicos", q: "104" });
+    expect(lerUnidade(["aptidao"])).toEqual({ tela: "aptidao", grupo: null, q: "", hab: null });
+    expect(lerUnidade(["aptidao", "oportunidade?q=biopsia&hab=0203"])).toEqual({ tela: "aptidao", grupo: "oportunidade", q: "biopsia", hab: "0203" });
+    expect(lerUnidade(["producao"])).toEqual({ tela: "producao" });
+    expect(lerUnidade(["xyz"])).toEqual({ tela: "painel" });
+  });
+  test("aba inválida cai em habilitações e grupo inválido vira nulo", () => {
+    expect(lerUnidade(["cadastro", "nada"])).toEqual({ tela: "cadastro", aba: "habilitacoes", q: "" });
+    expect(lerUnidade(["aptidao", "nada?hab=0203"])).toEqual({ tela: "aptidao", grupo: null, q: "", hab: "0203" });
+  });
+  test("a busca pode vir sem aba ou grupo, e o texto codificado mal formado não quebra", () => {
+    expect(lerUnidade(["cadastro?q=leito"])).toEqual({ tela: "cadastro", aba: "habilitacoes", q: "leito" });
+    expect(lerUnidade(["aptidao?q=%E0%A4%A"])).toEqual({ tela: "aptidao", grupo: null, q: "%E0%A4%A", hab: null });
+  });
+  test("caminhoUnidade volta ao que lerUnidade leu", () => {
+    const ts = [
+      { tela: "aptidao", grupo: "risco", q: "a b/ç", hab: "0203" },
+      { tela: "aptidao", grupo: null, q: "", hab: null },
+      { tela: "cadastro", aba: "terceiros", q: "hospital & cia" },
+      { tela: "cadastro", aba: "habilitacoes", q: "" },
+      { tela: "painel" },
+      { tela: "producao" },
+    ] as const;
+    for (const t of ts) expect(lerUnidade(caminhoUnidade(t))).toEqual(t);
+  });
+  test("caminho canônico: sem parâmetro quando está vazio", () => {
+    expect(caminhoUnidade({ tela: "cadastro", aba: "habilitacoes", q: "" })).toEqual(["cadastro"]);
+    expect(caminhoUnidade({ tela: "cadastro", aba: "leitos", q: "" })).toEqual(["cadastro", "leitos"]);
+    expect(caminhoUnidade({ tela: "aptidao", grupo: "ordem", q: "", hab: null })).toEqual(["aptidao", "ordem"]);
+    expect(caminhoUnidade({ tela: "aptidao", grupo: null, q: "x", hab: null })).toEqual(["aptidao?q=x"]);
+  });
 });

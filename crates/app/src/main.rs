@@ -927,6 +927,37 @@ async fn faturamento_procedimentos(
     })
 }
 
+/// Aptidão da unidade por prioridade: resumo, uma página de um grupo e as habilitações.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn aptidao_unidade(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    uf: Option<String>,
+    cnes: Option<String>,
+    grupo: Option<String>,
+    q: Option<String>,
+    hab: Option<String>,
+    desde: Option<usize>,
+    so_produzidos_na_uf: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|sig| {
+        let c = s.competencia(sig, competencia.as_deref())?;
+        let alvo = uf.as_deref().zip(cnes.as_deref());
+        unidade::faturamento::aptidao_da_unidade(
+            &unidade::local(&s.pastas),
+            sig,
+            c,
+            alvo,
+            grupo.as_deref(),
+            q.as_deref(),
+            hab.as_deref(),
+            desde.unwrap_or(0),
+            so_produzidos_na_uf.unwrap_or(false),
+        )
+    })
+}
+
 /// Um procedimento na UF: série mensal, tendência, concentração, financiamento, mudanças de valor.
 #[tauri::command]
 async fn faturamento_procedimento(
@@ -1226,6 +1257,7 @@ fn main() {
             producao_unidade,
             faturamento_unidade,
             faturamento_procedimentos,
+            aptidao_unidade,
             faturamento_procedimento,
             faturamento_impacto,
             faturamento_painel,

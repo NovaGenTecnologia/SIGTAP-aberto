@@ -269,6 +269,16 @@ def main():
         if cmd == "cnes_buscar": return cli_d("cnes-buscar", args["uf"], args["texto"])
         if cmd == "unidade_definir": return cli_d("unidade-definir", args["uf"], args["cnes"])
         if cmd == "unidade_limpar": return cli_d("unidade-limpar")
+        if cmd == "terceiro_adicionar": return cli_d("terceiro-adicionar", args["uf"], args["cnes"], args["terceiroUf"], args["terceiroCnes"])
+        if cmd == "terceiro_remover": return cli_d("terceiro-remover", args["uf"], args["cnes"], args["terceiroUf"], args["terceiroCnes"], texto=True) and None
+        if cmd == "aptidao_unidade":
+            extra = []
+            for chave, opcao in (("grupo", "--grupo"), ("q", "--q"), ("hab", "--hab")):
+                if args.get(chave): extra += [opcao, str(args[chave])]
+            if args.get("desde"): extra += ["--desde", str(int(args["desde"]))]
+            if args.get("soProduzidosNaUf"): extra += ["--so-produzidos-na-uf"]
+            alvo = [args["uf"], args["cnes"]] if args.get("uf") and args.get("cnes") else []
+            return cli_d("aptidao-unidade", *alvo, *extra, *comp)
         if cmd == "unidade_ver": return cli_d("unidade", *([args["uf"], args["cnes"]] if args.get("uf") and args.get("cnes") else []), *comp)
         if cmd == "unidade_remover": return cli_d("unidade-remover", args["uf"], args["cnes"], texto=True) and None
         if cmd == "marcadores": return cli_d("marcadores", *args["codigos"], *comp)

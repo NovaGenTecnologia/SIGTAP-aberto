@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Pendencias } from "./Pendencias";
+import type { Pendencia } from "../../api/tipos";
 import { queda, semAptidao, semValor } from "./exemplos";
 
 const n = (s: string) => s.replace(/ /g, " ");
@@ -65,4 +66,22 @@ test("o selo diz Atenção ou Info em texto", () => {
 test("sem nenhuma pendência diz que nada pede atenção", () => {
   render(<Pendencias itens={[]} />);
   expect(screen.getByText("Nada pede atenção nesta competência")).toBeInTheDocument();
+});
+
+describe("segunda ação: levar à subtela da unidade", () => {
+  const com = (tipo: string): Pendencia => ({ ...semAptidao, id: tipo, tipo, titulo: `Pendência ${tipo}` });
+  const destinos: [string, string, string][] = [
+    ["produz_sem_aptidao", "Ver na Aptidão", "#/painel/aptidao/risco"],
+    ["produz_com_ressalva", "Ver na Aptidão", "#/painel/aptidao/risco"],
+    ["servico_fora_do_cadastro", "Ver no Cadastro", "#/painel/cadastro/servicos"],
+    ["habilitacao_sem_producao", "Ver no Cadastro", "#/painel/cadastro/habilitacoes"],
+  ];
+  test.each(destinos)("%s leva a %s", (tipo, rotulo, href) => {
+    render(<Pendencias itens={[com(tipo)]} />);
+    expect(screen.getByRole("link", { name: rotulo })).toHaveAttribute("href", href);
+  });
+  test("tipos sem destino nas subtelas não ganham o link", () => {
+    render(<Pendencias itens={[queda]} />);
+    expect(screen.queryByRole("link", { name: /Ver na Aptidão|Ver no Cadastro/ })).toBeNull();
+  });
 });

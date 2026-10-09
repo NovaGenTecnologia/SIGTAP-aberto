@@ -81,6 +81,10 @@ Comandos:
   faturamento-procedimentos [UF CNES]
                                   procedimentos da unidade: produz e pode, pode e não produz, produz sem
                                   aptidão pelo cadastro (com o motivo); habilitações e produção, em JSON
+  aptidao-unidade [UF CNES] [--grupo risco|oportunidade|ordem] [--q TEXTO] [--hab CÓDIGO]
+                [--desde N] [--so-produzidos-na-uf]
+                                  Aptidão da unidade por prioridade (Risco, Oportunidade, Em ordem): resumo,
+                                  uma página de 50 de um grupo e as habilitações, em JSON
   faturamento <código> [--uf UF]  série mensal, tendência, concentração, financiamento e mudanças de
                                   valor do procedimento na UF, em JSON
   faturamento-impacto [--de AAAAMM] [--competencia AAAAMM]
@@ -116,6 +120,10 @@ struct Opcoes {
     uf: Option<String>,
     unidade: bool,
     so_afeta: bool,
+    grupo: Option<String>,
+    busca: Option<String>,
+    hab: Option<String>,
+    so_produzidos: bool,
 }
 
 fn pasta_do_programa() -> PathBuf {
@@ -145,6 +153,10 @@ fn ler_opcoes(args: &[String]) -> Result<Opcoes, String> {
         uf: None,
         unidade: false,
         so_afeta: false,
+        grupo: None,
+        busca: None,
+        hab: None,
+        so_produzidos: false,
     };
     let mut i = 0;
     let valor = |i: usize, nome: &str| -> Result<String, String> {
@@ -207,6 +219,19 @@ fn ler_opcoes(args: &[String]) -> Result<Opcoes, String> {
                 o.uf = Some(valor(i, "--uf")?);
                 i += 1;
             }
+            "--grupo" => {
+                o.grupo = Some(valor(i, "--grupo")?);
+                i += 1;
+            }
+            "--q" => {
+                o.busca = Some(valor(i, "--q")?);
+                i += 1;
+            }
+            "--hab" => {
+                o.hab = Some(valor(i, "--hab")?);
+                i += 1;
+            }
+            "--so-produzidos-na-uf" => o.so_produzidos = true,
             "--confirmar" => o.confirmar = true,
             "--ultima" => o.ultima = true,
             "--todas" => o.todas = true,
@@ -814,6 +839,24 @@ fn cmd_unidade(cmd: &str, o: &Opcoes) -> Result<(), String> {
                 un::faturamento::procedimentos_com_producao(&p, &q, c, alvo)?
             })
         }
+        "aptidao-unidade" => {
+            let (q, c) = sigtap()?;
+            let alvo = livres
+                .first()
+                .zip(livres.get(1))
+                .map(|(u, n)| (u.as_str(), n.as_str()));
+            mostrar(un::faturamento::aptidao_da_unidade(
+                &p,
+                &q,
+                c,
+                alvo,
+                o.grupo.as_deref(),
+                o.busca.as_deref(),
+                o.hab.as_deref(),
+                o.desde.unwrap_or(0),
+                o.so_produzidos,
+            )?)
+        }
         "faturamento" => {
             let (q, c) = sigtap()?;
             mostrar(un::faturamento::faturamento_do_procedimento(
@@ -871,6 +914,20 @@ fn cmd_unidade(cmd: &str, o: &Opcoes) -> Result<(), String> {
             arg(0, "a UF")?,
             arg(1, "o número do CNES")?,
         )?),
+        "terceiro-adicionar" => mostrar(un::adicionar_terceiro(
+            &p,
+            arg(0, "a UF da unidade")?,
+            arg(1, "o CNES da unidade")?,
+            arg(2, "a UF do terceiro")?,
+            arg(3, "o CNES do terceiro")?,
+        )?),
+        "terceiro-remover" => un::remover_terceiro(
+            &p,
+            arg(0, "a UF da unidade")?,
+            arg(1, "o CNES da unidade")?,
+            arg(2, "a UF do terceiro")?,
+            arg(3, "o CNES do terceiro")?,
+        ),
         "unidade-limpar" => un::limpar_minha(&p),
         "unidade-remover" => un::remover_unidade(&p, arg(0, "a UF")?, arg(1, "o número do CNES")?),
         "unidade" => {
@@ -1007,11 +1064,14 @@ fn main() -> ExitCode {
         | "producao-unidade"
         | "faturamento-unidade"
         | "faturamento-procedimentos"
+        | "aptidao-unidade"
         | "faturamento"
         | "faturamento-impacto"
         | "faturamento-painel"
         | "unidade-definir"
         | "unidade-limpar"
+        | "terceiro-adicionar"
+        | "terceiro-remover"
         | "unidade-remover"
         | "unidade"
         | "marcadores"

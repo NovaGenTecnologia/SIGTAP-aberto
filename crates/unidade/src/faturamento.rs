@@ -675,9 +675,453 @@ pub fn faturamento_da_unidade(
     Ok(saida)
 }
 
+/// Grupo de prioridade da Aptidão para uma classe do Rust: o que está em risco, o que é oportunidade e o
+/// que está em ordem.
+pub(crate) fn grupo_da_classe(classe: &str) -> Option<&'static str> {
+    match classe {
+        "produz_sem_aptidao" | "produz_com_ressalva" | "produz_fora_da_tabela" => Some("risco"),
+        "apta_nao_produz" => Some("oportunidade"),
+        "produz_apta" | "produz_sem_exigencia" => Some("ordem"),
+        _ => None,
+    }
+}
+
+/// Situação do item em texto estável para a tela (nunca só cor).
+pub(crate) fn situacao_do_item(classe: &str, motivo: Option<&str>) -> &'static str {
+    match (classe, motivo) {
+        ("produz_sem_aptidao", _) => "nao_apta",
+        ("produz_com_ressalva", _) => "servico_a_confirmar",
+        ("produz_fora_da_tabela", _) => "fora_da_tabela",
+        ("apta_nao_produz", Some("com_ressalva_de_servico")) => "apta_ressalva_servico",
+        ("apta_nao_produz" | "produz_apta", _) => "apta",
+        _ => "sem_exigencia",
+    }
+}
+
+/// O que falta à unidade para um procedimento, a partir da `Aptidao` serializada: só o que a unidade
+/// não tem, sem repetir o mesmo código.
+pub(crate) fn faltas_da_aptidao(a: &Value) -> Vec<Value> {
+    let mut v: Vec<Value> = Vec::new();
+    let mut ver = std::collections::HashSet::new();
+    let mut poe = |tipo: &str, codigo: String, nome: Option<String>| {
+        if ver.insert((tipo.to_string(), codigo.clone())) {
+            v.push(json!({ "tipo": tipo, "codigo": codigo, "nome": nome }));
+        }
+    };
+    let texto = |x: &Value| x.as_str().map(String::from);
+    for alt in a["habilitacao"]["alternativas"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        for h in alt["habilitacoes"].as_array().into_iter().flatten() {
+            if h["tem"] == json!(false) {
+                poe(
+                    "habilitacao",
+                    texto(&h["codigo"]).unwrap_or_default(),
+                    texto(&h["nome"]),
+                );
+            }
+        }
+    }
+    for par in a["servico"]["pares"].as_array().into_iter().flatten() {
+        if par["tem"] != json!(false) {
+            continue;
+        }
+        let (s, c) = (&par["servico"], &par["classificacao"]);
+        let codigo = format!(
+            "{}/{}",
+            s["codigo"].as_str().unwrap_or(""),
+            c["codigo"].as_str().unwrap_or("")
+        );
+        let nome = match (s["nome"].as_str(), c["nome"].as_str()) {
+            (Some(x), Some(y)) => Some(format!("{x} · {y}")),
+            (Some(x), None) | (None, Some(x)) => Some(x.to_string()),
+            _ => None,
+        };
+        poe("servico", codigo, nome);
+    }
+    for l in a["leito"]["tipos"].as_array().into_iter().flatten() {
+        if l["tem"] == json!(false) {
+            poe(
+                "leito",
+                texto(&l["tipo"]["codigo"]).unwrap_or_default(),
+                texto(&l["tipo"]["nome"]),
+            );
+        }
+    }
+    v
+}
+
 /// Estado da unidade num procedimento, em texto para a tela.
 fn estado_texto(e: Option<EstadoDetalhado>) -> Value {
     json!(e.map(|x| x.estado))
+}
+
+/// Um procedimento da unidade diante da aptidão e da produção.
+struct ItemDeAptidao {
+    classe: &'static str,
+    /// Ordem da lista: valor da UF na oportunidade; valor da unidade nas outras classes.
+    chave: i64,
+    proprio: i64,
+    valor_uf: i64,
+    json: Value,
+}
+
+struct ContextoDeItens<'a> {
+    sig: &'a Consulta,
+    comp: Competencia,
+    estados: &'a HashMap<String, EstadoDetalhado>,
+    sia: &'a Totais,
+    sih: &'a Totais,
+    uf_sia: &'a HashMap<String, sa_query::faturamento::TotalUf>,
+    uf_sih: &'a HashMap<String, sa_query::faturamento::TotalUf>,
+    vigentes: &'a HashMap<String, sa_query::faturamento::ValoresProcedimento>,
+}
+
+/// Classifica cada procedimento que a unidade produz ou poderia produzir.
+fn itens_de_aptidao(c: &ContextoDeItens) -> Vec<ItemDeAptidao> {
+    let (sig, comp, estados, sia, sih, uf_sia, uf_sih, vigentes) = (
+        c.sig, c.comp, c.estados, c.sia, c.sih, c.uf_sia, c.uf_sih, c.vigentes,
+    );
+    let todos: BTreeSet<&String> = estados.keys().chain(sia.keys()).chain(sih.keys()).collect();
+    let mut saida = Vec::new();
+    for proc_ in todos {
+        let produziu = sia.contains_key(proc_) || sih.contains_key(proc_);
+        let est = estados.get(proc_).copied();
+        let (classe, motivo) = if produziu && !vigentes.contains_key(proc_) {
+            ("produz_fora_da_tabela", None)
+        } else if let Some(x) = classificar_procedimento(est, produziu) {
+            x
+        } else {
+            continue;
+        };
+        let (s, h) = (
+            sia.get(proc_).copied().unwrap_or((0, 0)),
+            sih.get(proc_).copied().unwrap_or((0, 0)),
+        );
+        let (us, uh) = (uf_sia.get(proc_), uf_sih.get(proc_));
+        let valor_uf = us.map_or(0, |t| t.valor_centavos) + uh.map_or(0, |t| t.valor_centavos);
+        let proprio = s.1 + h.1;
+        let chave = if classe == "apta_nao_produz" {
+            valor_uf
+        } else {
+            proprio
+        };
+        saida.push(ItemDeAptidao {
+            classe,
+            chave,
+            proprio,
+            valor_uf,
+            json: json!({
+                "codigo": proc_,
+                "nome": nome_do(sig, comp, proc_),
+                "classe": classe,
+                "motivo": motivo,
+                "estado": estado_texto(est),
+                "sia": { "quantidade": s.0, "valor_centavos": s.1 },
+                "sih": { "aih": h.0, "valor_centavos": h.1 },
+                "uf": {
+                    "produtores_sia": us.map_or(0, |t| t.produtores),
+                    "produtores_sih": uh.map_or(0, |t| t.produtores),
+                    "valor_centavos": valor_uf,
+                },
+            }),
+        });
+    }
+    saida
+}
+
+const PAGINA_APTIDAO: usize = 50;
+
+/// O que a produção traz para classificar os procedimentos de uma unidade.
+struct ProducaoBruta {
+    sia: Totais,
+    sih: Totais,
+    uf_sia: HashMap<String, sa_query::faturamento::TotalUf>,
+    uf_sih: HashMap<String, sa_query::faturamento::TotalUf>,
+    vigentes: HashMap<String, sa_query::faturamento::ValoresProcedimento>,
+}
+
+fn producao_bruta(
+    q: &ConsultaProducao,
+    sig: &Consulta,
+    comp: Competencia,
+    cnes: &str,
+    j: &Janelas,
+) -> Result<ProducaoBruta, String> {
+    let e = |x: sa_query::ErroConsulta| x.to_string();
+    let da_unidade = |o: Origem, meses: &[String]| -> Result<Totais, String> {
+        Ok(q.da_unidade_na_janela(o, cnes, meses)
+            .map_err(e)?
+            .into_iter()
+            .map(|(p, a, b)| (p, (a, b)))
+            .collect())
+    };
+    Ok(ProducaoBruta {
+        sia: da_unidade(Origem::Ambulatorial, &j.sia)?,
+        sih: da_unidade(Origem::Hospitalar, &j.sih)?,
+        uf_sia: q
+            .uf_por_procedimento(Origem::Ambulatorial, &j.sia)
+            .map_err(e)?,
+        uf_sih: q
+            .uf_por_procedimento(Origem::Hospitalar, &j.sih)
+            .map_err(e)?,
+        vigentes: sig.valores_dos_procedimentos(comp).map_err(e)?,
+    })
+}
+
+/// Minúsculas e sem acento, para a busca por nome.
+fn sem_acento(s: &str) -> String {
+    s.chars()
+        .flat_map(char::to_lowercase)
+        .map(|c| match c {
+            'á' | 'à' | 'â' | 'ã' | 'ä' => 'a',
+            'é' | 'è' | 'ê' | 'ë' => 'e',
+            'í' | 'ì' | 'î' | 'ï' => 'i',
+            'ó' | 'ò' | 'ô' | 'õ' | 'ö' => 'o',
+            'ú' | 'ù' | 'û' | 'ü' => 'u',
+            'ç' => 'c',
+            c => c,
+        })
+        .collect()
+}
+
+/// Resumo por grupo e, se pedido, a página de um grupo (busca, habilitação, ordem e paginação).
+/// Os itens da página ganham `situacao`; `falta[]` é preenchido por quem tem acesso ao cadastro.
+fn montar_aptidao(
+    itens: &[ItemDeAptidao],
+    grupo: Option<&str>,
+    q: Option<&str>,
+    hab: Option<&HashSet<String>>,
+    desde: usize,
+    so_produzidos_na_uf: bool,
+) -> Value {
+    let (mut r, mut o, mut ordem) = ((0usize, 0i64), (0usize, 0usize, 0i64), (0usize, 0i64));
+    for it in itens {
+        match grupo_da_classe(it.classe) {
+            Some("risco") => (r.0, r.1) = (r.0 + 1, r.1 + it.proprio),
+            Some("oportunidade") => {
+                o = (
+                    o.0 + 1,
+                    o.1 + usize::from(it.valor_uf > 0),
+                    o.2 + it.valor_uf,
+                );
+            }
+            Some("ordem") => (ordem.0, ordem.1) = (ordem.0 + 1, ordem.1 + it.proprio),
+            _ => {}
+        }
+    }
+    let resumo = json!({
+        "risco": { "procedimentos": r.0, "valor_da_unidade_centavos": r.1 },
+        "oportunidade": { "procedimentos": o.0, "com_producao_na_uf": o.1, "valor_da_uf_centavos": o.2 },
+        "ordem": { "procedimentos": ordem.0, "valor_da_unidade_centavos": ordem.1 },
+    });
+    let Some(id) = grupo.filter(|g| matches!(*g, "risco" | "oportunidade" | "ordem")) else {
+        return json!({ "resumo": resumo, "grupo": null });
+    };
+    let busca = q.map(sem_acento).filter(|t| !t.trim().is_empty());
+    let mut do_grupo: Vec<&ItemDeAptidao> = itens
+        .iter()
+        .filter(|it| grupo_da_classe(it.classe) == Some(id))
+        .filter(|it| hab.is_none_or(|h| it.json["codigo"].as_str().is_some_and(|c| h.contains(c))))
+        .filter(|it| {
+            busca.as_ref().is_none_or(|t| {
+                let texto = format!(
+                    "{} {}",
+                    it.json["codigo"].as_str().unwrap_or(""),
+                    it.json["nome"].as_str().unwrap_or("")
+                );
+                sem_acento(&texto).contains(t.trim())
+            })
+        })
+        .collect();
+    let mut ninguem_produziu = None;
+    if so_produzidos_na_uf && id == "oportunidade" {
+        let antes = do_grupo.len();
+        do_grupo.retain(|it| it.valor_uf > 0);
+        ninguem_produziu = Some(antes - do_grupo.len());
+    }
+    do_grupo.sort_by(|a, b| {
+        b.chave
+            .cmp(&a.chave)
+            .then_with(|| a.json["codigo"].as_str().cmp(&b.json["codigo"].as_str()))
+    });
+    let total = do_grupo.len();
+    let pagina: Vec<Value> = do_grupo
+        .into_iter()
+        .skip(desde)
+        .take(PAGINA_APTIDAO)
+        .map(|it| {
+            let mut v = it.json.clone();
+            v["situacao"] = json!(situacao_do_item(it.classe, it.json["motivo"].as_str()));
+            v["falta"] = json!([]);
+            v
+        })
+        .collect();
+    json!({
+        "resumo": resumo,
+        "grupo": {
+            "id": id,
+            "itens": pagina,
+            "desde": desde,
+            "itens_omitidos": total.saturating_sub(desde + PAGINA_APTIDAO),
+            "total": total,
+            "ninguem_produziu": ninguem_produziu,
+        },
+    })
+}
+
+/// Habilitações da unidade e a produção dos procedimentos que as citam.
+fn habilitacoes_com_producao(
+    habilitacoes: &[sa_query::cnes::HabilitacaoDaUnidade],
+    mapa: &HashMap<String, Vec<String>>,
+    sia: &Totais,
+    sih: &Totais,
+) -> Vec<Value> {
+    let produzidos: BTreeSet<&String> = sia.keys().chain(sih.keys()).collect();
+    habilitacoes
+        .iter()
+        .map(|h| {
+            let exigidos = mapa.get(&h.codigo).map_or(&[][..], Vec::as_slice);
+            let feitos: Vec<&String> = exigidos.iter().filter(|x| produzidos.contains(x)).collect();
+            let valor: i64 = feitos
+                .iter()
+                .map(|x| sia.get(*x).map_or(0, |v| v.1) + sih.get(*x).map_or(0, |v| v.1))
+                .sum();
+            json!({
+                "codigo": h.codigo,
+                "nome": h.nome,
+                "vigente": h.vigente,
+                "inicio": h.inicio,
+                "fim": h.fim,
+                "portaria": h.portaria,
+                "data_portaria": h.data_portaria,
+                "programa_38": h.codigo.starts_with("38"),
+                "procedimentos_que_citam": exigidos.len(),
+                "procedimentos_produzidos": feitos.len(),
+                "valor_centavos": valor,
+            })
+        })
+        .collect()
+}
+
+/// A Aptidão da unidade: resumo por prioridade (Risco, Oportunidade, Em ordem), a lista de um grupo
+/// e as habilitações com a produção dos procedimentos que as citam. Sem a produção carregada, devolve
+/// só as oportunidades pelo cadastro (`sem_producao`).
+#[allow(clippy::too_many_arguments)]
+pub fn aptidao_da_unidade(
+    p: &Pastas,
+    sig: &Consulta,
+    comp: Competencia,
+    alvo: Option<(&str, &str)>,
+    grupo: Option<&str>,
+    q: Option<&str>,
+    hab: Option<&str>,
+    desde: usize,
+    so_produzidos_na_uf: bool,
+) -> Result<Value, String> {
+    let (uf, cnes) = alvo_da_unidade(p, alvo)?;
+    let c = consulta_cnes(p, &uf)?;
+    let estados = c
+        .estados_detalhados(sig, comp, &cnes)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("o CNES {cnes} não está no cadastro de {uf} carregado"))?;
+    let e = |x: sa_query::ErroConsulta| x.to_string();
+    let mapa = sa_query::cnes::ConsultaCnes::procedimentos_por_habilitacao(sig, comp).map_err(e)?;
+    let do_filtro: Option<HashSet<String>> = hab.map(|h| {
+        mapa.get(h)
+            .map(|v| v.iter().cloned().collect())
+            .unwrap_or_default()
+    });
+
+    let producao = consulta_producao(p, &uf).ok();
+    let (mut base, bruta) = match &producao {
+        Some(pq) => {
+            let (j, base) = janelas(pq)?;
+            (base, producao_bruta(pq, sig, comp, &cnes, &j)?)
+        }
+        None => (
+            json!({}),
+            ProducaoBruta {
+                sia: Totais::new(),
+                sih: Totais::new(),
+                uf_sia: HashMap::new(),
+                uf_sih: HashMap::new(),
+                vigentes: HashMap::new(),
+            },
+        ),
+    };
+    let ctx = ContextoDeItens {
+        sig,
+        comp,
+        estados: &estados,
+        sia: &bruta.sia,
+        sih: &bruta.sih,
+        uf_sia: &bruta.uf_sia,
+        uf_sih: &bruta.uf_sih,
+        vigentes: &bruta.vigentes,
+    };
+    let itens = itens_de_aptidao(&ctx);
+    let mut saida = montar_aptidao(
+        &itens,
+        grupo,
+        q,
+        do_filtro.as_ref(),
+        desde,
+        so_produzidos_na_uf,
+    );
+
+    // O que falta, só para os itens da página que a unidade produz sem aptidão plena.
+    if let Some(lista) = saida
+        .get_mut("grupo")
+        .and_then(|g| g.get_mut("itens"))
+        .and_then(Value::as_array_mut)
+    {
+        for it in lista {
+            let precisa = matches!(
+                it["classe"].as_str(),
+                Some("produz_sem_aptidao" | "produz_com_ressalva")
+            );
+            if !precisa {
+                continue;
+            }
+            let codigo = it["codigo"].as_str().unwrap_or_default().to_string();
+            let a = c.aptidao(sig, comp, &codigo, &cnes).map_err(e)?;
+            let a = serde_json::to_value(&a).map_err(|x| x.to_string())?;
+            it["falta"] = json!(faltas_da_aptidao(&a));
+        }
+    }
+
+    let sem_producao = producao.is_none();
+    if sem_producao {
+        saida["resumo"]["risco"] = Value::Null;
+        saida["resumo"]["ordem"] = Value::Null;
+    }
+    let u = c.unidade(sig, comp, &cnes).map_err(e)?;
+    base["disponivel"] = json!(true);
+    base["uf"] = json!(uf);
+    base["cnes"] = json!(cnes);
+    base["sem_producao"] = json!(sem_producao);
+    base["resumo"] = saida["resumo"].take();
+    base["grupo"] = saida["grupo"].take();
+    base["habilitacoes"] = match u {
+        None => Value::Null,
+        Some(u) => json!(habilitacoes_com_producao(
+            &u.habilitacoes,
+            &mapa,
+            &bruta.sia,
+            &bruta.sih
+        )),
+    };
+    base["avisos"] = json!({
+        "producao": AVISO_FATURAMENTO,
+        "terceirizados": sa_query::cnes::AVISO_TERCEIRIZADOS,
+        "programa_38": "Habilitações 38.xx (programa \"Agora Tem Especialistas\") não foram condição para a aprovação na produção real de MS (07/2026); por isso aparecem à parte (motivo so_38).",
+        "oportunidade": "\"Apta e não produz\" lista só procedimentos com exigência de habilitação ou serviço; o valor é o produzido por todos na UF na janela, não o que a unidade receberia.",
+        "habilitacoes": "Procedimentos que citam a habilitação como exigência (pode haver outras alternativas de habilitação). Um procedimento citado por duas habilitações da unidade conta nas duas.",
+    });
+    Ok(base)
 }
 
 /// Os procedimentos da unidade diante da regra de aptidão e da produção: o que produz e pode, o que
@@ -699,77 +1143,39 @@ pub fn procedimentos_com_producao(
         .ok_or_else(|| format!("o CNES {cnes} não está no cadastro de {uf} carregado"))?;
     let (j, mut saida) = janelas(&q)?;
     let e = |x: sa_query::ErroConsulta| x.to_string();
-    let sia: Totais = q
-        .da_unidade_na_janela(Origem::Ambulatorial, &cnes, &j.sia)
-        .map_err(e)?
-        .into_iter()
-        .map(|(p, a, b)| (p, (a, b)))
-        .collect();
-    let sih: Totais = q
-        .da_unidade_na_janela(Origem::Hospitalar, &cnes, &j.sih)
-        .map_err(e)?
-        .into_iter()
-        .map(|(p, a, b)| (p, (a, b)))
-        .collect();
-    let uf_sia = q
-        .uf_por_procedimento(Origem::Ambulatorial, &j.sia)
-        .map_err(e)?;
-    let uf_sih = q
-        .uf_por_procedimento(Origem::Hospitalar, &j.sih)
-        .map_err(e)?;
-    let vigentes = sig.valores_dos_procedimentos(comp).map_err(e)?;
-
-    let todos: BTreeSet<&String> = estados.keys().chain(sia.keys()).chain(sih.keys()).collect();
+    let ProducaoBruta {
+        sia,
+        sih,
+        uf_sia,
+        uf_sih,
+        vigentes,
+    } = producao_bruta(&q, sig, comp, &cnes, &j)?;
     // classe -> (linhas, valor produzido pela unidade, quantidade)
     let mut linhas: HashMap<&'static str, Vec<(i64, Value)>> = HashMap::new();
     let mut resumo: HashMap<&'static str, (usize, i64)> = HashMap::new();
     // Dos "aptos que não produz", quantos a UF produz (os demais ninguém produziu nos meses completos).
     let mut oportunidades_com_producao = 0usize;
-    for proc_ in todos {
-        let produziu = sia.contains_key(proc_) || sih.contains_key(proc_);
-        let est = estados.get(proc_).copied();
-        let (classe, motivo) = if produziu && !vigentes.contains_key(proc_) {
-            ("produz_fora_da_tabela", None)
-        } else if let Some(x) = classificar_procedimento(est, produziu) {
-            x
-        } else {
-            continue;
-        };
-        let (s, h) = (
-            sia.get(proc_).copied().unwrap_or((0, 0)),
-            sih.get(proc_).copied().unwrap_or((0, 0)),
-        );
-        let (us, uh) = (uf_sia.get(proc_), uf_sih.get(proc_));
-        let valor_uf = us.map_or(0, |t| t.valor_centavos) + uh.map_or(0, |t| t.valor_centavos);
-        let proprio = s.1 + h.1;
-        let r = resumo.entry(classe).or_default();
+    let ctx = ContextoDeItens {
+        sig,
+        comp,
+        estados: &estados,
+        sia: &sia,
+        sih: &sih,
+        uf_sia: &uf_sia,
+        uf_sih: &uf_sih,
+        vigentes: &vigentes,
+    };
+    for it in itens_de_aptidao(&ctx) {
+        let r = resumo.entry(it.classe).or_default();
         r.0 += 1;
-        r.1 += proprio;
-        if classe == "apta_nao_produz" && valor_uf > 0 {
+        r.1 += it.proprio;
+        if it.classe == "apta_nao_produz" && it.valor_uf > 0 {
             oportunidades_com_producao += 1;
         }
-        let chave = if classe == "apta_nao_produz" {
-            valor_uf
-        } else {
-            proprio
-        };
-        linhas.entry(classe).or_default().push((
-            chave,
-            json!({
-                "codigo": proc_,
-                "nome": nome_do(sig, comp, proc_),
-                "classe": classe,
-                "motivo": motivo,
-                "estado": estado_texto(est),
-                "sia": { "quantidade": s.0, "valor_centavos": s.1 },
-                "sih": { "aih": h.0, "valor_centavos": h.1 },
-                "uf": {
-                    "produtores_sia": us.map_or(0, |t| t.produtores),
-                    "produtores_sih": uh.map_or(0, |t| t.produtores),
-                    "valor_centavos": valor_uf,
-                },
-            }),
-        ));
+        linhas
+            .entry(it.classe)
+            .or_default()
+            .push((it.chave, it.json));
     }
     let mut classes = json!({});
     for (classe, mut v) in linhas {
@@ -1895,6 +2301,165 @@ pub fn painel_do_faturista(p: &Pastas, sig: &Consulta, comp: Competencia) -> Res
 mod testes {
     use super::*;
 
+    fn item(cod: &str, nome: &str, classe: &'static str, proprio: i64, uf: i64) -> ItemDeAptidao {
+        let chave = if classe == "apta_nao_produz" {
+            uf
+        } else {
+            proprio
+        };
+        ItemDeAptidao {
+            classe,
+            chave,
+            proprio,
+            valor_uf: uf,
+            json: json!({ "codigo": cod, "nome": nome, "classe": classe, "motivo": null }),
+        }
+    }
+
+    fn amostra() -> Vec<ItemDeAptidao> {
+        vec![
+            item(
+                "0301010010",
+                "Consulta de média complexidade",
+                "produz_apta",
+                500,
+                900,
+            ),
+            item(
+                "0302020020",
+                "Fisioterapia de alta",
+                "produz_sem_aptidao",
+                300,
+                700,
+            ),
+            item(
+                "0303030030",
+                "Ação de saúde",
+                "produz_com_ressalva",
+                800,
+                100,
+            ),
+            item(
+                "0404040040",
+                "Cirurgia de catarata",
+                "apta_nao_produz",
+                0,
+                5000,
+            ),
+            item("0505050050", "Terapia rara", "apta_nao_produz", 0, 0),
+            item("0606060060", "Exame antigo", "produz_fora_da_tabela", 50, 0),
+        ]
+    }
+
+    fn codigos(g: &Value) -> Vec<&str> {
+        g["itens"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["codigo"].as_str().unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn resumo_soma_os_tres_grupos() {
+        let r = montar_aptidao(&amostra(), None, None, None, 0, false)["resumo"].clone();
+        assert_eq!(r["risco"]["procedimentos"], 3);
+        assert_eq!(r["risco"]["valor_da_unidade_centavos"], 1150);
+        assert_eq!(r["oportunidade"]["procedimentos"], 2);
+        assert_eq!(r["oportunidade"]["com_producao_na_uf"], 1);
+        assert_eq!(r["oportunidade"]["valor_da_uf_centavos"], 5000);
+        assert_eq!(r["ordem"]["procedimentos"], 1);
+        assert_eq!(r["ordem"]["valor_da_unidade_centavos"], 500);
+    }
+
+    #[test]
+    fn sem_grupo_nao_traz_lista() {
+        assert!(montar_aptidao(&amostra(), None, None, None, 0, false)["grupo"].is_null());
+    }
+
+    #[test]
+    fn risco_e_ordem_vao_pelo_valor_da_unidade_e_oportunidade_pelo_da_uf() {
+        let v = amostra();
+        let r = montar_aptidao(&v, Some("risco"), None, None, 0, false);
+        assert_eq!(
+            codigos(&r["grupo"]),
+            ["0303030030", "0302020020", "0606060060"]
+        );
+        let o = montar_aptidao(&v, Some("oportunidade"), None, None, 0, false);
+        assert_eq!(codigos(&o["grupo"]), ["0404040040", "0505050050"]);
+        assert_eq!(o["grupo"]["itens"][0]["situacao"], "apta");
+        assert_eq!(r["grupo"]["itens"][1]["situacao"], "nao_apta");
+    }
+
+    #[test]
+    fn busca_por_codigo_ou_nome_sem_acento_nem_maiuscula() {
+        let v = amostra();
+        let por_nome = montar_aptidao(&v, Some("risco"), Some("ACAO de saude"), None, 0, false);
+        assert_eq!(codigos(&por_nome["grupo"]), ["0303030030"]);
+        let por_codigo = montar_aptidao(&v, Some("risco"), Some("0302020"), None, 0, false);
+        assert_eq!(codigos(&por_codigo["grupo"]), ["0302020020"]);
+        assert_eq!(por_codigo["grupo"]["total"], 1);
+        // o resumo não muda com a busca
+        assert_eq!(por_codigo["resumo"]["risco"]["procedimentos"], 3);
+    }
+
+    #[test]
+    fn habilitacao_filtra_pelos_procedimentos_que_a_citam() {
+        let hab: HashSet<String> = ["0404040040".to_string(), "0302020020".to_string()].into();
+        let o = montar_aptidao(&amostra(), Some("oportunidade"), None, Some(&hab), 0, false);
+        assert_eq!(codigos(&o["grupo"]), ["0404040040"]);
+        let r = montar_aptidao(&amostra(), Some("risco"), None, Some(&hab), 0, false);
+        assert_eq!(codigos(&r["grupo"]), ["0302020020"]);
+    }
+
+    #[test]
+    fn pagina_de_cinquenta_com_omitidos_e_total() {
+        let muitos: Vec<ItemDeAptidao> = (0..120)
+            .map(|i| {
+                item(
+                    &format!("{i:010}"),
+                    "Procedimento",
+                    "produz_sem_aptidao",
+                    1000 - i,
+                    0,
+                )
+            })
+            .collect();
+        let g = montar_aptidao(&muitos, Some("risco"), None, None, 50, false)["grupo"].clone();
+        assert_eq!(g["desde"], 50);
+        assert_eq!(g["total"], 120);
+        assert_eq!(g["itens"].as_array().unwrap().len(), 50);
+        assert_eq!(g["itens_omitidos"], 20);
+        assert_eq!(g["itens"][0]["codigo"], "0000000050");
+        let ultima =
+            montar_aptidao(&muitos, Some("risco"), None, None, 100, false)["grupo"].clone();
+        assert_eq!(ultima["itens"].as_array().unwrap().len(), 20);
+        assert_eq!(ultima["itens_omitidos"], 0);
+    }
+
+    #[test]
+    fn so_produzidos_na_uf_tira_o_que_ninguem_produziu_e_diz_quantos() {
+        let o =
+            montar_aptidao(&amostra(), Some("oportunidade"), None, None, 0, true)["grupo"].clone();
+        assert_eq!(codigos(&o), ["0404040040"]);
+        assert_eq!(o["total"], 1);
+        assert_eq!(o["ninguem_produziu"], 1);
+        let sem =
+            montar_aptidao(&amostra(), Some("oportunidade"), None, None, 0, false)["grupo"].clone();
+        assert!(sem["ninguem_produziu"].is_null());
+    }
+
+    #[test]
+    fn grupo_desconhecido_vira_lista_vazia_sem_quebrar() {
+        let g = montar_aptidao(&amostra(), Some("nada"), None, None, 0, false);
+        assert!(g["grupo"].is_null());
+    }
+
+    #[test]
+    fn texto_de_busca_ignora_acento_e_caixa() {
+        assert_eq!(sem_acento("Ação Cirúrgica ÇÃO"), "acao cirurgica cao");
+    }
+
     fn tipos(f: &Value) -> Vec<&'static str> {
         alertas_de_perfil(f).into_iter().map(|a| a.0).collect()
     }
@@ -2115,6 +2680,80 @@ mod testes {
             assert_eq!(o["competencias"], json!(["202602"]), "{t}");
             assert_ne!(o["nao_prova"], "", "{t}");
         }
+    }
+
+    #[test]
+    fn classes_do_rust_viram_os_tres_grupos() {
+        assert_eq!(grupo_da_classe("produz_sem_aptidao"), Some("risco"));
+        assert_eq!(grupo_da_classe("produz_com_ressalva"), Some("risco"));
+        assert_eq!(grupo_da_classe("produz_fora_da_tabela"), Some("risco"));
+        assert_eq!(grupo_da_classe("apta_nao_produz"), Some("oportunidade"));
+        assert_eq!(grupo_da_classe("produz_apta"), Some("ordem"));
+        assert_eq!(grupo_da_classe("produz_sem_exigencia"), Some("ordem"));
+        assert_eq!(grupo_da_classe("outra"), None);
+    }
+
+    #[test]
+    fn situacao_em_texto_para_a_tela() {
+        assert_eq!(
+            situacao_do_item("produz_sem_aptidao", Some("habilitacao")),
+            "nao_apta"
+        );
+        assert_eq!(
+            situacao_do_item("produz_com_ressalva", Some("so_servico")),
+            "servico_a_confirmar"
+        );
+        assert_eq!(
+            situacao_do_item("produz_fora_da_tabela", None),
+            "fora_da_tabela"
+        );
+        assert_eq!(
+            situacao_do_item("apta_nao_produz", Some("com_ressalva_de_servico")),
+            "apta_ressalva_servico"
+        );
+        assert_eq!(situacao_do_item("apta_nao_produz", None), "apta");
+        assert_eq!(situacao_do_item("produz_apta", None), "apta");
+        assert_eq!(
+            situacao_do_item("produz_sem_exigencia", None),
+            "sem_exigencia"
+        );
+    }
+
+    #[test]
+    fn falta_lista_so_o_que_a_unidade_nao_tem() {
+        let a = json!({
+            "habilitacao": { "alternativas": [{ "habilitacoes": [
+                { "codigo": "0203", "nome": "Obesidade", "tem": false, "observacao": null },
+                { "codigo": "0204", "nome": "Outra", "tem": true, "observacao": null }
+            ] }] },
+            "servico": { "pares": [
+                { "servico": {"codigo":"104","nome":"Regulação"}, "classificacao": {"codigo":"001","nome":"Central"}, "tem": false },
+                { "servico": {"codigo":"105","nome":"X"}, "classificacao": {"codigo":"002","nome":"Y"}, "tem": true }
+            ] },
+            "leito": { "tipos": [{ "tipo": {"codigo":"03","nome":null}, "tem": false }] }
+        });
+        let f = faltas_da_aptidao(&a);
+        assert_eq!(f.len(), 3);
+        assert_eq!(
+            f[0],
+            json!({"tipo":"habilitacao","codigo":"0203","nome":"Obesidade"})
+        );
+        assert_eq!(
+            f[1],
+            json!({"tipo":"servico","codigo":"104/001","nome":"Regulação · Central"})
+        );
+        assert_eq!(f[2]["tipo"], "leito");
+        assert_eq!(f[2]["codigo"], "03");
+    }
+
+    #[test]
+    fn falta_vazia_quando_apta_e_sem_duplicar() {
+        assert!(faltas_da_aptidao(&json!({ "habilitacao": {"alternativas": []}, "servico": {"pares": []}, "leito": {"tipos": []} })).is_empty());
+        let dup = json!({ "habilitacao": { "alternativas": [
+            { "habilitacoes": [{ "codigo": "0203", "nome": null, "tem": false }] },
+            { "habilitacoes": [{ "codigo": "0203", "nome": null, "tem": false }] }
+        ] }, "servico": {"pares": []}, "leito": {"tipos": []} });
+        assert_eq!(faltas_da_aptidao(&dup).len(), 1);
     }
 
     #[test]

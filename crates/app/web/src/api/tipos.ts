@@ -21,6 +21,8 @@ export interface UnidadeRef { uf: string; cnes: string; nome: string }
 export interface SituacaoCnes {
   minha: UnidadeRef | null;
   unidades: UnidadeRef[];
+  /** Terceiros contratados da unidade ativa, com o nome. */
+  terceiros?: UnidadeRef[];
   ufs_disponiveis: string[];
 }
 export interface Progresso { resumo: string; mensagem: string; fracao: number; indeterminado: boolean }
@@ -59,7 +61,7 @@ export interface PedidoDownload { sigtap: EscopoSigtap; territorio: boolean }
 export interface ArquivoCnes { tipo: string; uf: string; competencia: string; arquivo: string; bytes: number; registros_gravados: number; carregado_em: string }
 export interface UfCnes { uf: string; bytes?: number; resumo?: { arquivos: ArquivoCnes[] }; erro?: string }
 export interface SituacaoCnesCompleta extends SituacaoCnes { ufs: UfCnes[] }
-export interface Estabelecimento { cnes: string; nome: string; municipio: string; municipio_nome: string; tipo: string; tipo_nome: string }
+export interface Estabelecimento { cnes: string; nome: string; municipio: string; municipio_nome: string; tipo: string; tipo_nome: string | null }
 export interface ArquivoProducao { arquivo: string; tipo: string; uf: string; bytes: number; carregado_em: string; competencias: string[] }
 export interface DefasagemProducao { sia_ate: string | null; sih_ate: string | null; sia_incompleto: string | null; sih_incompleto: string | null }
 export interface UfProducao {
@@ -159,3 +161,62 @@ export interface TabelaDeMudanca {
   itens: ItemDeMudanca[]; desde: number; itens_omitidos: number; afetam?: number;
 }
 export interface Mudancas { de: string; para: string; tabelas: TabelaDeMudanca[]; unidade?: boolean; unidade_com_cadastro?: boolean }
+
+// ---- Cadastro e Aptidão da unidade (sub-projeto E1; formas conferidas contra a CLI `unidade` e `aptidao-unidade`) ----
+export interface CodigoENome { codigo: string; nome: string | null }
+export interface HabilitacaoCadastrada {
+  codigo: string; nome: string | null; inicio: string; fim: string; vigente: boolean;
+  portaria: string; data_portaria: string; leitos: number | null;
+}
+export interface ServicoCadastrado {
+  servico: CodigoENome; classificacao: CodigoENome; ambulatorial_sus: boolean; hospitalar_sus: boolean; terceiro: string;
+}
+export interface LeitoCadastrado { tipo: CodigoENome; especialidade: CodigoENome; existentes: number; sus: number; nao_sus: number }
+export interface EquipamentoCadastrado { equipamento: CodigoENome; existentes: number; em_uso: number; disponivel_sus: boolean }
+export interface OcupacaoCadastrada { cbo: CodigoENome; profissionais: number; atendem_sus: number }
+export interface ProfissionalCadastrado {
+  nome: string; cbo: CodigoENome; vinculo: CodigoENome; atende_sus: boolean;
+  horas_ambulatorio: number; horas_hospital: number; horas_outros: number;
+}
+export interface UnidadeCompleta {
+  uf: string; cnes: string; nome: string; razao_social: string; municipio: string; municipio_nome: string | null;
+  pessoa_fisica: boolean; competencia_cnes: string; competencia_sigtap: string;
+  ativa: boolean; guardada: boolean;
+  gerais: [string, CodigoENome][];
+  habilitacoes: HabilitacaoCadastrada[]; servicos: ServicoCadastrado[]; leitos: LeitoCadastrado[]; equipamentos: EquipamentoCadastrado[];
+  ocupacoes: OcupacaoCadastrada[] | null; profissionais: ProfissionalCadastrado[] | null;
+  tem_arquivo_de_profissionais: boolean;
+}
+export interface UnidadeComNome { uf: string; cnes: string; nome: string }
+
+export type GrupoDeAptidao = "risco" | "oportunidade" | "ordem";
+export type SituacaoDoItem = "nao_apta" | "servico_a_confirmar" | "fora_da_tabela" | "apta_ressalva_servico" | "apta" | "sem_exigencia";
+export interface Falta { tipo: "habilitacao" | "servico" | "leito"; codigo: string; nome: string | null }
+export interface ItemDeAptidao {
+  codigo: string; nome: string | null; classe: string; motivo: string | null; estado: string | null;
+  situacao: SituacaoDoItem; falta: Falta[];
+  sia: { quantidade: number; valor_centavos: number };
+  sih: { aih: number; valor_centavos: number };
+  uf: { produtores_sia: number; produtores_sih: number; valor_centavos: number };
+}
+export interface PaginaDeAptidao {
+  id: GrupoDeAptidao; itens: ItemDeAptidao[]; desde: number; itens_omitidos: number; total: number;
+  /** Só na Oportunidade com "só os que a UF produz": quantos ficaram de fora porque ninguém produziu. */
+  ninguem_produziu: number | null;
+}
+export interface ResumoDeAptidao {
+  risco: { procedimentos: number; valor_da_unidade_centavos: number } | null;
+  oportunidade: { procedimentos: number; com_producao_na_uf: number; valor_da_uf_centavos: number };
+  ordem: { procedimentos: number; valor_da_unidade_centavos: number } | null;
+}
+export interface HabilitacaoComProducao {
+  codigo: string; nome: string | null; vigente: boolean; inicio: string; fim: string; portaria: string; data_portaria: string;
+  programa_38: boolean; procedimentos_que_citam: number; procedimentos_produzidos: number; valor_centavos: number;
+}
+export interface AptidaoUnidade {
+  disponivel: true; uf: string; cnes: string; sem_producao: boolean;
+  resumo: ResumoDeAptidao; grupo: PaginaDeAptidao | null; habilitacoes: HabilitacaoComProducao[] | null;
+  avisos: { producao: string; terceirizados: string; programa_38: string; oportunidade: string; habilitacoes: string };
+  /** Janela da produção usada (ausente sem produção). */
+  janela?: unknown;
+}

@@ -37,6 +37,14 @@ function ItensDaPendencia({ itens }: { itens: Pendencia["itens"] }) {
   );
 }
 
+/** Para onde a pendência continua nas subtelas da unidade, quando há. */
+const DESTINO_NA_UNIDADE: Record<string, { rotulo: string; caminho: string[] }> = {
+  produz_sem_aptidao: { rotulo: "Ver na Aptidão", caminho: ["aptidao", "risco"] },
+  produz_com_ressalva: { rotulo: "Ver na Aptidão", caminho: ["aptidao", "risco"] },
+  servico_fora_do_cadastro: { rotulo: "Ver no Cadastro", caminho: ["cadastro", "servicos"] },
+  habilitacao_sem_producao: { rotulo: "Ver no Cadastro", caminho: ["cadastro", "habilitacoes"] },
+};
+
 function Guia({ p }: { p: Pendencia }) {
   const periodo = intervaloDeCompetencias(p.origem.competencias);
   const passos = ["Alerta", p.origem.fonte, periodo].filter(Boolean);
@@ -45,6 +53,7 @@ function Guia({ p }: { p: Pendencia }) {
 
 function Cartao({ p }: { p: Pendencia }) {
   const temItens = p.itens.length > 0;
+  const destino = DESTINO_NA_UNIDADE[p.tipo];
   const corpo = (aberto: boolean) => (
     <>
       <div className="pend__topo">
@@ -69,6 +78,9 @@ function Cartao({ p }: { p: Pendencia }) {
         ) : <span />}
         <div className="pend__acoes">
           {temItens && <Button slot="trigger" className="botao botao--secundario">{aberto ? "Ocultar itens" : "Ver itens"}</Button>}
+          {destino && (
+            <a className="botao botao--secundario" href={`#/painel/${destino.caminho.join("/")}`} onClick={(e) => { e.preventDefault(); ir("painel", ...destino.caminho); }}>{destino.rotulo}</a>
+          )}
           <DeOndeVem titulo={p.titulo} linhas={origemDe(p)} />
         </div>
       </div>

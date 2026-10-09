@@ -58,6 +58,17 @@ const casos: [string, () => Promise<unknown>, string, Record<string, unknown>?][
     { de: "202608", para: "202609", tabela: null, desde: null, soAfeta: true }],
   ["mudou: ver mais de uma tabela", () => c.mudou("202608", "202609", { tabela: "rl_procedimento_habilitacao", desde: 300 }), "mudou",
     { de: "202608", para: "202609", tabela: "rl_procedimento_habilitacao", desde: 300, soAfeta: false }],
+  ["unidade completa (a ativa)", () => c.unidadeVer("202609"), "unidade_ver", { competencia: "202609", uf: null, cnes: null }],
+  ["unidade completa de outra", () => c.unidadeVer(undefined, { uf: "MS", cnes: "2754291" }), "unidade_ver", { competencia: null, uf: "MS", cnes: "2754291" }],
+  ["aptidão da unidade: resumo", () => c.aptidaoUnidade({}), "aptidao_unidade",
+    { competencia: null, grupo: null, q: null, hab: null, desde: null, soProduzidosNaUf: false }],
+  ["aptidão da unidade: uma página filtrada", () => c.aptidaoUnidade({ grupo: "oportunidade", q: "biopsia", hab: "0203", desde: 50, soProduzidosNaUf: true, competencia: "202609" }), "aptidao_unidade",
+    { competencia: "202609", grupo: "oportunidade", q: "biopsia", hab: "0203", desde: 50, soProduzidosNaUf: true }],
+  ["terceiro: adicionar", () => c.terceiroAdicionar("SP", "2077396", "SP", "2077400"), "terceiro_adicionar",
+    { uf: "SP", cnes: "2077396", terceiroUf: "SP", terceiroCnes: "2077400" }],
+  ["terceiro: remover", () => c.terceiroRemover("SP", "2077396", "SP", "2077400"), "terceiro_remover",
+    { uf: "SP", cnes: "2077396", terceiroUf: "SP", terceiroCnes: "2077400" }],
+  ["buscar unidades", () => c.unidadesBuscar("hospital"), "unidades_buscar", { texto: "hospital" }],
 ];
 
 test.each(casos)("%s", async (_nome, chamarFuncao, comando, args) => {
