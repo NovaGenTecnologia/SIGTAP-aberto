@@ -1,5 +1,5 @@
 /* Cadastro e Aptidão da unidade (subtelas do Painel). Tokens da fundação; sem movimento próprio. */
-.un { display: flex; flex-direction: column; gap: var(--esp-4); max-width: 1134px; }
+.un { display: flex; flex-direction: column; gap: var(--esp-4); max-width: var(--largura-pagina); }
 .un__cartao { background: var(--cor-superficie); border: 1px solid var(--cor-linha); border-radius: var(--raio-bloco); min-width: 0; }
 
 /* Cabeçalho comum */

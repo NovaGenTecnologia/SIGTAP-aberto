@@ -1,5 +1,5 @@
 /* Mudanças: comparação entre competências, com impacto na unidade. Sem movimento próprio. */
-.mud { display: flex; flex-direction: column; gap: var(--esp-4); max-width: 1134px; }
+.mud { display: flex; flex-direction: column; gap: var(--esp-4); max-width: var(--largura-pagina); }
 .mud__cabeca { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--esp-3); }
 .mud__exportar { display: flex; flex-direction: column; align-items: flex-end; gap: var(--esp-1); }
 .mud__cartao { background: var(--cor-superficie); border: 1px solid var(--cor-linha); border-radius: var(--raio-bloco); min-width: 0; }
