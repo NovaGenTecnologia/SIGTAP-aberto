@@ -1,4 +1,5 @@
 :root {
+  --largura-pagina: none; /* as telas ocupam a largura da janela; só o texto corrido tem limite próprio */
   /* Casco: topo */
   --cor-casco: #0A3D91;
   --cor-casco-escuro: #082C6C;

@@ -1,5 +1,5 @@
 /* Painel: pendências por valor. Tokens da fundação; sem movimento próprio (o balão e o esqueleto já seguem prefers-reduced-motion). */
-.painel { display: flex; flex-direction: column; gap: var(--esp-4); max-width: 1134px; }
+.painel { display: flex; flex-direction: column; gap: var(--esp-4); max-width: var(--largura-pagina); }
 .painel__cabeca { display: flex; flex-direction: column; gap: var(--esp-1); }
 .painel__sub { color: var(--cor-texto-2); font-size: var(--texto-12); }
 .painel__cartao { background: var(--cor-superficie); border: 1px solid var(--cor-linha); border-radius: var(--raio-bloco); }

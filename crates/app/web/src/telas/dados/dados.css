@@ -1,4 +1,4 @@
-.dados { display: flex; flex-direction: column; gap: var(--esp-3); max-width: 1100px; }
+.dados { display: flex; flex-direction: column; gap: var(--esp-3); max-width: var(--largura-pagina); }
 .dados__cabecalho { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--esp-4); flex-wrap: wrap; }
 .dados__titulo h1 { font-size: var(--texto-28); line-height: 1.15; }
 .dados__armazenamento { margin: var(--esp-1) 0 0; color: var(--cor-texto-2); }
