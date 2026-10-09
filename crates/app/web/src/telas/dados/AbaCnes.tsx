@@ -14,12 +14,14 @@ import { mensagemOcupado } from "../../dados/tarefas";
 import { rotuloCompetencia, tamanho } from "../../util/formatos";
 import { UFS } from "../../util/ufs";
 import { ConfirmarApagar } from "./ConfirmarApagar";
+import { useAlturaMaxima } from "./useAlturaMaxima";
 
 interface Linha { id: string; uf: string; competencia: string; bytes: number | null; erro: string | null; daUnidade: boolean }
 
 const ultimaCompetencia = (u: UfCnes) => (u.resumo?.arquivos ?? []).map((a) => a.competencia).sort().at(-1) ?? "";
 
 export function AbaCnes({ tarefa }: { tarefa: Tarefa }) {
+  const alturaMaxima = useAlturaMaxima();
   const cliente = useQueryClient();
   const { avisar } = useAvisos();
   const { data: cnes, isError, error, refetch } = useUnidades();
@@ -85,7 +87,7 @@ export function AbaCnes({ tarefa }: { tarefa: Tarefa }) {
       </div>
 
       {isError ? <EstadoErro mensagem={(error as Error).message} aoTentar={() => void refetch()} />
-        : linhas.length > 0 ? <TabelaDeDados rotulo="CNES carregado por estado" colunas={colunas} linhas={linhas} altura={Math.min(420, 36 * (linhas.length + 1) + 2)} />
+        : linhas.length > 0 ? <TabelaDeDados rotulo="CNES carregado por estado" colunas={colunas} linhas={linhas} altura={Math.min(alturaMaxima, 36 * (linhas.length + 1) + 2)} />
         : cnes ? <EstadoVazio titulo="Nenhum estado carregado" descricao="Escolha o estado e baixe o CNES." /> : null}
 
       <ConfirmarApagar

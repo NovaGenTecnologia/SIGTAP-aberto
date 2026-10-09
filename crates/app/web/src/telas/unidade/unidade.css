@@ -84,3 +84,6 @@ a.un__faixa-item:focus-visible { outline: var(--anel-foco) solid var(--cor-foco)
 .un__filtro:focus-visible { outline: var(--anel-foco) solid var(--cor-foco); outline-offset: 2px; }
 .un__limites { display: flex; align-items: center; flex-wrap: wrap; gap: var(--esp-3); font-size: var(--texto-12); color: var(--cor-texto-2); }
 .un__nowrap { white-space: nowrap; }
+
+/* Texto corrido não passa de uma linha confortável, mesmo em janela larga; tabelas e cartões usam a largura toda. */
+.un__sub, .un__vazio { max-width: 80ch; }

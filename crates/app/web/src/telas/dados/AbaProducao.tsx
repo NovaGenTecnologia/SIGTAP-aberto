@@ -14,6 +14,7 @@ import { useProducao } from "../../dados/consultas";
 import { mensagemOcupado } from "../../dados/tarefas";
 import { rotuloCompetencia, tamanho } from "../../util/formatos";
 import { UFS } from "../../util/ufs";
+import { useAlturaMaxima } from "./useAlturaMaxima";
 
 const MESES = [1, 2, 3, 6, 12, 24].map((n) => ({ id: String(n), rotulo: n === 1 ? "1 mês" : `${n} meses` }));
 
@@ -28,6 +29,7 @@ const ATE = (competencia: string | null | undefined, incompleto: string | null |
 );
 
 export function AbaProducao({ tarefa }: { tarefa: Tarefa }) {
+  const alturaMaxima = useAlturaMaxima();
   const cliente = useQueryClient();
   const { avisar } = useAvisos();
   const { data, isError, error, refetch } = useProducao();
@@ -99,7 +101,7 @@ export function AbaProducao({ tarefa }: { tarefa: Tarefa }) {
       </div>
 
       {isError ? <EstadoErro mensagem={(error as Error).message} aoTentar={() => void refetch()} />
-        : linhas.length > 0 ? <TabelaDeDados rotulo="Produção carregada por estado" colunas={colunas} linhas={linhas} altura={Math.min(420, 36 * (linhas.length + 1) + 2)} />
+        : linhas.length > 0 ? <TabelaDeDados rotulo="Produção carregada por estado" colunas={colunas} linhas={linhas} altura={Math.min(alturaMaxima, 36 * (linhas.length + 1) + 2)} />
         : data && comErro.length === 0 ? <EstadoVazio titulo="Nenhuma produção carregada" descricao="Escolha o estado e o período, veja o que será baixado e baixe." /> : null}
       {comErro.map((u) => <p key={u.uf} className="dados__nota" role="alert">Produção de {u.uf}: {u.erro}</p>)}
 

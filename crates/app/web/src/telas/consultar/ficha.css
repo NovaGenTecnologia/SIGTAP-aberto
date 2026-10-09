@@ -64,7 +64,7 @@
 .ficha-resumo .numero__valor { font-size: var(--texto-14); font-weight: 600; line-height: inherit; }
 .ficha-lista { margin: 0; padding-left: var(--esp-4); }
 
-@media (max-width: 1100px) {
+@container pagina (max-width: 900px) {
   /* Faixa fixa compacta: a ficha ainda precisa de altura para as tabelas */
   .ficha__trilha { flex-wrap: nowrap; overflow: hidden; }
   .ficha__trilha .botao { max-width: 22ch; }
@@ -128,7 +128,7 @@
 
 .exigencias__gatilho { scroll-margin-top: calc(var(--altura-topo, 0px) + 48px + var(--esp-3)); }
 .exigencias__filtro .campo__rotulo { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-@media (max-width: 1100px) {
+@container pagina (max-width: 900px) {
   .ficha__trilha-item { flex: 0 1 auto; min-width: 0; }
   .ficha__trilha .botao { display: block; min-width: 0; }
 }
