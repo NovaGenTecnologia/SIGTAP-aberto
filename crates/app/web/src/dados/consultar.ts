@@ -1,18 +1,18 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { arvore, arvoreCid, buscar, ficha, historico, ligados } from "../api/comandos";
-import type { ItemDeApoio } from "../api/tipos";
+import { arvore, arvoreCid, buscarPagina, ficha, historico, ligados } from "../api/comandos";
+import type { FiltrosDaBusca, ItemDeApoio } from "../api/tipos";
 import { useSessao } from "../shell/sessao";
 import { normalizarEntrada } from "../util/campos";
 
 // Todas leem a competência escolhida no topo e a incluem na chave: trocar a competência recarrega a mesma tela.
 
-/** Busca com pelo menos 2 caracteres; o resultado anterior fica até o novo chegar. */
-export function useBusca(texto: string) {
+/** Uma página da busca com filtros; a página anterior fica à vista até a nova chegar. */
+export function useBuscaPaginada(texto: string, filtros: FiltrosDaBusca, pagina: number) {
   const { competencia } = useSessao();
   const consulta = normalizarEntrada(texto);
   return useQuery({
-    queryKey: ["buscar", competencia, consulta],
-    queryFn: () => buscar(consulta, competencia ?? undefined),
+    queryKey: ["buscar_pagina", competencia, consulta, filtros, pagina],
+    queryFn: () => buscarPagina(consulta, filtros, pagina, competencia ?? undefined),
     enabled: consulta.length >= 2,
     placeholderData: keepPreviousData,
   });

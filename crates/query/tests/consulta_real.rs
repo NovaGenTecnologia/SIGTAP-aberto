@@ -636,3 +636,296 @@ fn busca_de_categoria_cid_lista_as_subcategorias_e_soma_os_procedimentos() {
         .sum();
     assert!(da_categoria.len() <= soma && (soma == 0 || !da_categoria.is_empty()));
 }
+
+/// Uma palavra que está na descrição oficial de algum procedimento e em nenhum nome de procedimento.
+fn palavra_so_na_descricao(con: &Connection) -> (String, String) {
+    let mut st = con
+        .prepare(
+            "SELECT co_procedimento, ds_procedimento FROM tb_descricao ORDER BY co_procedimento",
+        )
+        .unwrap();
+    let linhas: Vec<(String, String)> = st
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    for (codigo, ds) in linhas {
+        for w in ds.split(|c: char| !c.is_ascii_uppercase()) {
+            if w.len() < 8 {
+                continue;
+            }
+            let n: i64 = con
+                .query_row(
+                    "SELECT count(*) FROM tb_procedimento WHERE no_procedimento LIKE '%' || ?1 || '%'",
+                    [w],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            if n == 0 {
+                return (codigo, w.to_string());
+            }
+        }
+    }
+    panic!("nenhuma palavra só na descrição");
+}
+
+#[test]
+fn acha_pela_descricao_e_marca() {
+    let Some(p) = preparado() else { return };
+    let q = Consulta::abrir(&p).unwrap();
+    let con = Connection::open(&p).unwrap();
+    let comp = c("202609");
+    let (codigo, palavra) = palavra_so_na_descricao(&con);
+    let r = q.buscar_todos(comp, &palavra).unwrap();
+    let it = r
+        .procedimentos
+        .iter()
+        .find(|i| i.codigo == codigo)
+        .unwrap_or_else(|| panic!("{codigo} não achado pela palavra {palavra}"));
+    assert!(it.na_descricao, "{codigo} deveria vir marcado");
+    assert!(r.procedimentos.iter().all(|i| i.na_descricao));
+    // Quem tem a palavra no nome vem antes de quem só a tem na descrição.
+    let mista = q.buscar_todos(comp, "atendimento").unwrap();
+    let primeiro = mista.procedimentos.iter().position(|i| i.na_descricao);
+    let ultimo_nome = mista.procedimentos.iter().rposition(|i| !i.na_descricao);
+    assert!(mista.procedimentos.iter().any(|i| !i.na_descricao));
+    if let (Some(a), Some(b)) = (primeiro, ultimo_nome) {
+        assert!(
+            b < a,
+            "achados por nome antes dos achados só pela descrição"
+        );
+    }
+    assert_eq!(mista.total_procedimentos, mista.procedimentos.len());
+    eprintln!(
+        "PROVA descrição: {palavra} → {codigo}; 'atendimento' {} achados ({} só pela descrição)",
+        mista.procedimentos.len(),
+        mista
+            .procedimentos
+            .iter()
+            .filter(|i| i.na_descricao)
+            .count()
+    );
+}
+
+// ---- Consultar unificada: página, filtros e facetas ----
+
+use sa_query::busca::{Filtros, TAMANHO_DA_PAGINA};
+
+fn consulta_real() -> Option<(Consulta, Competencia)> {
+    let p = preparado()?;
+    Some((Consulta::abrir(&p).unwrap(), c("202609")))
+}
+
+#[test]
+fn pagina_tem_no_maximo_100_e_a_soma_bate() {
+    let Some((q, comp)) = consulta_real() else {
+        return;
+    };
+    let p1 = q.buscar_pagina(comp, "at", &Filtros::default(), 1).unwrap();
+    assert!(p1.total > 200, "total {}", p1.total);
+    assert_eq!(p1.procedimentos.len(), TAMANHO_DA_PAGINA);
+    assert_eq!(p1.paginas, p1.total.div_ceil(TAMANHO_DA_PAGINA));
+    let ultima = q
+        .buscar_pagina(comp, "at", &Filtros::default(), p1.paginas)
+        .unwrap();
+    assert_eq!(
+        ultima.procedimentos.len(),
+        p1.total - TAMANHO_DA_PAGINA * (p1.paginas - 1)
+    );
+    let alem = q
+        .buscar_pagina(comp, "at", &Filtros::default(), 9999)
+        .unwrap();
+    assert_eq!(alem.pagina, p1.paginas);
+    let zero = q.buscar_pagina(comp, "at", &Filtros::default(), 0).unwrap();
+    assert_eq!(zero.pagina, 1);
+    // o total é o mesmo da busca completa antiga
+    assert_eq!(
+        p1.total,
+        q.buscar_todos(comp, "at").unwrap().total_procedimentos
+    );
+}
+
+#[test]
+fn facetas_sao_disjuntivas_e_o_filtro_reduz() {
+    let Some((q, comp)) = consulta_real() else {
+        return;
+    };
+    let base = q
+        .buscar_pagina(comp, "consulta", &Filtros::default(), 1)
+        .unwrap();
+    assert_eq!(base.total_filtrado, base.total);
+    assert_eq!(
+        base.facetas.complexidade.iter().map(|f| f.n).sum::<usize>(),
+        base.total_filtrado
+    );
+    let uma = base
+        .facetas
+        .complexidade
+        .iter()
+        .max_by_key(|f| f.n)
+        .expect("faceta de complexidade");
+    let f = Filtros {
+        complexidade: vec![uma.valor.clone()],
+        ..Default::default()
+    };
+    let r = q.buscar_pagina(comp, "consulta", &f, 1).unwrap();
+    assert_eq!(r.total_filtrado, uma.n);
+    // a própria faceta não some nem muda ao ser marcada
+    assert_eq!(
+        r.facetas
+            .complexidade
+            .iter()
+            .map(|f| (f.valor.clone(), f.n))
+            .collect::<Vec<_>>(),
+        base.facetas
+            .complexidade
+            .iter()
+            .map(|f| (f.valor.clone(), f.n))
+            .collect::<Vec<_>>()
+    );
+    // as outras facetas contam só dentro do filtro
+    assert_eq!(
+        r.facetas.grupo.iter().map(|f| f.n).sum::<usize>(),
+        r.total_filtrado
+    );
+    assert!(r.facetas.grupo.iter().all(|g| g.rotulo.is_some()));
+}
+
+#[test]
+fn tipo_so_cid_zera_procedimentos_e_filtra_o_apoio() {
+    let Some((q, comp)) = consulta_real() else {
+        return;
+    };
+    let f = Filtros {
+        tipo: vec!["tb_cid".into()],
+        ..Default::default()
+    };
+    let r = q.buscar_pagina(comp, "I10", &f, 1).unwrap();
+    assert!(r.procedimentos.is_empty());
+    assert_eq!(r.total_filtrado, 0);
+    assert!(r.apoio.iter().all(|a| a.tabela == "tb_cid"));
+    assert!(!r.apoio.is_empty());
+    let sem = q
+        .buscar_pagina(comp, "I10", &Filtros::default(), 1)
+        .unwrap();
+    assert_eq!(r.total, sem.total, "o total sem filtro não muda");
+    assert!(sem.facetas.tipo.iter().any(|t| t.valor == "procedimento"));
+}
+
+#[test]
+fn exportar_traz_todos_os_filtrados() {
+    let Some((q, comp)) = consulta_real() else {
+        return;
+    };
+    let base = q.buscar_pagina(comp, "at", &Filtros::default(), 1).unwrap();
+    let ins = base
+        .facetas
+        .instrumento
+        .first()
+        .expect("faceta de instrumento")
+        .valor
+        .clone();
+    let f = Filtros {
+        instrumento: vec![ins],
+        ..Default::default()
+    };
+    let p = q.buscar_pagina(comp, "at", &f, 1).unwrap();
+    let todos = q.buscar_filtrado_todos(comp, "at", &f).unwrap();
+    assert_eq!(todos.procedimentos.len(), p.total_filtrado);
+    assert_eq!(todos.total_procedimentos, p.total_filtrado);
+}
+
+#[test]
+fn favoritos_restringem_por_codigos() {
+    let Some((q, comp)) = consulta_real() else {
+        return;
+    };
+    let um = q
+        .buscar_pagina(comp, "consulta", &Filtros::default(), 1)
+        .unwrap()
+        .procedimentos[0]
+        .codigo
+        .clone();
+    let f = Filtros {
+        codigos: Some(vec![um.clone()]),
+        ..Default::default()
+    };
+    let r = q.buscar_pagina(comp, "consulta", &f, 1).unwrap();
+    assert_eq!(
+        r.procedimentos
+            .iter()
+            .map(|p| p.codigo.clone())
+            .collect::<Vec<_>>(),
+        vec![um]
+    );
+    let vazio = Filtros {
+        codigos: Some(vec![]),
+        ..Default::default()
+    };
+    assert!(
+        q.buscar_pagina(comp, "consulta", &vazio, 1)
+            .unwrap()
+            .procedimentos
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_pagina_traz_os_mesmos_itens_da_busca_antiga() {
+    let Some((q, comp)) = consulta_real() else {
+        return;
+    };
+    let antiga = q.buscar(comp, "consulta").unwrap();
+    let nova = q
+        .buscar_pagina(comp, "consulta", &Filtros::default(), 1)
+        .unwrap();
+    for (a, n) in antiga.procedimentos.iter().zip(&nova.procedimentos) {
+        assert_eq!(a.codigo, n.codigo);
+        assert_eq!(a.nome, n.nome);
+        assert_eq!(a.valor_total_centavos, n.valor_total_centavos);
+        assert_eq!(a.instrumentos, n.instrumentos);
+        assert_eq!(a.forma_nome, n.forma_nome);
+        assert_eq!(a.na_descricao, n.na_descricao);
+    }
+    assert_eq!(antiga.apoio.len(), nova.apoio.len());
+}
+
+#[test]
+#[ignore = "mede o tempo; rode com --ignored --nocapture"]
+fn pagina_tempo() {
+    let Some((q, comp)) = consulta_real() else {
+        return;
+    };
+    // catálogo frio à parte, depois cada busca nova (sem cache) e a 2ª página dela
+    let t = Instant::now();
+    q.buscar_pagina(comp, "0101010010", &Filtros::default(), 1)
+        .unwrap();
+    eprintln!(
+        "PROVA página: catálogo frio + busca por código {:?}",
+        t.elapsed()
+    );
+    for texto in [
+        "a",
+        "at",
+        "co",
+        "consulta",
+        "hospital",
+        "cirurgia",
+        "i10",
+        "atendimento",
+    ] {
+        let t = Instant::now();
+        let p = q
+            .buscar_pagina(comp, texto, &Filtros::default(), 1)
+            .unwrap();
+        let primeira = t.elapsed();
+        let t = Instant::now();
+        q.buscar_pagina(comp, texto, &Filtros::default(), 2)
+            .unwrap();
+        eprintln!(
+            "PROVA página '{texto}': {} achados, 1ª {primeira:?}, 2ª {:?}",
+            p.total,
+            t.elapsed()
+        );
+    }
+}

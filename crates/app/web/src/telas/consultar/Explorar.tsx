@@ -1,14 +1,10 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { Botao } from "../../componentes/base/Botao";
-import { CampoBusca } from "../../componentes/base/CampoBusca";
 import { GrupoOpcoes } from "../../componentes/base/GrupoOpcoes";
 import { Menu } from "../../componentes/base/Menu";
-import { useBusca } from "../../dados/consultar";
 import { caminhoConsultar, ir, lerConsultar, substituir, useRota } from "../../shell/rotas";
-import { normalizarEntrada } from "../../util/campos";
 import { inteiro } from "../../util/formatos";
 import { achatar, cadeiaDe, segmentoDoCaminho, type Linha, type No, type TipoDeArvore } from "./modelo/arvore";
-import { linhasDoFiltroDeCid, linhasDoFiltroDeProcedimentos } from "./modelo/filtroArvore";
 import { MarcasDaLinha, useMapaDeMarcas } from "./MarcasDaLinha";
 import { Previa } from "./Previa";
 import { usarArvore } from "./usarArvore";
@@ -64,35 +60,18 @@ function ArvoreExplorar({ tipo, noDaRota }: { tipo: TipoDeArvore; noDaRota: stri
   const larga = useLarga();
   const [selecionado, setSelecionado] = useState<string | null>(noDaRota);
   const [foco, setFoco] = useState<string | null>(noDaRota);
-  const [texto, setTexto] = useState("");
   const marcasDe = useMapaDeMarcas(tipo === "cid" ? "cid" : "procedimento");
-  const [limiteDoFiltro, setLimiteDoFiltro] = useState(LIMITE_DO_FILTRO);
   const escrito = useRef<string | null>(noDaRota);
   const paraFocar = useRef<string | null>(null);
   const refs = useRef(new Map<string, HTMLElement>());
   const digitado = useRef({ texto: "", fim: 0 });
-
-  const textoComAtraso = useAtraso(texto, 250);
-  const filtrando = normalizarEntrada(textoComAtraso).length >= 2;
-  const busca = useBusca(filtrando ? textoComAtraso : "");
-  const resultado = filtrando ? busca.data : undefined;
 
   const acharNo = (id: string): No | null => {
     for (const e of arv.filhos.values()) if (e.estado === "ok") { const n = e.nos.find((x) => x.id === id); if (n) return n; }
     return null;
   };
 
-  // Procedimentos achados precisam do nome de grupos e subgrupos: vêm da árvore, carregados à parte.
-  useEffect(() => {
-    if (!resultado || tipo !== "procedimentos") return;
-    void arv.carregar(null);
-    for (const g of new Set(resultado.procedimentos.map((p) => p.codigo.slice(0, 2)))) void arv.carregar(g);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resultado, tipo]);
-
-  const linhas: Linha[] = filtrando
-    ? (resultado ? (tipo === "cid" ? linhasDoFiltroDeCid(resultado.apoio) : linhasDoFiltroDeProcedimentos(resultado.procedimentos, (id) => acharNo(id)?.nome ?? null, limiteDoFiltro)) : [])
-    : achatar(arv.filhos, arv.abertos, arv.limites);
+  const linhas: Linha[] = achatar(arv.filhos, arv.abertos, arv.limites);
   const nos = linhas.filter((l): l is Extract<Linha, { tipo: "no" }> => l.tipo === "no");
   const noPor = (id: string): No | null => nos.find((l) => l.no.id === id)?.no ?? acharNo(id);
   const focoEfetivo = foco && nos.some((l) => l.no.id === foco) ? foco : nos[0]?.no.id ?? null;
@@ -101,7 +80,7 @@ function ArvoreExplorar({ tipo, noDaRota }: { tipo: TipoDeArvore; noDaRota: stri
     setSelecionado(id);
     setFoco(id);
     escrito.current = id;
-    substituir("consultar", ...caminhoConsultar({ tela: "explorar", arvore: tipo, no: id }));
+    substituir("consultar", ...caminhoConsultar({ tela: "arvore", arvore: tipo, no: id }));
   };
   const mover = (id: string) => { paraFocar.current = id; selecionar(id); };
 
@@ -111,7 +90,7 @@ function ArvoreExplorar({ tipo, noDaRota }: { tipo: TipoDeArvore; noDaRota: stri
   }, [noDaRota]);
   const existe = selecionado ? nos.some((l) => l.no.id === selecionado) : false;
   // Só abre a cadeia quando o item escolhido não está à vista: assim fechar um nó à mão não é desfeito.
-  useEffect(() => { if (selecionado && !existe && !filtrando) void arv.revelar(selecionado); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [arv.revelar, selecionado, filtrando]);
+  useEffect(() => { if (selecionado && !existe) void arv.revelar(selecionado); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [arv.revelar, selecionado]);
 
   // O foco do teclado vai para a linha escolhida depois que ela existe na tela.
   useEffect(() => {
@@ -122,7 +101,7 @@ function ArvoreExplorar({ tipo, noDaRota }: { tipo: TipoDeArvore; noDaRota: stri
   useEffect(() => { if (selecionado && existe) refs.current.get(selecionado)?.scrollIntoView?.({ block: "nearest" }); }, [selecionado, existe]);
 
   const alternar = (l: Extract<Linha, { tipo: "no" }>) => {
-    if (!l.expansivel || filtrando) return;
+    if (!l.expansivel) return;
     if (l.aberto) arv.fechar(l.no.id); else arv.abrir(l.no.id);
   };
   const ativar = (l: Extract<Linha, { tipo: "no" }>) => {
@@ -145,18 +124,16 @@ function ArvoreExplorar({ tipo, noDaRota }: { tipo: TipoDeArvore; noDaRota: stri
       case "Home": ir_(0); break;
       case "End": ir_(nos.length - 1); break;
       case "ArrowRight":
-        if (filtrando) break;
         if (atual.expansivel && !atual.aberto) arv.abrir(atual.no.id);
         else if (atual.aberto && nos[i + 1]?.no.pai === atual.no.id) ir_(i + 1);
         break;
       case "ArrowLeft":
-        if (filtrando) break;
         if (atual.aberto) arv.fechar(atual.no.id);
         else if (atual.no.pai !== null && nos.some((l) => l.no.id === atual.no.pai)) mover(atual.no.pai);
         break;
       case "Enter": ativar(atual); break;
       case "*":
-        if (!filtrando) arv.abrirVarios(nos.filter((l) => l.no.pai === atual.no.pai && l.expansivel).map((l) => l.no.id));
+        arv.abrirVarios(nos.filter((l) => l.no.pai === atual.no.pai && l.expansivel).map((l) => l.no.id));
         break;
       default: {
         if (e.key.length !== 1 || e.key === " ") { tratada = false; break; }
@@ -182,14 +159,6 @@ function ArvoreExplorar({ tipo, noDaRota }: { tipo: TipoDeArvore; noDaRota: stri
   if (pronta) ultima.current = pronta;
   if (!selecionado) ultima.current = null;
   const previa = pronta ?? ultima.current;
-  const totalDeProcedimentos = (() => { const raiz = arv.filhos.get(""); return raiz?.estado === "ok" ? raiz.nos.reduce((s, n) => s + (n.contagem ?? 0), 0) : null; })();
-
-  const status = (() => {
-    if (!filtrando || !resultado) return null;
-    if (tipo === "cid") { const n = resultado.apoio.filter((a) => a.tabela === "tb_cid").length; return `${inteiro(n)} ${n === 1 ? "código" : "códigos"}`; }
-    const n = resultado.total_procedimentos;
-    return totalDeProcedimentos ? `${inteiro(n)} de ${inteiro(totalDeProcedimentos)} procedimentos` : `${inteiro(n)} ${n === 1 ? "procedimento" : "procedimentos"}`;
-  })();
 
   const renderNo = (l: Extract<Linha, { tipo: "no" }>) => {
     const { no } = l;
@@ -237,7 +206,7 @@ function ArvoreExplorar({ tipo, noDaRota }: { tipo: TipoDeArvore; noDaRota: stri
     }
     return (
       <div key={`m-${l.pai}`} role="treeitem" aria-level={l.profundidade + 1} aria-label="Mais itens" className="arvc__espera" style={recuo}>
-        <Botao variante="discreto" onPress={() => (l.pai === "filtro" ? setLimiteDoFiltro((n) => n + LIMITE_DO_FILTRO) : arv.maisFilhos(l.pai, LIMITE_DO_FILTRO))}>Mostrar mais {inteiro(l.restantes)}</Botao>
+        <Botao variante="discreto" onPress={() => arv.maisFilhos(l.pai, LIMITE_DO_FILTRO)}>Mostrar mais {inteiro(l.restantes)}</Botao>
       </div>
     );
   };
@@ -246,13 +215,10 @@ function ArvoreExplorar({ tipo, noDaRota }: { tipo: TipoDeArvore; noDaRota: stri
     <div className={larga ? "explorar__corpo explorar__corpo--larga" : "explorar__corpo"}>
       <div className="explorar__arvore">
         <div className="explorar__ferramentas">
-          <div className="explorar__filtro"><CampoBusca rotulo="Filtrar a árvore" placeholder="Filtrar por código ou nome" value={texto} onChange={(v) => { setTexto(v); setLimiteDoFiltro(LIMITE_DO_FILTRO); }} /></div>
-          {status ? <span role="status" className="explorar__status">{status}</span> : !filtrando && (
-            <div className="explorar__acoes">
-              <Botao onPress={arv.recolher}>Recolher tudo</Botao>
-              <Menu rotulo="Abrir nível" itens={NIVEIS[tipo]} aoEscolher={(id) => void arv.abrirAte(Number(id))}>Abrir nível</Menu>
-            </div>
-          )}
+          <div className="explorar__acoes">
+            <Botao onPress={arv.recolher}>Recolher tudo</Botao>
+            <Menu rotulo="Abrir nível" itens={NIVEIS[tipo]} aoEscolher={(id) => void arv.abrirAte(Number(id))}>Abrir nível</Menu>
+          </div>
         </div>
         <div className="arvc">
           {caminho.length > 0 && (
@@ -265,9 +231,8 @@ function ArvoreExplorar({ tipo, noDaRota }: { tipo: TipoDeArvore; noDaRota: stri
               ))}
             </nav>
           )}
-          <div role="tree" aria-label={tipo === "cid" ? "CID" : "Procedimentos"} aria-busy={filtrando && !resultado} onKeyDown={aoTeclar} className="arvc__arvore">
+          <div role="tree" aria-label={tipo === "cid" ? "CID" : "Procedimentos"} onKeyDown={aoTeclar} className="arvc__arvore">
             {linhas.map(renderLinha)}
-            {filtrando && resultado && linhas.length === 0 && <p className="arvc__vazio">Nada encontrado.</p>}
           </div>
         </div>
       </div>
@@ -281,13 +246,13 @@ function ArvoreExplorar({ tipo, noDaRota }: { tipo: TipoDeArvore; noDaRota: stri
 export function Explorar() {
   const { resto } = useRota();
   const rota = lerConsultar(resto);
-  const tipo: TipoDeArvore = rota.tela === "explorar" ? rota.arvore : "procedimentos";
-  const no = rota.tela === "explorar" ? rota.no : null;
+  const tipo: TipoDeArvore = rota.tela === "arvore" ? rota.arvore : "procedimentos";
+  const no = rota.tela === "arvore" ? rota.no : null;
   return (
     <div className="explorar">
       <div className="explorar__tipo consultar__filtro">
         <GrupoOpcoes rotulo="Árvore" opcoes={OPCOES} value={tipo} orientation="horizontal"
-          onChange={(v) => ir("consultar", ...caminhoConsultar({ tela: "explorar", arvore: v === "cid" ? "cid" : "procedimentos", no: null }))} />
+          onChange={(v) => ir("consultar", ...caminhoConsultar({ tela: "arvore", arvore: v === "cid" ? "cid" : "procedimentos", no: null }))} />
       </div>
       <ArvoreExplorar key={tipo} tipo={tipo} noDaRota={no} />
     </div>

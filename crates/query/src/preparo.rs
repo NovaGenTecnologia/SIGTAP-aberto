@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Muda quando a forma das estruturas derivadas muda (força refazer).
-const VERSAO_CONSULTA: &str = "1";
+const VERSAO_CONSULTA: &str = "2";
 
 fn hex8(texto: &str) -> String {
     Sha256::digest(texto.as_bytes())
@@ -124,6 +124,17 @@ pub fn preparar(conn: &Connection, refs: &[Referencia]) -> Result<(), ErroConsul
         tx.execute(
             &format!("INSERT INTO sa_q_busca(texto, tabela, sa_id) SELECT {ni}, ?1, sa_id FROM {ti} WHERE {ni} IS NOT NULL"),
             [t],
+        )?;
+    }
+    // Descrição oficial do procedimento (texto longo): entra no índice como `tb_descricao`.
+    if cols
+        .get("tb_descricao")
+        .is_some_and(|c| c.contains("ds_procedimento"))
+    {
+        tx.execute(
+            "INSERT INTO sa_q_busca(texto, tabela, sa_id) SELECT ds_procedimento, 'tb_descricao', sa_id
+             FROM tb_descricao WHERE ds_procedimento IS NOT NULL",
+            [],
         )?;
     }
     tx.execute(

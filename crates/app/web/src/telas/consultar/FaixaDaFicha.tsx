@@ -70,7 +70,7 @@ export function FaixaDaFicha({ ficha, resumo, refTitulo }: { ficha: Ficha; resum
         {ficha.estrutura.map((n, i) => (
           <span key={n.codigo} className="ficha__trilha-item">
             {i > 0 && <span aria-hidden="true" className="ficha__separador">›</span>}
-            <Botao variante="discreto" onPress={() => ir("consultar", "explorar", "procedimentos", n.codigo)}>{`${n.codigo} ${n.nome ?? ""}`.trim()}</Botao>
+            <Botao variante="discreto" onPress={() => ir("consultar", "arvore", "procedimentos", n.codigo)}>{`${n.codigo} ${n.nome ?? ""}`.trim()}</Botao>
           </span>
         ))}
       </nav>

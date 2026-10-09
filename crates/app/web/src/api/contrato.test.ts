@@ -6,6 +6,9 @@ import * as c from "./comandos";
 
 beforeEach(() => vi.mocked(chamar).mockClear());
 
+const FILTROS_VAZIOS = { tipo: [], complexidade: [], instrumento: [], grupo: [], forma: [], codigos: null };
+const FILTROS_CHEIOS = { tipo: ["procedimento"], complexidade: ["2"], instrumento: ["BPA-C"], grupo: ["03"], forma: ["030101"], codigos: ["0301010072"] };
+
 const casos: [string, () => Promise<unknown>, string, Record<string, unknown>?][] = [
   ["ofertas sem forçar", () => c.ofertas(), "ofertas", { deNovo: false }],
   ["ofertas de novo", () => c.ofertas(true), "ofertas", { deNovo: true }],
@@ -39,6 +42,12 @@ const casos: [string, () => Promise<unknown>, string, Record<string, unknown>?][
   ["CNES apagar", () => c.cnesApagar("MS"), "cnes_apagar", { uf: "MS" }],
   ["CNES verificar", () => c.cnesVerificar(), "cnes_verificar", undefined],
   ["buscar todos", () => c.buscarTodos("consulta", "202609"), "buscar_todos", { competencia: "202609", texto: "consulta" }],
+  ["busca paginada", () => c.buscarPagina("consulta", FILTROS_VAZIOS, 2, "202609"), "buscar_pagina",
+    { competencia: "202609", texto: "consulta", filtros: FILTROS_VAZIOS, pagina: 2 }],
+  ["busca paginada sem competência", () => c.buscarPagina("consulta", FILTROS_CHEIOS, 1), "buscar_pagina",
+    { competencia: null, texto: "consulta", filtros: FILTROS_CHEIOS, pagina: 1 }],
+  ["busca para exportar", () => c.buscarExportar("consulta", FILTROS_CHEIOS, "202609"), "buscar_exportar",
+    { competencia: "202609", texto: "consulta", filtros: FILTROS_CHEIOS }],
   ["CNES buscar", () => c.cnesBuscar("MS", "hospital"), "cnes_buscar", { uf: "MS", texto: "hospital" }],
   ["produção situação", () => c.producaoSituacao(), "producao_situacao", undefined],
   ["produção plano", () => c.producaoPlano("SP", 12), "producao_plano", { uf: "SP", meses: 12 }],

@@ -34,7 +34,7 @@ export function CarregandoComEspera({ rotulo, semIndicador = false }: { rotulo: 
   const { segundos, contador, aviso } = useEspera(true);
   return (
     <div className="carregando carregando--espera" role="status" aria-busy="true" aria-label={rotulo}>
-      {!semIndicador && <Marca variante="simbolo" animacao="carregando" altura={24} decorativa />}
+      {!semIndicador && <Marca variante="simbolo" animacao="carregando" altura={96} decorativa />}
       <span>{rotulo}</span>
       {contador && <span className="num carregando__tempo">{segundos} s</span>}
       {aviso && <span className="carregando__aviso">Ainda em andamento</span>}

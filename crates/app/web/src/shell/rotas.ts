@@ -40,9 +40,12 @@ export function useRota(): Rota {
 
 // ---- Consultar: o estado da tela mora na rota, para o Voltar restaurar tudo ----
 export type AbaFicha = "resumo" | "exigencias" | "historico";
+/** Filtros da busca na rota; `fav` restringe aos favoritos. */
+export interface FiltrosNaRota { tipo: string[]; complexidade: string[]; instrumento: string[]; grupo: string[]; forma: string[]; fav: boolean }
+export const FILTROS_NA_ROTA_VAZIOS: FiltrosNaRota = { tipo: [], complexidade: [], instrumento: [], grupo: [], forma: [], fav: false };
 export type TelaConsultar =
-  | { tela: "buscar"; texto: string }
-  | { tela: "explorar"; arvore: "procedimentos" | "cid"; no: string | null }
+  | { tela: "arvore"; arvore: "procedimentos" | "cid"; no: string | null }
+  | { tela: "resultados"; texto: string; filtros: FiltrosNaRota; pagina: number }
   | { tela: "ficha"; codigo: string; aba: AbaFicha; secao?: string };
 
 const ABAS: AbaFicha[] = ["resumo", "exigencias", "historico"];
@@ -57,28 +60,66 @@ function codigoDe(segmento: string): string | null {
   return /^\d{10}$/.test(limpo) && /^[\d.-]+$/.test(segmento) ? limpo : null;
 }
 
+/** Parâmetros `?a=x,y&b=1` de um segmento do endereço: valores em lista, cada item decodificado. */
+function listasDaQuery(consulta: string): Map<string, string[]> {
+  const mapa = new Map<string, string[]>();
+  for (const par of consulta.split("&").filter(Boolean)) {
+    const i = par.indexOf("=");
+    const chave = i < 0 ? par : par.slice(0, i);
+    const bruto = i < 0 ? "" : par.slice(i + 1);
+    mapa.set(chave, bruto.split(",").filter(Boolean).map(decodificar));
+  }
+  return mapa;
+}
+
+const ARVORE_PADRAO = { tela: "arvore", arvore: "procedimentos", no: null } as const;
+
 export function lerConsultar(resto: string[]): TelaConsultar {
   const [primeiro, segundo, terceiro] = resto;
-  if (primeiro === "q") return { tela: "buscar", texto: decodificar(segundo ?? "") };
-  if (primeiro === "explorar") {
+  if (primeiro === "q") {
+    const corte = (segundo ?? "").indexOf("?");
+    const textoBruto = corte < 0 ? (segundo ?? "") : (segundo ?? "").slice(0, corte);
+    const texto = decodificar(textoBruto);
+    if (!texto.trim()) return { ...ARVORE_PADRAO };
+    const q = listasDaQuery(corte < 0 ? "" : (segundo ?? "").slice(corte + 1));
+    const lista = (k: string) => q.get(k) ?? [];
+    const pagina = Number.parseInt(q.get("pg")?.[0] ?? "", 10);
+    return {
+      tela: "resultados", texto,
+      filtros: { tipo: lista("tipo"), complexidade: lista("cx"), instrumento: lista("ins"), grupo: lista("grupo"), forma: lista("forma"), fav: q.get("fav")?.[0] === "1" },
+      pagina: Number.isInteger(pagina) && pagina > 1 ? pagina : 1,
+    };
+  }
+  if (primeiro === "arvore" || primeiro === "explorar") {
     const arvore = segundo === "cid" ? "cid" : "procedimentos";
     const no = segundo === "cid" || segundo === "procedimentos" ? terceiro : segundo;
-    return { tela: "explorar", arvore, no: no ? decodificar(no) : null };
+    return { tela: "arvore", arvore, no: no ? decodificar(no) : null };
   }
   const codigo = primeiro ? codigoDe(primeiro) : null;
   if (codigo) {
     const aba = ABAS.find((a) => a === segundo) ?? "resumo";
     return terceiro && aba !== "resumo" ? { tela: "ficha", codigo, aba, secao: decodificar(terceiro) } : { tela: "ficha", codigo, aba };
   }
-  return { tela: "buscar", texto: "" };
+  return { ...ARVORE_PADRAO };
 }
 
-/** Segmentos para `ir("consultar", ...caminhoConsultar(t))`. */
+/** Segmentos para `ir("consultar", ...caminhoConsultar(t))`. Filtros vazios e a página 1 não aparecem. */
 export function caminhoConsultar(t: TelaConsultar): string[] {
-  if (t.tela === "buscar") return t.texto.trim() ? ["q", encodeURIComponent(t.texto.trim())] : [];
-  if (t.tela === "explorar") {
-    if (t.arvore === "cid") return t.no ? ["explorar", "cid", encodeURIComponent(t.no)] : ["explorar", "cid"];
-    return t.no ? ["explorar", "procedimentos", encodeURIComponent(t.no)] : ["explorar"];
+  if (t.tela === "resultados") {
+    const texto = t.texto.trim();
+    if (!texto) return [];
+    const f = t.filtros;
+    const lista = (k: string, v: string[]) => (v.length ? [`${k}=${v.map(encodeURIComponent).join(",")}`] : []);
+    const query = [
+      ...lista("tipo", f.tipo), ...lista("cx", f.complexidade), ...lista("ins", f.instrumento),
+      ...lista("grupo", f.grupo), ...lista("forma", f.forma),
+      ...(f.fav ? ["fav=1"] : []), ...(t.pagina > 1 ? [`pg=${t.pagina}`] : []),
+    ];
+    return ["q", encodeURIComponent(texto) + (query.length ? `?${query.join("&")}` : "")];
+  }
+  if (t.tela === "arvore") {
+    if (t.arvore === "cid") return t.no ? ["arvore", "cid", encodeURIComponent(t.no)] : ["arvore", "cid"];
+    return t.no ? ["arvore", "procedimentos", encodeURIComponent(t.no)] : [];
   }
   if (t.aba === "resumo") return [t.codigo];
   return t.secao ? [t.codigo, t.aba, encodeURIComponent(t.secao)] : [t.codigo, t.aba];

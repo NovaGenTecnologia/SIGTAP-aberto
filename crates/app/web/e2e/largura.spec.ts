@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const TAMANHOS = [[1024, 640], [1366, 768], [1600, 900], [1920, 1080], [2560, 1440]] as const;
-const ROTAS = ["painel", "painel/producao", "painel/producao/origem-do-valor", "painel/producao/procedimentos", "mudancas", "dados", "consultar"];
+const ROTAS = ["painel", "painel/producao", "painel/producao/origem-do-valor", "painel/producao/procedimentos", "mudancas", "dados", "consultar", "consultar/q/consulta"];
 
 async function pronto(page: Page, rota: string) {
   await page.goto(`/#/${rota}`);
