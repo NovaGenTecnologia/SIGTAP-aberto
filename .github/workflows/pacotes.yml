@@ -98,7 +98,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev librsvg2-dev patchelf file
       - name: Rust (versão de rust-toolchain.toml)
         run: rustup show
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
       - name: Compilar e montar o AppImage
@@ -136,7 +136,7 @@ jobs:
         run: |
           rustup show
           rustup target add aarch64-apple-darwin x86_64-apple-darwin
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
       - name: Compilar e montar o app universal
