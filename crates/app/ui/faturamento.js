@@ -223,6 +223,7 @@ function tabelaQuantidadesAtipicas(a) {
 
 /** Por que o SIA não pagou: a diferença dividida pelo motivo oficial. Teto não é erro do faturamento. */
 function tabelaMotivosNaoPago(a) {
+  if (a.motivos && a.motivos.ausente) a = { ...a, motivos: [] };
   if ((!a.motivos || !a.motivos.length) && a.valor_apresentado_centavos <= a.valor_aprovado_centavos) return null;
   if (!a.motivos || !a.motivos.length) return el("p", { class: "quieto pequeno", text: "Sem divisão por motivo: os meses desta unidade foram baixados antes do esquema novo. Baixe a produção de novo (e ligue \"Guardar os arquivos baixados\" para não precisar baixar outra vez)." });
   const teto = a.motivos.filter((m) => "MONLTP".includes(m.codigo)).reduce((s, m) => s + m.valor_apresentado_centavos - m.valor_aprovado_centavos, 0);
@@ -320,17 +321,17 @@ async function blocosFaturamentoUnidade(corpo, u) {
     abc("SIA", r.abc.sia, "Aprovados"), abc("SIH", r.abc.sih, "AIH")));
 
   // Instrumento de registro
-  if (r.instrumentos) sec.append(blocoInstrumentos(r.instrumentos));
+  if (r.instrumentos && !r.instrumentos.ausente) sec.append(blocoInstrumentos(r.instrumentos));
   // Regra contratual e complementos
-  if (r.perfil) sec.append(blocoPerfil(r.perfil));
+  if (r.perfil && !r.perfil.ausente) sec.append(blocoPerfil(r.perfil));
   // Composição do valor das AIH
-  if (r.composicao_aih) sec.append(blocoComposicaoAih(r.composicao_aih));
+  if (r.composicao_aih && !r.composicao_aih.ausente) sec.append(blocoComposicaoAih(r.composicao_aih));
   // Serviço executado × cadastro do CNES
-  if (r.servicos) sec.append(blocoServicos(r.servicos));
+  if (r.servicos && !r.servicos.ausente) sec.append(blocoServicos(r.servicos));
   // Produção de meses anteriores apresentada agora
-  if (r.reapresentacao) sec.append(blocoReapresentacao(r.reapresentacao));
+  if (r.reapresentacao && !r.reapresentacao.ausente) sec.append(blocoReapresentacao(r.reapresentacao));
   // Permanência média real × SIGTAP
-  if (r.permanencia) sec.append(blocoPermanencia(r.permanencia));
+  if (r.permanencia && !r.permanencia.ausente) sec.append(blocoPermanencia(r.permanencia));
   // Apresentado × aprovado
   if (r.apresentado) {
     const a = r.apresentado;

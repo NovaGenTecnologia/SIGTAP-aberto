@@ -37,13 +37,15 @@ Comandos:
   buscar <texto> [--competencia AAAAMM]
                                   busca por código, nome, CID, CBO, habilitação..., em JSON
   buscar-todos <texto> [--competencia AAAAMM]
+  buscar-pagina <texto> [--pagina N] [--filtros JSON] [--competencia AAAAMM]
+  buscar-exportar <texto> [--filtros JSON] [--competencia AAAAMM]
                                   a mesma busca, sem o limite de procedimentos
   arvore [nó] [--competencia AAAAMM]
   arvore-cid [letra|categoria] [--competencia AAAAMM]
   ligados <tabela> <código> [--competencia AAAAMM]   (ex.: ligados tb_cid T742)
                                   grupos, ou filhos do nó (2, 4 ou 6 dígitos), em JSON
   historico <código>              linha do tempo do procedimento, em JSON
-  mudou [TABELA] [--de AAAAMM] [--competencia AAAAMM] [--desde N]
+  mudou [TABELA] [--de AAAAMM] [--competencia AAAAMM] [--desde N] [--unidade [--so-afeta]]
                                   o que mudou da competência anterior (ou de --de), em JSON;
                                   com TABELA, só ela, a partir do item N (padrão 0)
   cnes-competencias <UF>          competências do CNES no FTP oficial para a UF
@@ -76,11 +78,19 @@ Comandos:
   producao-apagar-guardados <UF>  apaga os arquivos guardados da UF (o banco de totais fica)
   producao <código> [--uf UF]     quem produziu o procedimento (SIA e SIH) na UF, em JSON
   producao-unidade [UF CNES]      o que a unidade produziu e o que foi rejeitado, em JSON
+  producao-procedimentos [UF CNES] --sistema sia|sih [--q TEXTO] [--classe A|B|C]
+                [--ordem valor|quantidade] [--desde N]
+                                  todos os procedimentos da unidade por valor, com a classe da curva ABC,
+                                  de 50 em 50, em JSON
   faturamento-unidade [UF CNES]   rejeições por 100 AIH, tendência, curva ABC, apresentado x aprovado,
                                   financiamento, leitos e comparação com pares, em JSON
   faturamento-procedimentos [UF CNES]
                                   procedimentos da unidade: produz e pode, pode e não produz, produz sem
                                   aptidão pelo cadastro (com o motivo); habilitações e produção, em JSON
+  aptidao-unidade [UF CNES] [--grupo risco|oportunidade|ordem] [--q TEXTO] [--hab CÓDIGO]
+                [--desde N] [--so-produzidos-na-uf]
+                                  Aptidão da unidade por prioridade (Risco, Oportunidade, Em ordem): resumo,
+                                  uma página de 50 de um grupo e as habilitações, em JSON
   faturamento <código> [--uf UF]  série mensal, tendência, concentração, financiamento e mudanças de
                                   valor do procedimento na UF, em JSON
   faturamento-impacto [--de AAAAMM] [--competencia AAAAMM]
@@ -114,6 +124,17 @@ struct Opcoes {
     meses: usize,
     confirmar: bool,
     uf: Option<String>,
+    unidade: bool,
+    so_afeta: bool,
+    grupo: Option<String>,
+    busca: Option<String>,
+    hab: Option<String>,
+    so_produzidos: bool,
+    sistema: Option<String>,
+    classe: Option<String>,
+    ordem: Option<String>,
+    pagina: usize,
+    filtros: Option<String>,
 }
 
 fn pasta_do_programa() -> PathBuf {
@@ -141,6 +162,17 @@ fn ler_opcoes(args: &[String]) -> Result<Opcoes, String> {
         meses: 0,
         confirmar: false,
         uf: None,
+        unidade: false,
+        so_afeta: false,
+        grupo: None,
+        busca: None,
+        hab: None,
+        so_produzidos: false,
+        sistema: None,
+        classe: None,
+        ordem: None,
+        pagina: 1,
+        filtros: None,
     };
     let mut i = 0;
     let valor = |i: usize, nome: &str| -> Result<String, String> {
@@ -203,9 +235,46 @@ fn ler_opcoes(args: &[String]) -> Result<Opcoes, String> {
                 o.uf = Some(valor(i, "--uf")?);
                 i += 1;
             }
+            "--grupo" => {
+                o.grupo = Some(valor(i, "--grupo")?);
+                i += 1;
+            }
+            "--q" => {
+                o.busca = Some(valor(i, "--q")?);
+                i += 1;
+            }
+            "--sistema" => {
+                o.sistema = Some(valor(i, "--sistema")?);
+                i += 1;
+            }
+            "--classe" => {
+                o.classe = Some(valor(i, "--classe")?);
+                i += 1;
+            }
+            "--ordem" => {
+                o.ordem = Some(valor(i, "--ordem")?);
+                i += 1;
+            }
+            "--pagina" => {
+                o.pagina = valor(i, "--pagina")?
+                    .parse()
+                    .map_err(|_| "--pagina espera um número".to_string())?;
+                i += 1;
+            }
+            "--filtros" => {
+                o.filtros = Some(valor(i, "--filtros")?);
+                i += 1;
+            }
+            "--hab" => {
+                o.hab = Some(valor(i, "--hab")?);
+                i += 1;
+            }
+            "--so-produzidos-na-uf" => o.so_produzidos = true,
             "--confirmar" => o.confirmar = true,
             "--ultima" => o.ultima = true,
             "--todas" => o.todas = true,
+            "--unidade" => o.unidade = true,
+            "--so-afeta" => o.so_afeta = true,
             x if x.starts_with("--") => {
                 return Err(format!(
                     "opção desconhecida {x}. Veja: sigtap-aberto-cli ajuda"
@@ -375,6 +444,25 @@ fn cmd_consulta(cmd: &str, o: &Opcoes) -> Result<(), String> {
         "buscar-todos" => {
             exigir("o texto da busca")?;
             serde_json::to_string_pretty(&q.buscar_todos(comp, &livre).map_err(|e| e.to_string())?)
+        }
+        "buscar-pagina" | "buscar-exportar" => {
+            exigir("o texto da busca")?;
+            let filtros: sa_query::busca::Filtros = match &o.filtros {
+                Some(j) => serde_json::from_str(j)
+                    .map_err(|e| format!("--filtros não é um JSON válido: {e}"))?,
+                None => sa_query::busca::Filtros::default(),
+            };
+            if cmd == "buscar-pagina" {
+                serde_json::to_string_pretty(
+                    &q.buscar_pagina(comp, &livre, &filtros, o.pagina)
+                        .map_err(|e| e.to_string())?,
+                )
+            } else {
+                serde_json::to_string_pretty(
+                    &q.buscar_filtrado_todos(comp, &livre, &filtros)
+                        .map_err(|e| e.to_string())?,
+                )
+            }
         }
         "arvore" => {
             let pai = if livre.is_empty() { None } else { Some(livre.as_str()) };
@@ -796,6 +884,24 @@ fn cmd_unidade(cmd: &str, o: &Opcoes) -> Result<(), String> {
                 .map(|(u, n)| (u.as_str(), n.as_str()));
             mostrar(un::producao::producao_da_unidade(&p, &q, c, alvo)?)
         }
+        "producao-procedimentos" => {
+            let (q, c) = sigtap()?;
+            let alvo = livres
+                .first()
+                .zip(livres.get(1))
+                .map(|(u, n)| (u.as_str(), n.as_str()));
+            mostrar(un::faturamento::procedimentos_da_unidade(
+                &p,
+                &q,
+                c,
+                alvo,
+                o.sistema.as_deref().unwrap_or(""),
+                o.busca.as_deref(),
+                o.classe.as_deref(),
+                o.ordem.as_deref(),
+                o.desde.unwrap_or(0),
+            )?)
+        }
         "faturamento-unidade" | "faturamento-procedimentos" => {
             let (q, c) = sigtap()?;
             let alvo = livres
@@ -807,6 +913,24 @@ fn cmd_unidade(cmd: &str, o: &Opcoes) -> Result<(), String> {
             } else {
                 un::faturamento::procedimentos_com_producao(&p, &q, c, alvo)?
             })
+        }
+        "aptidao-unidade" => {
+            let (q, c) = sigtap()?;
+            let alvo = livres
+                .first()
+                .zip(livres.get(1))
+                .map(|(u, n)| (u.as_str(), n.as_str()));
+            mostrar(un::faturamento::aptidao_da_unidade(
+                &p,
+                &q,
+                c,
+                alvo,
+                o.grupo.as_deref(),
+                o.busca.as_deref(),
+                o.hab.as_deref(),
+                o.desde.unwrap_or(0),
+                o.so_produzidos,
+            )?)
         }
         "faturamento" => {
             let (q, c) = sigtap()?;
@@ -824,6 +948,34 @@ fn cmd_unidade(cmd: &str, o: &Opcoes) -> Result<(), String> {
                 &p, &q, o.de, c, None,
             )?)
         }
+        "mudou" => {
+            let (q, para) = sigtap()?;
+            let de = match o.de {
+                Some(d) => d,
+                None => {
+                    let cs = q.competencias().map_err(|e| e.to_string())?;
+                    let pos = cs
+                        .iter()
+                        .position(|c| c.competencia == para.to_string())
+                        .ok_or_else(|| format!("competência {para} não carregada"))?;
+                    if pos == 0 {
+                        return Err(format!(
+                            "não há competência carregada antes de {para}; use --de"
+                        ));
+                    }
+                    Competencia::de_texto(&cs[pos - 1].competencia).map_err(|e| e.to_string())?
+                }
+            };
+            mostrar(un::faturamento::mudancas_da_unidade(
+                &p,
+                &q,
+                de,
+                para,
+                livres.first().map(String::as_str),
+                o.desde.unwrap_or(0),
+                o.so_afeta,
+            )?)
+        }
         "faturamento-painel" => {
             let (q, c) = sigtap()?;
             mostrar(un::faturamento::painel_do_faturista(&p, &q, c)?)
@@ -837,6 +989,20 @@ fn cmd_unidade(cmd: &str, o: &Opcoes) -> Result<(), String> {
             arg(0, "a UF")?,
             arg(1, "o número do CNES")?,
         )?),
+        "terceiro-adicionar" => mostrar(un::adicionar_terceiro(
+            &p,
+            arg(0, "a UF da unidade")?,
+            arg(1, "o CNES da unidade")?,
+            arg(2, "a UF do terceiro")?,
+            arg(3, "o CNES do terceiro")?,
+        )?),
+        "terceiro-remover" => un::remover_terceiro(
+            &p,
+            arg(0, "a UF da unidade")?,
+            arg(1, "o CNES da unidade")?,
+            arg(2, "a UF do terceiro")?,
+            arg(3, "o CNES do terceiro")?,
+        ),
         "unidade-limpar" => un::limpar_minha(&p),
         "unidade-remover" => un::remover_unidade(&p, arg(0, "a UF")?, arg(1, "o número do CNES")?),
         "unidade" => {
@@ -952,8 +1118,9 @@ fn main() -> ExitCode {
         "baixar" => cmd_baixar(&o),
         "importar" => cmd_importar(&o),
         "territorio" => cmd_territorio(&o),
-        "ficha" | "buscar" | "buscar-todos" | "arvore" | "arvore-cid" | "ligados" | "historico"
-        | "mudou" => cmd_consulta(cmd.as_str(), &o),
+        "mudou" if o.unidade => cmd_unidade("mudou", &o),
+        "ficha" | "buscar" | "buscar-todos" | "buscar-pagina" | "buscar-exportar" | "arvore"
+        | "arvore-cid" | "ligados" | "historico" | "mudou" => cmd_consulta(cmd.as_str(), &o),
         "cnes-competencias"
         | "cnes-baixar"
         | "cnes-importar"
@@ -970,13 +1137,17 @@ fn main() -> ExitCode {
         | "producao-apagar-guardados"
         | "producao"
         | "producao-unidade"
+        | "producao-procedimentos"
         | "faturamento-unidade"
         | "faturamento-procedimentos"
+        | "aptidao-unidade"
         | "faturamento"
         | "faturamento-impacto"
         | "faturamento-painel"
         | "unidade-definir"
         | "unidade-limpar"
+        | "terceiro-adicionar"
+        | "terceiro-remover"
         | "unidade-remover"
         | "unidade"
         | "marcadores"

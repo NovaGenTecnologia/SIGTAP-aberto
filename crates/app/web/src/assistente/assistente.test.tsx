@@ -153,6 +153,16 @@ test("cancelar a escolha da pasta não importa nada", async () => {
   expect(m.importar).not.toHaveBeenCalled();
 });
 
+test("depois de cancelar com competências já carregadas, diz quantas ficaram e o que falta", async () => {
+  m.situacao.mockResolvedValue({ ...VAZIA, competencias: [COMP, { ...COMP, competencia: "202608", rotulo: "08/2026" }] });
+  const u = userEvent.setup();
+  montar();
+  await baixarSoOUltimo(u);
+  act(() => aoFim({ fonte: "sigtap", tarefa: 1, ok: false, cancelada: true, mensagem: "cancelado" }));
+  expect(await screen.findByText(/Cancelado\. 2 competências carregadas; falta o território\./)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Baixar" })).toBeInTheDocument();
+});
+
 test("falha no download mostra a causa, oferece tentar de novo e mantém a escolha da pasta", async () => {
   const u = userEvent.setup();
   montar();

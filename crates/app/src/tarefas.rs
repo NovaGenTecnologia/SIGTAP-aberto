@@ -18,6 +18,10 @@ pub enum Fonte {
 
 const FONTES: [Fonte; 3] = [Fonte::Sigtap, Fonte::Cnes, Fonte::Producao];
 
+/// Tarefas que esperam na fila de uma fonte. Acima disso o pedido é recusado: uma fila sem limite
+/// só acumula trabalho que ninguém vai esperar e deixa o cancelamento lento.
+pub const MAX_FILA: usize = 50;
+
 impl Fonte {
     pub fn nome(self) -> &'static str {
         match self {
@@ -139,7 +143,13 @@ impl Agenda {
         }
         if quando == Quando::Agora {
             return Err(format!(
-                "Já há um download de {} em andamento.",
+                "Já há uma tarefa de {} em andamento.",
+                fonte.nome()
+            ));
+        }
+        if vaga.fila.len() >= MAX_FILA {
+            return Err(format!(
+                "A fila de {} está cheia ({MAX_FILA} tarefas). Espere terminar ou cancele.",
                 fonte.nome()
             ));
         }
@@ -340,7 +350,7 @@ mod testes {
         let (t2, _s2) = preso();
         a.enviar(Fonte::Cnes, "A", Quando::Agora, t1).unwrap();
         let e = a.enviar(Fonte::Cnes, "B", Quando::Agora, t2).unwrap_err();
-        assert_eq!(e, "Já há um download de CNES em andamento.");
+        assert_eq!(e, "Já há uma tarefa de CNES em andamento.");
         a.cancelar_tudo();
     }
 
@@ -383,6 +393,37 @@ mod testes {
             ["feito", "2", "3"]
         );
         assert_eq!(*ordem.lock().unwrap(), ["2", "3"]);
+    }
+
+    #[test]
+    fn fila_cheia_recusa_e_cancelar_continua_rapido() {
+        let (a, rx) = agenda();
+        let (t, _s) = preso();
+        a.enviar(Fonte::Sigtap, "0", Quando::Agora, t).unwrap();
+        for _ in 0..MAX_FILA {
+            a.enviar(
+                Fonte::Sigtap,
+                "x",
+                Quando::Depois,
+                Box::new(|_| Ok("".into())),
+            )
+            .unwrap();
+        }
+        let e = a
+            .enviar(
+                Fonte::Sigtap,
+                "x",
+                Quando::Depois,
+                Box::new(|_| Ok("".into())),
+            )
+            .unwrap_err();
+        assert!(e.contains("fila de SIGTAP está cheia"), "{e}");
+        let ini = std::time::Instant::now();
+        a.cancelar(Fonte::Sigtap);
+        for _ in 0..=MAX_FILA {
+            assert!(rx.recv_timeout(ESPERA).unwrap().cancelada);
+        }
+        assert!(ini.elapsed() < Duration::from_secs(2));
     }
 
     #[test]

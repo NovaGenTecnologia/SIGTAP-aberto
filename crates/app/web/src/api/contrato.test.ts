@@ -6,6 +6,9 @@ import * as c from "./comandos";
 
 beforeEach(() => vi.mocked(chamar).mockClear());
 
+const FILTROS_VAZIOS = { tipo: [], complexidade: [], instrumento: [], grupo: [], forma: [], codigos: null };
+const FILTROS_CHEIOS = { tipo: ["procedimento"], complexidade: ["2"], instrumento: ["BPA-C"], grupo: ["03"], forma: ["030101"], codigos: ["0301010072"] };
+
 const casos: [string, () => Promise<unknown>, string, Record<string, unknown>?][] = [
   ["ofertas sem forçar", () => c.ofertas(), "ofertas", { deNovo: false }],
   ["ofertas de novo", () => c.ofertas(true), "ofertas", { deNovo: true }],
@@ -39,6 +42,12 @@ const casos: [string, () => Promise<unknown>, string, Record<string, unknown>?][
   ["CNES apagar", () => c.cnesApagar("MS"), "cnes_apagar", { uf: "MS" }],
   ["CNES verificar", () => c.cnesVerificar(), "cnes_verificar", undefined],
   ["buscar todos", () => c.buscarTodos("consulta", "202609"), "buscar_todos", { competencia: "202609", texto: "consulta" }],
+  ["busca paginada", () => c.buscarPagina("consulta", FILTROS_VAZIOS, 2, "202609"), "buscar_pagina",
+    { competencia: "202609", texto: "consulta", filtros: FILTROS_VAZIOS, pagina: 2 }],
+  ["busca paginada sem competência", () => c.buscarPagina("consulta", FILTROS_CHEIOS, 1), "buscar_pagina",
+    { competencia: null, texto: "consulta", filtros: FILTROS_CHEIOS, pagina: 1 }],
+  ["busca para exportar", () => c.buscarExportar("consulta", FILTROS_CHEIOS, "202609"), "buscar_exportar",
+    { competencia: "202609", texto: "consulta", filtros: FILTROS_CHEIOS }],
   ["CNES buscar", () => c.cnesBuscar("MS", "hospital"), "cnes_buscar", { uf: "MS", texto: "hospital" }],
   ["produção situação", () => c.producaoSituacao(), "producao_situacao", undefined],
   ["produção plano", () => c.producaoPlano("SP", 12), "producao_plano", { uf: "SP", meses: 12 }],
@@ -51,6 +60,30 @@ const casos: [string, () => Promise<unknown>, string, Record<string, unknown>?][
   ["manter brutos", () => c.manterBrutosDefinir(true), "manter_brutos_definir", { ligada: true }],
   ["verificar bancos rápido", () => c.verificarBancos(false), "verificar_bancos", { completo: false }],
   ["recriar banco", () => c.recriarBanco(), "recriar_banco", { forcar: true }],
+  ["painel do faturista", () => c.faturamentoPainel("202609"), "faturamento_painel", { competencia: "202609" }],
+  ["painel sem competência", () => c.faturamentoPainel(), "faturamento_painel", { competencia: null }],
+  ["impacto das mudanças", () => c.faturamentoImpacto("202608", "202609"), "faturamento_impacto", { de: "202608", para: "202609" }],
+  ["mudou com o filtro", () => c.mudou("202608", "202609", { soAfeta: true }), "mudou",
+    { de: "202608", para: "202609", tabela: null, desde: null, soAfeta: true }],
+  ["mudou: ver mais de uma tabela", () => c.mudou("202608", "202609", { tabela: "rl_procedimento_habilitacao", desde: 300 }), "mudou",
+    { de: "202608", para: "202609", tabela: "rl_procedimento_habilitacao", desde: 300, soAfeta: false }],
+  ["unidade completa (a ativa)", () => c.unidadeVer("202609"), "unidade_ver", { competencia: "202609", uf: null, cnes: null }],
+  ["unidade completa de outra", () => c.unidadeVer(undefined, { uf: "MS", cnes: "2754291" }), "unidade_ver", { competencia: null, uf: "MS", cnes: "2754291" }],
+  ["faturamento da unidade", () => c.faturamentoUnidade("202609", { uf: "SP", cnes: "2077396" }), "faturamento_unidade", { competencia: "202609", uf: "SP", cnes: "2077396" }],
+  ["faturamento da unidade ativa", () => c.faturamentoUnidade(), "faturamento_unidade", { competencia: null, uf: null, cnes: null }],
+  ["produção: procedimentos da unidade", () => c.producaoProcedimentos({ origem: "sih", q: "consulta", classe: "A", ordem: "quantidade", desde: 50, competencia: "202609" }), "producao_procedimentos",
+    { competencia: "202609", uf: null, cnes: null, origem: "sih", q: "consulta", classe: "A", ordem: "quantidade", desde: 50 }],
+  ["produção: procedimentos, só a origem", () => c.producaoProcedimentos({ origem: "sia" }), "producao_procedimentos",
+    { competencia: null, uf: null, cnes: null, origem: "sia", q: null, classe: null, ordem: null, desde: null }],
+  ["aptidão da unidade: resumo", () => c.aptidaoUnidade({}), "aptidao_unidade",
+    { competencia: null, grupo: null, q: null, hab: null, desde: null, soProduzidosNaUf: false }],
+  ["aptidão da unidade: uma página filtrada", () => c.aptidaoUnidade({ grupo: "oportunidade", q: "biopsia", hab: "0203", desde: 50, soProduzidosNaUf: true, competencia: "202609" }), "aptidao_unidade",
+    { competencia: "202609", grupo: "oportunidade", q: "biopsia", hab: "0203", desde: 50, soProduzidosNaUf: true }],
+  ["terceiro: adicionar", () => c.terceiroAdicionar("SP", "2077396", "SP", "2077400"), "terceiro_adicionar",
+    { uf: "SP", cnes: "2077396", terceiroUf: "SP", terceiroCnes: "2077400" }],
+  ["terceiro: remover", () => c.terceiroRemover("SP", "2077396", "SP", "2077400"), "terceiro_remover",
+    { uf: "SP", cnes: "2077396", terceiroUf: "SP", terceiroCnes: "2077400" }],
+  ["buscar unidades", () => c.unidadesBuscar("hospital"), "unidades_buscar", { texto: "hospital" }],
 ];
 
 test.each(casos)("%s", async (_nome, chamarFuncao, comando, args) => {

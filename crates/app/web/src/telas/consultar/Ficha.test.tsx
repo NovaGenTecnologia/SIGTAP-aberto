@@ -46,7 +46,7 @@ test("faixa: nome, código em caixas, trilha e dados principais", async () => {
   expect(within(principais).getByText("Financiamento").nextElementSibling).toHaveTextContent("MAC · 06");
   const trilha = screen.getByRole("navigation", { name: "Onde está" });
   await u.click(within(trilha).getByRole("button", { name: /^0301 / }));
-  expect(window.location.hash).toBe("#/consultar/explorar/procedimentos/0301");
+  expect(window.location.hash).toBe("#/consultar/arvore/procedimentos/0301");
 });
 
 test("copiar o código: sem pontos; com Ctrl, com pontos; avisa e some", async () => {

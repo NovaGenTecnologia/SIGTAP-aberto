@@ -13,6 +13,7 @@ const m = vi.mocked(comandos);
 const P = (codigo: string, nivel: NoDeArvore["nivel"], nome: string | null, procedimentos = 1): NoDeArvore => ({ nivel, codigo, codigo_mascarado: codigo, nome, procedimentos });
 const C = (codigo: string, nivel: NoDeCid["nivel"], nome: string | null, codigos = 2, procedimentos = 5): NoDeCid => ({ nivel, codigo, codigo_mascarado: codigo.length === 4 ? `${codigo.slice(0, 3)}.${codigo[3]}` : codigo, nome, codigos, procedimentos });
 const lig = (codigo: string, nome: string, valor: number, extra: Partial<ItemProcedimento> = {}): ItemProcedimento => ({
+  na_descricao: false,
   codigo, codigo_mascarado: codigo, nome, tp_complexidade: "2", complexidade: "Média Complexidade", valor_total_centavos: valor,
   instrumentos: ["BPA (Individualizado)"], forma: "030204", forma_nome: "Forma", ...extra,
 });
@@ -106,7 +107,7 @@ test("setas, Home, End e escrever para ir ao item; a seleção vai para a URL", 
   primeira.focus();
   await u.keyboard("{ArrowDown}");
   expect(await linhaDe(/^03\.01\.01\.007-2/)).toHaveFocus();
-  expect(window.location.hash).toBe("#/consultar/explorar/procedimentos/0301010072");
+  expect(window.location.hash).toBe("#/consultar/arvore/procedimentos/0301010072");
   await u.keyboard("{End}");
   expect(screen.getAllByRole("treeitem").at(-1)).toHaveFocus();
   await u.keyboard("{Home}");
@@ -147,7 +148,7 @@ test("caminho fixo mostra o número de cada nível e leva ao nível clicado", as
     "03 Procedimentos Clínicos", "01 Consultas/Atendimentos/Acompanhamentos", "01 Consultas Médicas/Outros Profissionais de Nivel Superior",
   ]);
   await u.click(within(caminho).getByRole("button", { name: /^01 Consultas\/Atendimentos/ }));
-  expect(window.location.hash).toBe("#/consultar/explorar/procedimentos/0301");
+  expect(window.location.hash).toBe("#/consultar/arvore/procedimentos/0301");
 });
 
 test("prévia (tela larga): valores e o que se exige, sem sair da árvore; Abrir ficha navega", async () => {
@@ -208,7 +209,7 @@ test("trocar de árvore guarda a escolha na rota", async () => {
   montar();
   await linhaDe(/^03 Procedimentos/);
   await u.click(screen.getByRole("radio", { name: "CID" }));
-  expect(window.location.hash).toBe("#/consultar/explorar/cid");
+  expect(window.location.hash).toBe("#/consultar/arvore/cid");
   expect(await screen.findByRole("tree", { name: "CID" })).toBeInTheDocument();
 });
 
@@ -250,32 +251,6 @@ test("erro ao carregar um nó oferece tentar de novo", async () => {
   falhar = false;
   await u.click(tentar);
   expect(await linhaDe(/^03\.01 Consultas/)).toBeInTheDocument();
-});
-
-test("filtro: mostra só o que casa, com os pais abertos, e diz quantos", async () => {
-  const u = userEvent.setup();
-  const achados = FOLHAS.map((f) => lig(f.codigo, f.nome ?? "", 1000, { forma: "030101", forma_nome: "Consultas médicas/outros profissionais  de nivel superior" }));
-  m.buscar.mockResolvedValue({ consulta: "consulta medica", competencia: "202609", modo: "texto", total_procedimentos: 3, procedimentos: achados, apoio: [] } as Busca);
-  montar();
-  await linhaDe(/^03 Procedimentos/);
-  await u.type(screen.getByRole("searchbox", { name: "Filtrar a árvore" }), "consulta medica");
-  expect(await screen.findByRole("status")).toHaveTextContent("3 de 2.116 procedimentos");
-  expect(await linhaDe(/^03\.01\.01 Consultas médicas/)).toBeInTheDocument();
-  expect(screen.getAllByRole("treeitem").filter((r) => r.getAttribute("aria-level") === "4")).toHaveLength(3);
-  expect(screen.queryByRole("treeitem", { name: /^01 Ações/ })).not.toBeInTheDocument();
-});
-
-test("filtro de CID lista os códigos que casam", async () => {
-  const u = userEvent.setup();
-  m.buscar.mockResolvedValue({
-    consulta: "hipertens", competencia: "202609", modo: "texto", total_procedimentos: 0, procedimentos: [],
-    apoio: [{ tabela: "tb_cid", colunas: ["co_cid"], codigo: ["I10"], nome: "Hipertensão essencial (primária)", procedimentos: 26 }],
-  } as Busca);
-  montar("#/consultar/explorar/cid");
-  await linhaDe(/^I /);
-  await u.type(screen.getByRole("searchbox", { name: "Filtrar a árvore" }), "hipertens");
-  expect(await linhaDe(/^I10 Hipertensão essencial/)).toBeInTheDocument();
-  expect(screen.getByRole("status")).toHaveTextContent("1 código");
 });
 
 const marca = (tipo: string, codigo: string, extra: Record<string, unknown> = {}) =>

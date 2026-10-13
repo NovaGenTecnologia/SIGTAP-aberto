@@ -11,6 +11,7 @@ import { useOfertas, useSituacao } from "../../dados/consultas";
 import { mensagemOcupado } from "../../dados/tarefas";
 import { rotuloCompetencia, tamanho } from "../../util/formatos";
 import { ConfirmarApagar } from "./ConfirmarApagar";
+import { useAlturaMaxima } from "./useAlturaMaxima";
 
 const ESCOPOS = [
   { id: "vigente", rotulo: "Só a vigente" },
@@ -40,6 +41,7 @@ const COLUNAS: Coluna<Linha>[] = [
 ];
 
 export function AbaSigtap({ tarefa }: { tarefa: Tarefa }) {
+  const alturaMaxima = useAlturaMaxima();
   const situacao = useSituacao().data;
   const ofertas = useOfertas();
   const { erro, escolhendo, executar, daPasta, falhou } = useAcaoDeTarefa(tarefa);
@@ -76,7 +78,7 @@ export function AbaSigtap({ tarefa }: { tarefa: Tarefa }) {
           <p className="dados__nota">Importar de pasta continua disponível.</p>
         </>
       ) : linhas.length > 0 ? (
-        <TabelaDeDados rotulo="Competências do SIGTAP" colunas={COLUNAS} linhas={linhas} altura={Math.min(420, 36 * (linhas.length + 1) + 2)} />
+        <TabelaDeDados rotulo="Competências do SIGTAP" colunas={COLUNAS} linhas={linhas} altura={Math.min(alturaMaxima, 36 * (linhas.length + 1) + 2)} />
       ) : null}
 
       <section className="dados__territorio">
