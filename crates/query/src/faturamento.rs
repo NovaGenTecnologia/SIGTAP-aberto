@@ -930,6 +930,66 @@ impl ConsultaProducao {
             .collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// A unidade tem produção do sistema em algum dos meses.
+    pub fn unidade_produziu(
+        &self,
+        origem: Origem,
+        cnes: &str,
+        comps: &[String],
+    ) -> Result<bool, ErroConsulta> {
+        let tabela = match origem {
+            Origem::Ambulatorial => "prod_amb",
+            Origem::Hospitalar => "prod_hosp",
+        };
+        Ok(self.conn().query_row(
+            &format!(
+                "SELECT EXISTS(SELECT 1 FROM {tabela} WHERE cnes = ?1 AND comp IN ({}))",
+                lista(comps)?
+            ),
+            [cnes],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// Meses da janela em que algum estabelecimento tem linha de alguma das dimensões.
+    pub fn meses_com_dimensao(
+        &self,
+        dims: &[&str],
+        comps: &[String],
+    ) -> Result<Vec<String>, ErroConsulta> {
+        let dims = dims
+            .iter()
+            .map(|d| format!("'{d}'"))
+            .collect::<Vec<_>>()
+            .join(",");
+        self.meses_de(&format!("SELECT DISTINCT comp FROM prod_dim WHERE dim IN ({dims}) AND comp IN ({}) ORDER BY comp", lista(comps)?))
+    }
+
+    /// Meses da janela em que o arquivo do SIA trouxe o apresentado por motivo (`PA_FLQT` com quantidade apresentada).
+    pub fn meses_com_motivos(&self, comps: &[String]) -> Result<Vec<String>, ErroConsulta> {
+        self.meses_de(&format!("SELECT DISTINCT comp FROM prod_dim WHERE dim = 'PA_FLQT' AND qtd_pro IS NOT NULL AND comp IN ({}) ORDER BY comp", lista(comps)?))
+    }
+
+    /// Meses da janela com atos de AIH (serviços profissionais do SIH).
+    pub fn meses_com_atos(&self, comps: &[String]) -> Result<Vec<String>, ErroConsulta> {
+        self.meses_de(&format!(
+            "SELECT DISTINCT comp FROM prod_ato WHERE comp IN ({}) ORDER BY comp",
+            lista(comps)?
+        ))
+    }
+
+    /// Meses da janela em que o arquivo do SIH trouxe os dias de permanência.
+    pub fn meses_com_dias(&self, comps: &[String]) -> Result<Vec<String>, ErroConsulta> {
+        self.meses_de(&format!("SELECT DISTINCT comp FROM prod_hosp WHERE dias IS NOT NULL AND comp IN ({}) ORDER BY comp", lista(comps)?))
+    }
+
+    fn meses_de(&self, sql: &str) -> Result<Vec<String>, ErroConsulta> {
+        let mut st = self.conn().prepare(sql)?;
+        Ok(st
+            .query_map([], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?)
+    }
+
     /// Mês a mês da unidade (SIA, SIH e rejeições).
     pub fn serie_da_unidade(&self, cnes: &str) -> Result<Vec<MesUnidade>, ErroConsulta> {
         let mut m: BTreeMap<String, MesUnidade> = BTreeMap::new();
@@ -994,9 +1054,14 @@ impl ConsultaProducao {
         &self,
         cnes: &str,
         limite: usize,
+        janela: Option<&[String]>,
     ) -> Result<Vec<EvolucaoRejeicao>, ErroConsulta> {
+        let filtro = match janela {
+            Some(j) => format!(" AND r.comp IN ({})", lista(j)?),
+            None => String::new(),
+        };
         // A tabela de vigências (CO_TAB 0027 = rejeição) completa a descrição quando a MOTERRO não tem o código.
-        let mut st = self.conn().prepare(
+        let mut st = self.conn().prepare(&format!(
             "SELECT r.motivo,
                     coalesce(m.descricao, (SELECT v.descricao FROM aux_vigencia v WHERE v.tabela = '0027' AND v.codigo = trim(r.motivo)
                                            ORDER BY v.inicio DESC LIMIT 1)),
@@ -1004,8 +1069,8 @@ impl ConsultaProducao {
                      ORDER BY v.inicio DESC LIMIT 1),
                     max(r.comp), sum(r.qtd) AS s
              FROM rej_hosp r LEFT JOIN moterro m ON m.codigo = r.motivo
-             WHERE r.cnes = ?1 GROUP BY r.motivo ORDER BY s DESC, r.motivo LIMIT ?2",
-        )?;
+             WHERE r.cnes = ?1{filtro} GROUP BY r.motivo ORDER BY s DESC, r.motivo LIMIT ?2",
+        ))?;
         #[allow(clippy::type_complexity)]
         let topo: Vec<(String, Option<String>, Option<String>, String, i64)> = st
             .query_map(
@@ -1013,9 +1078,10 @@ impl ConsultaProducao {
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
             )?
             .collect::<Result<_, _>>()?;
-        let mut st = self.conn().prepare(
-            "SELECT comp, sum(qtd) FROM rej_hosp WHERE cnes = ?1 AND motivo = ?2 GROUP BY comp ORDER BY comp",
-        )?;
+        let filtro_mes = filtro.replace("r.comp", "comp");
+        let mut st = self.conn().prepare(&format!(
+            "SELECT comp, sum(qtd) FROM rej_hosp WHERE cnes = ?1 AND motivo = ?2{filtro_mes} GROUP BY comp ORDER BY comp",
+        ))?;
         let mut v = Vec::new();
         for (motivo, descricao, vigencia, ultimo_mes, total) in topo {
             let vigencia = vigencia.and_then(|v| {
@@ -2109,7 +2175,7 @@ mod testes {
     #[test]
     fn evolucao_das_rejeicoes_traz_descricao_e_meses() {
         let q = banco_com_producao();
-        let e = q.evolucao_das_rejeicoes("1000001", 5).unwrap();
+        let e = q.evolucao_das_rejeicoes("1000001", 5, None).unwrap();
         assert_eq!(e[0].motivo, "020069");
         assert_eq!(e[0].total, 3);
         assert_eq!(
@@ -2121,7 +2187,21 @@ mod testes {
             [("202606".to_string(), 2), ("202607".to_string(), 1)]
         );
         assert_eq!(e[1].descricao, None);
-        assert_eq!(q.evolucao_das_rejeicoes("1000001", 1).unwrap().len(), 1);
+        assert_eq!(
+            q.evolucao_das_rejeicoes("1000001", 1, None).unwrap().len(),
+            1
+        );
+    }
+
+    #[test]
+    fn evolucao_das_rejeicoes_respeita_a_janela() {
+        let q = banco_com_producao();
+        let janela = vec!["202607".to_string()];
+        let e = q
+            .evolucao_das_rejeicoes("1000001", 5, Some(&janela))
+            .unwrap();
+        assert_eq!(e[0].total, 1, "só o mês da janela entra no total");
+        assert_eq!(e[0].por_mes, [("202607".to_string(), 1)]);
     }
 
     #[test]
@@ -2141,7 +2221,7 @@ mod testes {
             )
             .unwrap();
         let q = ConsultaProducao::de_banco(b);
-        let e = q.evolucao_das_rejeicoes("1", 5).unwrap();
+        let e = q.evolucao_das_rejeicoes("1", 5, None).unwrap();
         let por = |m: &str| e.iter().find(|x| x.motivo == m).unwrap();
         let bloq = por("020069");
         assert_eq!(

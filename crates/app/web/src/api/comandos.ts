@@ -1,7 +1,8 @@
 import { chamar } from "./tauri";
 import type {
-  AtualizacaoDoPrograma, Busca, ItemMarcado, Marcado, Planilha, Ficha, Historico, ItemProcedimento, NoDeArvore, NoDeCid, Estabelecimento, Fonte, InfoPrograma, Ofertas, Quando, PedidoDownload, PedidoProducao, PlanoProducao,
-  Situacao, SituacaoCnesCompleta, SituacaoProducao,
+  AtualizacaoDoPrograma, Busca, BuscaPaginada, FiltrosDaBusca, ItemMarcado, Marcado, Planilha, Ficha, Historico, ItemProcedimento, NoDeArvore, NoDeCid, Estabelecimento, Fonte, InfoPrograma, Ofertas, Quando, PedidoDownload, PedidoProducao, PlanoProducao,
+  Situacao, SituacaoCnesCompleta, SituacaoProducao, Painel, Impacto, Mudancas,
+  UnidadeCompleta, AptidaoUnidade, GrupoDeAptidao, UnidadeComNome, FaturamentoUnidade, FaturamentoIndisponivel, ProcedimentosDaUnidade,
 } from "./tipos";
 
 export const situacao = () => chamar<Situacao>("situacao");
@@ -12,6 +13,12 @@ export const buscar = (texto: string, competencia?: string) =>
 /** A mesma busca, com todos os procedimentos encontrados (a lista da tela pára em 200). */
 export const buscarTodos = (texto: string, competencia?: string) =>
   chamar<Busca>("buscar_todos", { competencia: competencia ?? null, texto });
+/** Uma página (100 procedimentos) da busca, com filtros e a contagem das opções de filtro. */
+export const buscarPagina = (texto: string, filtros: FiltrosDaBusca, pagina: number, competencia?: string) =>
+  chamar<BuscaPaginada>("buscar_pagina", { competencia: competencia ?? null, texto, filtros, pagina });
+/** Todos os procedimentos que passam nos filtros, para exportar. */
+export const buscarExportar = (texto: string, filtros: FiltrosDaBusca, competencia?: string) =>
+  chamar<Busca>("buscar_exportar", { competencia: competencia ?? null, texto, filtros });
 export const ficha = (codigo: string, competencia?: string) =>
   chamar<Ficha | null>("ficha", { competencia: competencia ?? null, codigo });
 export const historico = (codigo: string) => chamar<Historico>("historico", { codigo });
@@ -60,3 +67,40 @@ export const manterBrutosDefinir = (ligada: boolean) => chamar<boolean>("manter_
 
 export const verificarBancos = (completo: boolean) => chamar<unknown>("verificar_bancos", { completo });
 export const recriarBanco = (forcar = true) => chamar<void>("recriar_banco", { forcar });
+
+export const faturamentoPainel = (competencia?: string) =>
+  chamar<Painel>("faturamento_painel", { competencia: competencia ?? null });
+export const faturamentoImpacto = (de?: string, para?: string) =>
+  chamar<Impacto>("faturamento_impacto", { de: de ?? null, para: para ?? null });
+/** O que mudou entre duas competências, com a marca `afeta` da unidade ativa; `tabela`/`desde` pedem mais itens de uma tabela. */
+export const mudou = (de: string | undefined, para: string | undefined, opcoes: { tabela?: string; desde?: number; soAfeta?: boolean } = {}) =>
+  chamar<Mudancas>("mudou", { de: de ?? null, para: para ?? null, tabela: opcoes.tabela ?? null, desde: opcoes.desde ?? null, soAfeta: opcoes.soAfeta ?? false });
+
+/** A unidade ativa, ou a indicada, com cadastro completo (sem CPF). */
+export const unidadeVer = (competencia?: string, alvo?: { uf: string; cnes: string }) =>
+  chamar<UnidadeCompleta>("unidade_ver", { competencia: competencia ?? null, uf: alvo?.uf ?? null, cnes: alvo?.cnes ?? null });
+export interface OpcoesDeAptidao { grupo?: GrupoDeAptidao; q?: string; hab?: string; desde?: number; soProduzidosNaUf?: boolean; competencia?: string }
+/** Resumo por prioridade; com `grupo`, a página (50 itens) desse grupo. */
+export const aptidaoUnidade = (o: OpcoesDeAptidao = {}) =>
+  chamar<AptidaoUnidade>("aptidao_unidade", {
+    competencia: o.competencia ?? null, grupo: o.grupo ?? null, q: o.q ?? null, hab: o.hab ?? null,
+    desde: o.desde ?? null, soProduzidosNaUf: o.soProduzidosNaUf ?? false,
+  });
+/** Rejeições, tendência, curva ABC, apresentado × aprovado, financiamento, leitos e pares da unidade (a ativa, ou a indicada). */
+export const faturamentoUnidade = (competencia?: string, alvo?: { uf: string; cnes: string }) =>
+  chamar<FaturamentoUnidade | FaturamentoIndisponivel>("faturamento_unidade", { competencia: competencia ?? null, uf: alvo?.uf ?? null, cnes: alvo?.cnes ?? null });
+export interface OpcoesDeProcedimentos {
+  origem: "sia" | "sih"; q?: string; classe?: "A" | "B" | "C"; ordem?: "valor" | "quantidade"; desde?: number;
+  competencia?: string; alvo?: { uf: string; cnes: string };
+}
+/** Os procedimentos da unidade por valor (50 por página), com a classe da curva ABC. */
+export const producaoProcedimentos = (o: OpcoesDeProcedimentos) =>
+  chamar<ProcedimentosDaUnidade | FaturamentoIndisponivel>("producao_procedimentos", {
+    competencia: o.competencia ?? null, uf: o.alvo?.uf ?? null, cnes: o.alvo?.cnes ?? null, origem: o.origem,
+    q: o.q ?? null, classe: o.classe ?? null, ordem: o.ordem ?? null, desde: o.desde ?? null,
+  });
+export const terceiroAdicionar = (uf: string, cnes: string, terceiroUf: string, terceiroCnes: string) =>
+  chamar<unknown>("terceiro_adicionar", { uf, cnes, terceiroUf, terceiroCnes });
+export const terceiroRemover = (uf: string, cnes: string, terceiroUf: string, terceiroCnes: string) =>
+  chamar<void>("terceiro_remover", { uf, cnes, terceiroUf, terceiroCnes });
+export const unidadesBuscar = (texto: string) => chamar<(UnidadeComNome & { municipio_nome: string; tipo_nome: string | null })[]>("unidades_buscar", { texto });

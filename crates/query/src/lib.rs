@@ -12,6 +12,7 @@
 
 pub mod arvore;
 pub mod busca;
+pub mod catalogo;
 pub mod cid;
 pub mod cnes;
 pub mod exportar;
@@ -19,6 +20,7 @@ pub mod faturamento;
 pub mod ficha;
 pub mod historico;
 pub mod mudancas;
+mod pagina;
 pub mod preparo;
 pub mod producao;
 mod util;
@@ -50,9 +52,12 @@ impl fmt::Display for ErroConsulta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ErroConsulta::Banco(e) => write!(f, "{e}"),
+            ErroConsulta::Sql(e) if e.to_string().contains("too complex") => {
+                write!(f, "o texto de busca é longo demais. Use menos caracteres.")
+            }
             ErroConsulta::Sql(e) => write!(
                 f,
-                "falha ao consultar o banco do SIGTAP ({e}). Se persistir, refaça o banco a partir dos ZIPs em Módulos e dados."
+                "falha ao consultar o banco de dados ({e}). Se persistir, abra Dados e confira os bancos."
             ),
             ErroConsulta::NaoCarregada(c) => write!(
                 f,
@@ -103,6 +108,10 @@ pub struct Consulta {
     refs: Vec<Referencia>,
     /// Sequências das competências carregadas, em ordem.
     seqs: Vec<i64>,
+    /// Catálogo de procedimentos por competência (montado sob demanda).
+    catalogos: std::sync::Mutex<std::collections::HashMap<i64, std::sync::Arc<catalogo::Catalogo>>>,
+    /// Últimas buscas por `(competência, texto)`, sem filtro nem página.
+    buscas: busca::BuscasGuardadas,
 }
 
 impl Consulta {
@@ -125,6 +134,8 @@ impl Consulta {
             dominios: Dominios::carregar(),
             refs,
             seqs,
+            catalogos: Default::default(),
+            buscas: Default::default(),
         })
     }
 

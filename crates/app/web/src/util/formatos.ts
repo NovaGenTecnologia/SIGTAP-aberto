@@ -21,3 +21,30 @@ export function tamanho(bytes: number): string {
   while (valor >= 1024 && i < unidades.length - 1) { valor /= 1024; i++; }
   return `${decimal.format(valor)} ${unidades[i]}`;
 }
+
+/** Percentual inteiro com o sinal de menos tipográfico (−22%); sem sinal para zero. */
+export const percentual = (n: number): string => {
+  const r = Math.round(n);
+  return `${r < 0 ? "−" : ""}${Math.abs(r)}%`;
+};
+
+/** Valor com sinal explícito (+R$ 1,00 / −R$ 1,00); zero sem sinal. */
+export const comSinal = (centavos: number): string =>
+  centavos === 0 ? reais(0) : `${centavos > 0 ? "+" : "−"}${reais(Math.abs(centavos))}`;
+
+const unidadeDe = (n: number, sufixo: string) => `R$ ${decimal.format(n)} ${sufixo}`.replace(/ /g, "\u00a0");
+/** Valor abreviado para listas estreitas: R$ 3,1 mi, R$ 850 mil; abaixo de R$ 10 mil, o valor inteiro. */
+export function reaisCompacto(centavos: number): string {
+  const r = Math.abs(centavos) / 100;
+  if (r >= 1_000_000) return unidadeDe(centavos / 100 / 1_000_000, "mi");
+  if (r >= 10_000) return unidadeDe(centavos / 100 / 1_000, "mil");
+  return reais(centavos);
+}
+
+/** "04–06/2026" (mesmo ano) ou "11/2025–02/2026"; competências em AAAAMM, em ordem. */
+export function intervaloDeCompetencias(cs: string[]): string {
+  const [a, b] = [cs[0], cs[cs.length - 1]];
+  if (!a || !b) return "";
+  if (a === b) return rotuloCompetencia(a);
+  return a.slice(0, 4) === b.slice(0, 4) ? `${a.slice(4)}–${rotuloCompetencia(b)}` : `${rotuloCompetencia(a)}–${rotuloCompetencia(b)}`;
+}

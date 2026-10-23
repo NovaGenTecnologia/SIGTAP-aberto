@@ -35,7 +35,7 @@ beforeEach(() => {
   m.situacao.mockResolvedValue(situacaoOk);
   m.cnesSituacao.mockResolvedValue(cnesOk);
   m.buscar.mockResolvedValue({ consulta: "consulta", competencia: "202609", modo: "texto", total_procedimentos: 1, apoio: [],
-    procedimentos: [{ codigo: "0301010072", codigo_mascarado: "03.01.01.007-2", nome: "CONSULTA MEDICA EM ATENCAO ESPECIALIZADA", tp_complexidade: "2", complexidade: "Média", valor_total_centavos: 1000, instrumentos: [], forma: "030101", forma_nome: null }] });
+    procedimentos: [{ na_descricao: false, codigo: "0301010072", codigo_mascarado: "03.01.01.007-2", nome: "CONSULTA MEDICA EM ATENCAO ESPECIALIZADA", tp_complexidade: "2", complexidade: "Média", valor_total_centavos: 1000, instrumentos: [], forma: "030101", forma_nome: null }] });
 });
 
 test("moldura: navegação principal com os cinco destinos e o atual marcado", async () => {

@@ -8,7 +8,7 @@ export function Progresso({ rotulo, valor }: { rotulo: string; valor?: number })
         <>
           <div className="progresso__trilho">
             <div className="progresso__barra" data-indeterminado={valor === undefined || undefined}
-              ref={(el) => { if (el && percentage !== undefined) el.style.width = `${percentage}%`; }} />
+              ref={(el) => { if (el) el.style.transform = percentage === undefined ? "" : `scaleX(${percentage / 100})`; }} />
           </div>
         </>
       )}

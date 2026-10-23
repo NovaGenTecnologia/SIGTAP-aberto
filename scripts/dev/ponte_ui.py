@@ -193,14 +193,22 @@ def main():
         if cmd == "arvore": return cli("arvore", *([args["pai"]] if args.get("pai") else []), *comp)
         if cmd == "buscar": return cli("buscar", args["texto"], *comp)
         if cmd == "buscar_todos": return cli("buscar-todos", args["texto"], *comp)
+        if cmd == "buscar_pagina": return cli("buscar-pagina", args["texto"], "--pagina", str(args["pagina"]), "--filtros", json.dumps(args["filtros"]), *comp)
+        if cmd == "buscar_exportar": return cli("buscar-exportar", args["texto"], "--filtros", json.dumps(args["filtros"]), *comp)
         if cmd == "ficha":
             try: return cli("ficha", args["codigo"], *comp)
             except RuntimeError as e:
                 if "não existe" in str(e): return None
                 raise
         if cmd == "historico": return cli("historico", args["codigo"])
-        if cmd == "mudou": return cli("mudou", *([args["tabela"], "--desde", str(args.get("desde") or 0)] if args.get("tabela") else []),
-                                      *(["--de", args["de"]] if args.get("de") else []), *(["--competencia", args["para"]] if args.get("para") else []))
+        if cmd == "faturamento_painel": return cli_d("faturamento-painel", *comp)
+        if cmd == "faturamento_impacto":
+            return cli_d("faturamento-impacto", *(["--de", args["de"]] if args.get("de") else []), *(["--competencia", args["para"]] if args.get("para") else []))
+        if cmd == "mudou":
+            tabela = [args["tabela"], "--desde", str(args.get("desde") or 0)] if args.get("tabela") else []
+            periodo = [*(["--de", args["de"]] if args.get("de") else []), *(["--competencia", args["para"]] if args.get("para") else [])]
+            if a.dados: return cli_d("mudou", *tabela, *periodo, "--unidade", *(["--so-afeta"] if args.get("soAfeta") else []))
+            return cli("mudou", *tabela, *periodo)
         if cmd == "ligados": return cli("ligados", args["tabela"], *args["codigo"], *comp)
         if cmd == "arvore_cid": return cli("arvore-cid", *([args["pai"]] if args.get("pai") else []), *comp)
         if cmd == "verificar_bancos":
@@ -263,6 +271,25 @@ def main():
         if cmd == "cnes_buscar": return cli_d("cnes-buscar", args["uf"], args["texto"])
         if cmd == "unidade_definir": return cli_d("unidade-definir", args["uf"], args["cnes"])
         if cmd == "unidade_limpar": return cli_d("unidade-limpar")
+        if cmd == "terceiro_adicionar": return cli_d("terceiro-adicionar", args["uf"], args["cnes"], args["terceiroUf"], args["terceiroCnes"])
+        if cmd == "terceiro_remover": return cli_d("terceiro-remover", args["uf"], args["cnes"], args["terceiroUf"], args["terceiroCnes"], texto=True) and None
+        if cmd == "aptidao_unidade":
+            extra = []
+            for chave, opcao in (("grupo", "--grupo"), ("q", "--q"), ("hab", "--hab")):
+                if args.get(chave): extra += [opcao, str(args[chave])]
+            if args.get("desde"): extra += ["--desde", str(int(args["desde"]))]
+            if args.get("soProduzidosNaUf"): extra += ["--so-produzidos-na-uf"]
+            alvo = [args["uf"], args["cnes"]] if args.get("uf") and args.get("cnes") else []
+            return cli_d("aptidao-unidade", *alvo, *extra, *comp)
+        if cmd == "faturamento_unidade":
+            return cli_d("faturamento-unidade", *([args["uf"], args["cnes"]] if args.get("uf") and args.get("cnes") else []), *comp)
+        if cmd == "producao_procedimentos":
+            extra = ["--sistema", str(args.get("origem") or "")]
+            for chave, opcao in (("q", "--q"), ("classe", "--classe"), ("ordem", "--ordem")):
+                if args.get(chave): extra += [opcao, str(args[chave])]
+            if args.get("desde"): extra += ["--desde", str(int(args["desde"]))]
+            alvo = [args["uf"], args["cnes"]] if args.get("uf") and args.get("cnes") else []
+            return cli_d("producao-procedimentos", *alvo, *extra, *comp)
         if cmd == "unidade_ver": return cli_d("unidade", *([args["uf"], args["cnes"]] if args.get("uf") and args.get("cnes") else []), *comp)
         if cmd == "unidade_remover": return cli_d("unidade-remover", args["uf"], args["cnes"], texto=True) and None
         if cmd == "marcadores": return cli_d("marcadores", *args["codigos"], *comp)

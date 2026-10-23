@@ -29,7 +29,10 @@ fn json<T: serde::Serialize>(v: T) -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 async fn situacao(s: Estado<'_>) -> Result<serde_json::Value, String> {
-    s.situacao()
+    let s = s.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || s.situacao())
+        .await
+        .map_err(|e| format!("falha interna ao ler a situação ({e})"))?
 }
 
 #[tauri::command]
@@ -69,6 +72,41 @@ async fn buscar_todos(
     })
 }
 
+/// Uma página da busca, com filtros e a contagem das opções de filtro.
+#[tauri::command]
+async fn buscar_pagina(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    texto: String,
+    filtros: sa_query::busca::Filtros,
+    pagina: usize,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|q| {
+        let c = s.competencia(q, competencia.as_deref())?;
+        json(
+            q.buscar_pagina(c, &texto, &filtros, pagina)
+                .map_err(|e| e.to_string())?,
+        )
+    })
+}
+
+/// Todos os procedimentos que passam nos filtros, para exportar a lista inteira.
+#[tauri::command]
+async fn buscar_exportar(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    texto: String,
+    filtros: sa_query::busca::Filtros,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|q| {
+        let c = s.competencia(q, competencia.as_deref())?;
+        json(
+            q.buscar_filtrado_todos(c, &texto, &filtros)
+                .map_err(|e| e.to_string())?,
+        )
+    })
+}
+
 #[tauri::command]
 async fn ficha(
     s: Estado<'_>,
@@ -93,6 +131,7 @@ async fn mudou(
     para: Option<String>,
     tabela: Option<String>,
     desde: Option<usize>,
+    so_afeta: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     s.com_consulta(|q| {
         let para = s.competencia(q, para.as_deref())?;
@@ -112,17 +151,16 @@ async fn mudou(
                 Competencia::de_texto(&cs[pos - 1].competencia).map_err(|e| e.to_string())?
             }
         };
-        match tabela {
-            // "Ver mais" de uma tabela.
-            Some(t) => json(
-                q.o_que_mudou_tabela(de, para, &t, desde.unwrap_or(0), sa_query::mudancas::LIMITE_ITENS)
-                    .map_err(|e| e.to_string())?,
-            ),
-            None => json(
-                q.o_que_mudou(de, para, sa_query::mudancas::LIMITE_ITENS)
-                    .map_err(|e| e.to_string())?,
-            ),
-        }
+        // Com `tabela`, é o "ver mais" daquela tabela; sempre com a marca `afeta` da unidade ativa.
+        unidade::faturamento::mudancas_da_unidade(
+            &unidade::local(&s.pastas),
+            q,
+            de,
+            para,
+            tabela.as_deref(),
+            desde.unwrap_or(0),
+            so_afeta.unwrap_or(false),
+        )
     })
 }
 
@@ -190,8 +228,14 @@ async fn verificar_dados(s: Estado<'_>) -> Result<serde_json::Value, String> {
 
 /// Perfil de usuário do GitHub (`https://github.com/<login>`), usado na lista de contribuidores.
 fn perfil_github(u: &str) -> bool {
+    // Regra do GitHub: letras e números, hífens só no meio e nunca dois seguidos.
     u.strip_prefix("https://github.com/").is_some_and(|l| {
-        !l.is_empty() && l.len() <= 39 && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        !l.is_empty()
+            && l.len() <= 39
+            && !l.starts_with('-')
+            && !l.ends_with('-')
+            && !l.contains("--")
+            && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
     })
 }
 
@@ -363,6 +407,7 @@ fn em_segundo_plano(
     + Send
     + 'static,
 ) -> Result<Recibo, String> {
+    s.exigir_sem_bloqueio()?;
     let (sv, nome) = (s.clone(), rotulo.to_string());
     let trabalho: tarefas::Trabalho = Box::new(move |ctx| {
         let (a, r, id) = (app.clone(), nome.clone(), ctx.tarefa);
@@ -442,7 +487,14 @@ fn importar(
         "SIGTAP",
         quando,
         move |sv, ctx, emissor, _| {
-            servico::importar(&sv.pastas, &PathBuf::from(pasta), &ctx.cancelar, emissor)
+            let apagar = !unidade::producao::manter_brutos(&unidade::local(&sv.pastas));
+            servico::importar(
+                &sv.pastas,
+                &PathBuf::from(pasta),
+                &ctx.cancelar,
+                emissor,
+                apagar,
+            )
         },
     )
 }
@@ -479,7 +531,10 @@ async fn ofertas(s: Estado<'_>, de_novo: Option<bool>) -> Result<serde_json::Val
 
 #[tauri::command]
 async fn apagar_zips(s: Estado<'_>) -> Result<String, String> {
-    s.apagar_zips()
+    let s = s.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || s.apagar_zips())
+        .await
+        .map_err(|e| format!("falha interna ao apagar os ZIPs ({e})"))?
 }
 
 // ---- Fase 3: CNES, minha unidade, favoritos, anotações e exportação ----
@@ -877,6 +932,37 @@ async fn producao_unidade(
     })
 }
 
+/// Procedimentos da unidade por valor (curva ABC), de 50 em 50, de um sistema (SIA ou SIH).
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn producao_procedimentos(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    uf: Option<String>,
+    cnes: Option<String>,
+    origem: String,
+    q: Option<String>,
+    classe: Option<String>,
+    ordem: Option<String>,
+    desde: Option<usize>,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|sig| {
+        let c = s.competencia(sig, competencia.as_deref())?;
+        let alvo = uf.as_deref().zip(cnes.as_deref());
+        unidade::faturamento::procedimentos_da_unidade(
+            &unidade::local(&s.pastas),
+            sig,
+            c,
+            alvo,
+            &origem,
+            q.as_deref(),
+            classe.as_deref(),
+            ordem.as_deref(),
+            desde.unwrap_or(0),
+        )
+    })
+}
+
 /// Rejeições, tendência, curva ABC, apresentado x aprovado, financiamento, leitos e pares da unidade.
 #[tauri::command]
 async fn faturamento_unidade(
@@ -888,7 +974,10 @@ async fn faturamento_unidade(
     s.com_consulta(|q| {
         let c = s.competencia(q, competencia.as_deref())?;
         let alvo = uf.as_deref().zip(cnes.as_deref());
-        unidade::faturamento::faturamento_da_unidade(&unidade::local(&s.pastas), q, c, alvo)
+        let p = unidade::local(&s.pastas);
+        s.cache_faturamento.obter(&p, c, alvo, || {
+            unidade::faturamento::faturamento_da_unidade(&p, q, c, alvo)
+        })
     })
 }
 
@@ -904,6 +993,37 @@ async fn faturamento_procedimentos(
         let c = s.competencia(q, competencia.as_deref())?;
         let alvo = uf.as_deref().zip(cnes.as_deref());
         unidade::faturamento::procedimentos_com_producao(&unidade::local(&s.pastas), q, c, alvo)
+    })
+}
+
+/// Aptidão da unidade por prioridade: resumo, uma página de um grupo e as habilitações.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn aptidao_unidade(
+    s: Estado<'_>,
+    competencia: Option<String>,
+    uf: Option<String>,
+    cnes: Option<String>,
+    grupo: Option<String>,
+    q: Option<String>,
+    hab: Option<String>,
+    desde: Option<usize>,
+    so_produzidos_na_uf: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    s.com_consulta(|sig| {
+        let c = s.competencia(sig, competencia.as_deref())?;
+        let alvo = uf.as_deref().zip(cnes.as_deref());
+        unidade::faturamento::aptidao_da_unidade(
+            &unidade::local(&s.pastas),
+            sig,
+            c,
+            alvo,
+            grupo.as_deref(),
+            q.as_deref(),
+            hab.as_deref(),
+            desde.unwrap_or(0),
+            so_produzidos_na_uf.unwrap_or(false),
+        )
     })
 }
 
@@ -1165,6 +1285,8 @@ fn main() {
             atualizar_programa,
             buscar,
             buscar_todos,
+            buscar_pagina,
+            buscar_exportar,
             ficha,
             historico,
             mudou,
@@ -1205,7 +1327,9 @@ fn main() {
             producao_procedimento,
             producao_unidade,
             faturamento_unidade,
+            producao_procedimentos,
             faturamento_procedimentos,
+            aptidao_unidade,
             faturamento_procedimento,
             faturamento_impacto,
             faturamento_painel,
@@ -1230,14 +1354,23 @@ fn main() {
             para_eventos.ligar_eventos(move |f| {
                 let _ = h.emit("tarefa_fim", f);
             });
-            WebviewWindowBuilder::new(app, "principal", WebviewUrl::App("index.html".into()))
+            let janela = WebviewWindowBuilder::new(app, "principal", WebviewUrl::App("index.html".into()))
                 .title(format!("SIGTAP Aberto {}", sa_core::VERSAO))
                 .inner_size(1360.0, 860.0)
                 .min_inner_size(1024.0, 640.0)
                 // Mesma cor de fundo da página: sem o flash preto do WebView2 antes do primeiro quadro.
                 .background_color(Color(242, 244, 247, 255))
-                .data_directory(dados_webview.clone())
-                .build()?;
+                .data_directory(dados_webview.clone());
+            #[cfg(all(windows, feature = "depuracao-remota"))]
+            let janela = match std::env::var("SA_DEPURACAO_PORTA").ok().and_then(|p| p.parse::<u16>().ok()) {
+                // Só em compilação de desenvolvimento: o WebView2 recente ignora a variável de ambiente do
+                // próprio WebView2, então a porta vai pelo mesmo canal dos argumentos que o Tauri já usa.
+                Some(porta) => janela.additional_browser_args(&format!(
+                    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required --remote-debugging-port={porta}"
+                )),
+                None => janela,
+            };
+            janela.build()?;
             Ok(())
         })
         .run(tauri::generate_context!());
@@ -1325,6 +1458,9 @@ mod testes {
             format!("{repo}x/outro"),
             format!("{repo}/issues/new?title=a b"),
             "https://github.com/outro/repo".to_string(),
+            "https://github.com/-x".to_string(),
+            "https://github.com/x-".to_string(),
+            "https://github.com/a--b".to_string(),
             format!("{repo}/\"\n"),
         ] {
             assert!(!url_permitida(&ruim), "{ruim:?}");

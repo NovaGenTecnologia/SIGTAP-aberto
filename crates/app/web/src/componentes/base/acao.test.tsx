@@ -61,3 +61,12 @@ test("Progresso determinado expõe o valor e indeterminado não", () => {
   rerender(<Progresso rotulo="Download" />);
   expect(screen.getByRole("progressbar", { name: "Download" })).not.toHaveAttribute("aria-valuenow");
 });
+
+test("Progresso determinado enche a barra por transform (sem animar a largura) e o indeterminado não recebe escala", () => {
+  const { container, rerender } = render(<Progresso rotulo="Download" valor={40} />);
+  const barra = () => container.querySelector<HTMLElement>(".progresso__barra")!;
+  expect(barra().style.transform).toBe("scaleX(0.4)");
+  expect(barra().style.width).toBe("");
+  rerender(<Progresso rotulo="Download" />);
+  expect(barra().style.transform).not.toMatch(/scaleX/);
+});

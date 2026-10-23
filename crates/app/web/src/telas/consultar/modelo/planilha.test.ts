@@ -3,6 +3,7 @@ import type { TabelaDaRelacao } from "./tabelaRelacao";
 import { planilhaDaRelacao, planilhaDeProcedimentos } from "./planilha";
 
 const item = (codigo: string, mascarado: string, nome: string, centavos: number): ItemProcedimento => ({
+  na_descricao: false,
   codigo, codigo_mascarado: mascarado, nome, tp_complexidade: "2", complexidade: "Média", valor_total_centavos: centavos,
   instrumentos: ["BPA-C", "BPA-I"], forma: "030101", forma_nome: "Consultas médicas",
 });

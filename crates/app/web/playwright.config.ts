@@ -18,6 +18,9 @@ const dadosVazios = fs.mkdtempSync(path.join(os.tmpdir(), "sigtap-assistente-"))
 const python = process.env.SA_PYTHON ?? "python";
 const ponte = path.join(raizRepo, "scripts", "dev", "ponte_ui.py");
 const dist = path.join(import.meta.dirname, "dist");
+// Opcional: uma ponte só de leitura sobre uma pasta de dados reais com meses sem os campos novos (MS), para provar os avisos de campo ausente.
+const dadosSemCampos = process.env.SA_PONTE_DADOS_SEM_CAMPOS;
+const bancoSemCampos = process.env.SA_PONTE_BANCO_SEM_CAMPOS;
 
 export default defineConfig({
   testDir: "e2e",
@@ -39,5 +42,13 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 30_000,
     },
+    ...(dadosSemCampos && bancoSemCampos
+      ? [{
+        command: `${python} "${ponte}" --porta 8767 --raiz "${dist}" --cli "${cli}" --banco "${bancoSemCampos}" --dados "${dadosSemCampos}"`,
+        url: "http://127.0.0.1:8767/",
+        reuseExistingServer: true,
+        timeout: 30_000,
+      }]
+      : []),
   ],
 });

@@ -3,9 +3,13 @@ import "./dominio.css";
 
 export interface PontoSerie { competencia: string; valor: number; completo: boolean }
 
-export function SerieMensal({ rotulo, pontos, formatar }: { rotulo: string; pontos: PontoSerie[]; formatar: (v: number) => string }) {
-  const maximo = Math.max(1, ...pontos.map((p) => p.valor));
-  const largura = 24, vao = 8, altura = 120;
+export function SerieMensal({ rotulo, pontos, formatar, altura = 120, referencia }: {
+  rotulo: string; pontos: PontoSerie[]; formatar: (v: number) => string; altura?: number;
+  /** Linha de referência (a mediana dos pares, por exemplo), na mesma escala das barras. */
+  referencia?: { valor: number; rotulo: string };
+}) {
+  const maximo = Math.max(1, ...pontos.map((p) => p.valor), referencia?.valor ?? 0);
+  const largura = 24, vao = 8;
   const total = pontos.length * (largura + vao);
   const incompletos = pontos.filter((p) => !p.completo).map((p) => rotuloCompetencia(p.competencia));
   const primeiro = pontos[0], ultimo = pontos.at(-1);
@@ -21,9 +25,16 @@ export function SerieMensal({ rotulo, pontos, formatar }: { rotulo: string; pont
         {pontos.map((p, i) => {
           const h = Math.max(2, (p.valor / maximo) * altura);
           return <rect key={p.competencia} x={i * (largura + vao)} y={altura - h + 2} width={largura} height={h}
-            fill={p.completo ? "var(--cor-acao)" : "url(#serie-hachura)"} stroke={p.completo ? "none" : "var(--cor-nconf)"} />;
+            fill={p.completo ? "var(--cor-acao)" : "url(#serie-hachura)"} stroke={p.completo ? "none" : "var(--cor-nconf)"}>
+            <title>{`${rotuloCompetencia(p.competencia)}: ${formatar(p.valor)}${p.completo ? "" : " (incompleto)"}`}</title>
+          </rect>;
         })}
+        {referencia && (
+          <line x1={0} x2={total} y1={altura - (referencia.valor / maximo) * altura + 2} y2={altura - (referencia.valor / maximo) * altura + 2}
+            stroke="var(--cor-atencao)" strokeWidth={2} strokeDasharray="6 4" />
+        )}
       </svg>
+      {referencia && <figcaption className="serie__legenda">Linha tracejada: {referencia.rotulo}</figcaption>}
       {incompletos.length > 0 && <figcaption className="serie__legenda">{incompletos.join(", ")}: mês incompleto, fora da conta</figcaption>}
       <table className="so-leitor">
         <caption>{rotulo}</caption>

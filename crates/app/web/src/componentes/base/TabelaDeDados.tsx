@@ -18,7 +18,8 @@ export interface TabelaDeDadosProps<L extends { id: string }> {
   rotulo: string;
   colunas: Coluna<L>[];
   linhas: L[];
-  altura?: number;
+  /** Altura da tabela: px, ou texto CSS (ex.: "100%", "calc(100vh - 400px)"). */
+  altura?: number | string;
   ordenacao?: SortDescriptor;
   aoOrdenar?: (o: SortDescriptor) => void;
   aoAbrir?: (linha: L) => void;
