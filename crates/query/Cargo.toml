@@ -14,8 +14,8 @@ workspace = true
 sa-core = { path = "../core" }
 sa-sources = { path = "../sources" }
 sa-packs = { path = "../packs" }
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11"
-zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
