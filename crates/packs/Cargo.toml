@@ -18,4 +18,4 @@ sha2 = "0.11"
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
-zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
